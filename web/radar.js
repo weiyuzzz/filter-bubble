@@ -116,25 +116,40 @@
 
   function highlightCard(item) {
     const earliest = item.earliest_source;
+    const angles = item.angles || [];
+    const seenTitles = new Set();
     const links = (item.sources || [])
       .filter((s) => s.url && (s.url.startsWith("http") || s.url.startsWith("radar://")))
+      .filter((s) => {
+        const key = (s.title || "").slice(0, 40);
+        if (seenTitles.has(key)) return false;
+        seenTitles.add(key);
+        return true;
+      })
       .slice(0, 4)
       .map((s) => `<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer" title="${esc(s.title)}">${esc(s.platform)} · ${esc(s.title)}</a>`)
+      .join("");
+    const otherAngles = angles.slice(1, 4)
+      .map((a) => `<span class="chip">${esc((a.title || "").slice(0, 28))}</span>`)
       .join("");
     return `
       <article class="ev-card" data-event="${esc(item.event_id)}">
         <div class="ev-top">
-          <h3 class="ev-title">${esc(item.title)}</h3>
+          <h3 class="ev-title">${esc(item.headline || item.title)}</h3>
           <span class="ev-heat">🔥 ${esc(item.heat)}</span>
         </div>
-        <p class="ev-summary">${esc(item.summary)}</p>
+        ${item.summary ? `<p class="ev-summary">${esc(item.summary)}</p>` : ""}
+        ${(item.points || []).length ? `<div class="ev-meta">${item.points.map((p) => chip(p, "info")).join("")}</div>` : ""}
         <div class="ev-meta">
           ${confidenceChip(item)}
           ${chip(item.category || "综合")}
           ${item.tech_flag ? chip("科技专题", "tech") : ""}
+          ${item.angle_count > 1 ? chip(item.angle_count + " 个角度", "info") : ""}
           ${(item.platforms || []).slice(0, 4).map((p) => chip(p)).join("")}
           ${(item.flags || []).map((f) => chip(f, "warn")).join("")}
+          ${item.summary_provider && item.summary_provider !== "extractive" ? chip("摘要 " + item.summary_provider, "ok") : ""}
         </div>
+        ${otherAngles ? `<div class="ev-meta"><span class="hint">其他角度：</span>${otherAngles}</div>` : ""}
         <div class="ev-links">
           ${earliest && earliest.url ? `<a href="${esc(earliest.url)}" target="_blank" rel="noopener noreferrer">最早可查 · ${esc(earliest.platform)} · ${esc(fmtTime(earliest.published_at))}</a>` : `<span class="chip warn">尚未找到最早来源</span>`}
           ${links}
@@ -151,8 +166,8 @@
     if (!payload) { grid.innerHTML = `<p class="empty">还没有日报。点击右上角「采集」生成。</p>`; return; }
     state.report = payload;
     const stats = payload.stats || {};
-    $("#mEvents").textContent = stats.events != null ? nf.format(stats.events) : "—";
-    $("#mItems").textContent = stats.items != null ? nf.format(stats.items) : "—";
+    $("#mEvents").textContent = stats.stories != null ? nf.format(stats.stories) : (stats.events != null ? nf.format(stats.events) : "—");
+    $("#mItems").textContent = stats.covered != null ? nf.format(stats.covered) : "—";
 
     const highlights = payload.highlights || [];
     const zhWeb = payload.zh_web || [];
@@ -162,7 +177,7 @@
     const coverage = payload.coverage || {};
     const gaps = payload.evidence_gaps || [];
 
-    let html = `<div class="section-title">今日重点热点 <small>${esc(payload.date)} · 按重要性与热度综合排序</small></div>`;
+    let html = `<div class="section-title">今日重点故事 <small>${esc(payload.date)} · 同一事件的多个角度已合并</small></div>`;
     html += highlights.length
       ? highlights.map(highlightCard).join("")
       : `<p class="empty">今天还没有聚合出事件。</p>`;
@@ -216,9 +231,19 @@
 
     html += `<div class="section-title">数据源覆盖说明</div>`;
     html += `<div class="panel">
+      <div class="ev-meta">
+        ${chip(`采集 ${stats.collected || 0} 条`)}
+        ${chip(`过滤 ${stats.filtered || 0} 条`, stats.filtered ? "warn" : "")}
+        ${chip(`入库 ${stats.stored || 0} 条`)}
+        ${chip(`覆盖 ${stats.covered || 0} 条`, "ok")}
+        ${chip(`${stats.stories || 0} 个故事 / ${stats.events || 0} 个事件`)}
+        ${payload.summary_backend && payload.summary_backend.available ? chip("摘要：模型 " + (payload.summary_backend.model || ""), "ok") : chip("摘要：本地抽取式")}
+      </div>
       <h4>成功读取（${(coverage.ok || []).length}）</h4>
       <div class="ev-meta">${(coverage.ok || []).map((s) => chip(`${s.platform} ${s.items}`)).join("") || `<span class="empty">无</span>`}</div>
       ${(coverage.failed || []).length ? `<h4>失败（${coverage.failed.length}）</h4><div class="ev-meta">${coverage.failed.map((s) => chip(`${s.platform}：${(s.error || "").slice(0, 40)}`, "warn")).join("")}</div>` : ""}
+      ${(coverage.paused || []).length ? `<h4>自动停用（${coverage.paused.length}）</h4><div class="ev-meta">${coverage.paused.map((s) => chip(`${s.platform}：${(s.reason || "").slice(0, 40)}`, "warn")).join("")}</div>` : ""}
+      ${(coverage.skipped || []).length ? `<h4>本轮跳过（${coverage.skipped.length}）</h4><div class="ev-meta">${coverage.skipped.map((s) => chip(`${s.name}：${(s.reason || "").slice(0, 40)}`)).join("")}</div>` : ""}
       ${(coverage.unavailable || []).length ? `<h4>未接入（无合规免费入口）</h4><div class="ev-meta">${coverage.unavailable.map((s) => chip(s.platform)).join("")}</div>` : ""}
       ${(coverage.disabled || []).length ? `<h4>已停用 / 受限</h4><div class="ev-meta">${coverage.disabled.map((s) => chip(`${s.platform}：${(s.notes || "").slice(0, 42)}`)).join("")}</div>` : ""}
       ${gaps.length ? `<h4>证据缺口</h4><ul class="claim-evidence">${gaps.map((g) => `<li>${esc(g)}</li>`).join("")}</ul>` : ""}
@@ -398,7 +423,8 @@
       const summary = data.summary || {};
       const rowHtml = rows.map((row) => {
         const status = row.status === "ok" ? `<span class="status-ok">正常</span>`
-          : row.status === "error" ? `<span class="status-error">失败</span>`
+          : row.status === "error" ? `<span class="status-error">失败 ${esc(row.consecutive_failures)}</span>`
+          : row.status === "paused" ? `<span class="status-error">已自动停用</span>`
           : `<span class="status-off">未知</span>`;
         return `<tr>
           <td>${esc(row.name)}<br><span class="mono">${esc(row.source_id)}</span></td>
@@ -414,12 +440,27 @@
         </tr>`;
       }).join("");
       box.innerHTML = `
-        <div class="section-title">数据源管理 <small>共 ${rows.length} 个 · 正常 ${summary.ok || 0} · 失败 ${summary.error || 0} · 未接入 ${summary.unavailable || 0}</small></div>
+        <div class="section-title">数据源管理 <small>共 ${rows.length} 个 · 正常 ${summary.ok || 0} · 失败 ${summary.error || 0} · 自动停用 ${summary.paused || 0} · 未接入 ${summary.unavailable || 0}</small></div>
         <div class="panel"><table class="radar-table">
           <thead><tr><th>名称</th><th>平台</th><th>类型</th><th>状态</th><th>健康</th><th>条数</th><th>延迟</th><th>最近成功</th><th>最近错误</th><th>说明</th></tr></thead>
           <tbody>${rowHtml}</tbody>
         </table></div>
-        <p class="hint">未接入 = 该平台没有合规的免费公开入口。系统不会绕过登录、验证码或访问控制去抓取。</p>`;
+        <div class="ev-actions">
+          <button class="ghost-btn" id="resetSources" type="button">重置失败计数（解除自动停用）</button>
+        </div>
+        <p class="hint">连续失败 3 次开始降频，6 次自动停用；重置后下一轮会重新尝试。未接入 = 该平台没有合规的免费公开入口，系统不会绕过登录、验证码或访问控制去抓取。</p>`;
+      const resetBtn = $("#resetSources");
+      if (resetBtn) {
+        resetBtn.addEventListener("click", async () => {
+          try {
+            const result = await api("/api/radar/sources/reset", { method: "POST", body: "{}" });
+            toast(`已重置 ${result.reset} 个数据源的失败计数`);
+            loadSources();
+          } catch (error) {
+            toast("重置失败：" + error.message, true);
+          }
+        });
+      }
     } catch (error) {
       box.innerHTML = `<p class="empty">读取失败：${esc(error.message)}</p>`;
     }

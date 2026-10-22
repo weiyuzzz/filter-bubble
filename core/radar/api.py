@@ -53,6 +53,7 @@ def handle_get(path: str, query: Dict[str, str]) -> Tuple[int, Dict[str, Any]]:
                             "total": len(rows),
                             "ok": len([r for r in rows if r["status"] == "ok"]),
                             "error": len([r for r in rows if r["status"] == "error"]),
+                            "paused": len([r for r in rows if r["status"] == "paused"]),
                             "disabled": len([r for r in rows if not r["enabled"]]),
                             "unavailable": len([r for r in rows if r["kind"] == "unavailable"]),
                         }})
@@ -118,6 +119,11 @@ def handle_post(path: str, body: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
                 return _err(400, "event_id or query required")
             except ValueError as exc:
                 return _err(404, str(exc))
+        if path == "/api/radar/sources/reset":
+            source_id = str(body.get("source_id") or "").strip() or None
+            reset = store.reset_source_failures(conn, source_id)
+            conn.commit()
+            return _ok({"reset": reset, "sources": store.sources(conn)})
         if path == "/api/radar/push":
             latest = store.latest_report(conn, "daily")
             if not latest:

@@ -10,13 +10,38 @@
   },
 
   "limits": {
-    "max_candidates": 150,
-    "max_events": 60,
+    "max_candidates": 400,
+    "max_events": 150,
     "max_report_events": 12,
     "source_timeout_seconds": 12,
     "source_retries": 1,
     "min_minutes_between_collects": 20,
-    "min_minutes_between_reports": 60
+    "min_minutes_between_reports": 60,
+    "hotlist_top_n": 10,
+    "news_top_n": 40
+  },
+
+  "cluster": {
+    "within_run_threshold": 0.3,
+    "match_threshold": 0.35,
+    "story_threshold": 0.42
+  },
+
+  "backoff": {
+    "degrade_after": 3,
+    "degrade_interval_minutes": 60,
+    "pause_after": 6
+  },
+
+  "filters": {
+    "noise_keywords": [
+      "吃不吃挑战", "返厂了", "抽奖", "转发抽", "表情包", "壁纸",
+      "cp向", "磕糖", "二创", "鬼畜", "整活", "梗图"
+    ],
+    "min_engagement": {
+      "bilibili_popular": { "view": 50000 },
+      "hackernews": { "points": 40 }
+    }
   },
 
   "scoring": {
@@ -75,8 +100,15 @@
 
   "llm": {
     "enabled": false,
-    "provider": "",
-    "note": "默认关闭：调查结论由本地规则与已采集证据生成，不调用任何外部模型"
+    "provider": "openai_compatible",
+    "base_url": "",
+    "model": "",
+    "api_key_env": "RADAR_LLM_API_KEY",
+    "timeout_seconds": 45,
+    "max_attempts": 2,
+    "max_events": 12,
+    "temperature": 0.2,
+    "note": "默认关闭。填好 base_url / model 并设置 enabled=true 即启用；本地 Ollama 用 provider=ollama、base_url=http://127.0.0.1:11434。未配置时自动回退到本地抽取式摘要"
   },
 
   "sources": {}

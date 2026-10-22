@@ -208,41 +208,146 @@ def _run_one(spec: Dict[str, Any]) -> Tuple[Dict[str, Any], List[Dict[str, Any]]
         return spec, [], "%s: %s" % (type(exc).__name__, exc), int((time.time() - started) * 1000)
 
 
-def collect(conn, cfg: Dict[str, Any]) -> Dict[str, Any]:
-    """Fetch every enabled source concurrently, persist items, record per-source health."""
+def _haystack(item: Dict[str, Any]) -> str:
+    return ((item.get("title") or "") + " " + (item.get("raw_content") or "")).lower()
+
+
+def filter_items(spec: Dict[str, Any], items: List[Dict[str, Any]],
+                 cfg: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], int, int, int]:
+    """价值过滤 + 截断。返回 (保留, 噪音丢弃数, 互动不达标丢弃数, 截断数)。"""
+    filters = cfg.get("filters") or {}
+    noise = [w.lower() for w in (filters.get("noise_keywords") or []) if w]
+    noise += [w.lower() for w in (spec.get("blacklist") or []) if w]
+    thresholds = (filters.get("min_engagement") or {}).get(spec["source_id"]) or {}
+
+    kept: List[Dict[str, Any]] = []
+    dropped_noise = 0
+    dropped_low = 0
+    for item in items:
+        blob = _haystack(item)
+        if any(word in blob for word in noise):
+            dropped_noise += 1
+            continue
+        engagement = item.get("engagement") or {}
+        if thresholds and not all(
+            (engagement.get(key) or 0) >= minimum for key, minimum in thresholds.items()
+        ):
+            dropped_low += 1
+            continue
+        kept.append(item)
+
+    # 热榜类只取前 N 条，避免单一榜单按条数刷屏；新闻类保留全量
+    limits = cfg.get("limits") or {}
+    kind = spec.get("kind")
+    cap = int(spec.get("max_items") or 0)
+    if kind == "hotlist":
+        cap = min(cap or 999, int(limits.get("hotlist_top_n") or 10))
+    elif kind in ("rss", "api"):
+        cap = cap or int(limits.get("news_top_n") or 40)
+    truncated = max(0, len(kept) - cap) if cap else 0
+    if cap:
+        kept = kept[:cap]
+    return kept, dropped_noise, dropped_low, truncated
+
+
+def _source_state(conn) -> Dict[str, Dict[str, Any]]:
+    return {row["source_id"]: row for row in store.sources(conn)}
+
+
+def _minutes_since(iso: Any) -> float:
+    if not iso:
+        return 1e9
+    try:
+        then = dt.datetime.fromisoformat(str(iso))
+        return (dt.datetime.now(dt.timezone.utc) - then).total_seconds() / 60.0
+    except (TypeError, ValueError):
+        return 1e9
+
+
+def collect(conn, cfg: Dict[str, Any], force: bool = False) -> Dict[str, Any]:
+    """Fetch every enabled source concurrently, persist items, record per-source health.
+
+    数据源熔断：
+    * 连续失败 >= degrade_after → 降频（每 degrade_interval_minutes 才重试一次）
+    * 连续失败 >= pause_after   → 自动停用，直到手动重置
+    """
     specs = active_specs(cfg)
     now = dt.datetime.now().astimezone().isoformat(timespec="seconds")
     for spec in all_specs(cfg):
         store.ensure_source(conn, spec)
+    conn.commit()
+
+    backoff = cfg.get("backoff") or {}
+    degrade_after = int(backoff.get("degrade_after") or 3)
+    pause_after = int(backoff.get("pause_after") or 6)
+    degrade_interval = float(backoff.get("degrade_interval_minutes") or 60)
+    states = _source_state(conn)
+
+    runnable: List[Dict[str, Any]] = []
+    skipped: List[Dict[str, str]] = []
+    for spec in specs:
+        state = states.get(spec["source_id"]) or {}
+        failures = int(state.get("consecutive_failures") or 0)
+        if force:
+            runnable.append(spec)
+            continue
+        if failures >= pause_after:
+            skipped.append({"source_id": spec["source_id"], "name": spec["name"],
+                            "reason": "连续失败 %d 次，已自动停用（可在数据源管理里重置）" % failures})
+            store.mark_source_paused(conn, spec["source_id"],
+                                     "连续失败 %d 次，已自动停用" % failures)
+            continue
+        if failures >= degrade_after and _minutes_since(state.get("last_error_at")) < degrade_interval:
+            skipped.append({"source_id": spec["source_id"], "name": spec["name"],
+                            "reason": "连续失败 %d 次，降频中" % failures})
+            continue
+        runnable.append(spec)
+    conn.commit()
 
     ok_sources = 0
     failed: List[Dict[str, str]] = []
     total_inserted = 0
     total_seen = 0
+    total_raw = 0
+    total_kept = 0
+    total_filtered = 0
     per_source: List[Dict[str, Any]] = []
 
     with cf.ThreadPoolExecutor(max_workers=6) as pool:
-        futures = [pool.submit(_run_one, spec) for spec in specs]
+        futures = [pool.submit(_run_one, spec) for spec in runnable]
         for future in cf.as_completed(futures):
             spec, items, error, latency = future.result()
             if error:
                 store.record_source_result(conn, spec["source_id"], False, 0, latency, error, now)
                 failed.append({"source_id": spec["source_id"], "name": spec["name"], "error": error})
             else:
-                counts = store.insert_items(conn, items)
+                total_raw += len(items)
+                kept, noise, low, truncated = filter_items(spec, items, cfg)
+                filtered = len(items) - len(kept)
+                total_filtered += filtered
+                total_kept += len(kept)
+                counts = store.insert_items(conn, kept)
                 total_inserted += counts["inserted"]
                 total_seen += counts["seen"]
-                store.record_source_result(conn, spec["source_id"], True, len(items), latency, None, now)
+                store.record_source_result(conn, spec["source_id"], True, len(kept), latency, None, now)
                 ok_sources += 1
-                per_source.append({"source_id": spec["source_id"], "items": len(items),
-                                   "new": counts["inserted"]})
+                per_source.append({
+                    "source_id": spec["source_id"], "raw": len(items), "kept": len(kept),
+                    "items": len(kept), "new": counts["inserted"],
+                    "dropped_noise": noise, "dropped_low_engagement": low, "truncated": truncated,
+                })
             conn.commit()
 
     return {
         "sources_enabled": len(specs),
         "sources_ok": ok_sources,
         "sources_failed": len(failed),
+        "sources_skipped": len(skipped),
         "failures": failed,
+        "skipped": skipped,
+        "items_raw": total_raw,
+        "items_kept": total_kept,
+        "items_filtered": total_filtered,
         "items_new": total_inserted,
         "items_seen": total_seen,
         "per_source": per_source,

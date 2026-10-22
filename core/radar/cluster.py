@@ -25,8 +25,20 @@ STOPWORDS = {
     "可以", "已经", "表示", "认为", "今天", "昨日", "刚刚", "网友", "官方", "发布",
 }
 
-TOPIC_KEYWORDS: Dict[str, List[str]] = {
-    "AI 与大模型": ["ai", "人工智能", "大模型", "llm", "gpt", "gemini", "claude", "deepseek",
+# 媒体名与套话会被切成多个「稀有」二元组，导致误判为同一件事。
+# 只要 token 是这些片段的子串，就不参与「稀有词共现」的判定。
+STORY_STOP_FRAGMENTS = (
+    "人民日报", "新华社", "央视", "中新网", "环球时报", "澎湃",
+    "记者", "报道", "消息", "官方", "新闻", "视频", "直播", "评论",
+    "网友", "回应", "表示", "发布", "通报", "宣布",
+)
+
+
+def _is_story_stop_token(token: str) -> bool:
+    return any(token in fragment for fragment in STORY_STOP_FRAGMENTS)
+
+
+TOPIC_KEYWORDS: Dict[str, List[str]] = {    "AI 与大模型": ["ai", "人工智能", "大模型", "llm", "gpt", "gemini", "claude", "deepseek",
                     "machine learning", "机器学习", "算法", "agent", "智能体"],
     "芯片与半导体": ["芯片", "半导体", "光刻", "晶圆", "台积电", "nvidia", "英伟达", "gpu",
                      "chip", "semiconductor", "asic", "hbm", "eda"],
@@ -129,18 +141,27 @@ def cluster_items(items: List[Dict[str, Any]], threshold: float = 0.30) -> List[
 
 def build_events(conn, date: str, items: List[Dict[str, Any]], cfg: Dict[str, Any],
                  now: str) -> List[Dict[str, Any]]:
-    """Create/refresh events for ``date``. Returns scored event dicts (not yet persisted)."""
+    """Create/refresh events for ``date``. Returns scored event dicts (not yet persisted).
+
+    跨轮匹配不再写死 0.55：阈值来自 ``cluster.match_threshold``（默认 0.35）。
+    同一轮新建的事件也会立刻进入比对池，避免「同一批材料里的相近事件各建各的」。
+    """
     from . import score
 
-    min_heat = float(((cfg.get("investigation") or {}).get("min_heat")) or 0)
+    cluster_cfg = cfg.get("cluster") or {}
+    within = float(cluster_cfg.get("within_run_threshold") or 0.30)
+    match_threshold = float(cluster_cfg.get("match_threshold") or 0.35)
+
     existing = {e["id"]: e for e in store.events_for_date(conn, date, limit=500)}
     # also consider yesterday so a continuing story keeps its id
     for prev in store.events_for_date(conn, _day_before(date), limit=500):
         existing.setdefault(prev["id"], prev)
+    known_titles = {eid: tokens(e.get("title", "")) for eid, e in existing.items()}
 
-    groups = cluster_items(items)
+    groups = cluster_items(items, threshold=within)
     events: List[Dict[str, Any]] = []
     touched_previous = False
+    merged_same_run = 0
 
     for group in groups:
         titles = [g.get("title", "") for g in group]
@@ -151,13 +172,18 @@ def build_events(conn, date: str, items: List[Dict[str, Any]], cfg: Dict[str, An
 
         matched: Optional[Dict[str, Any]] = None
         best = 0.0
-        for event in existing.values():
-            sim = similarity(group_tokens, tokens(event.get("title", "")))
-            if sim > best and sim >= 0.55:
-                best, matched = sim, event
-        event_id = matched["id"] if matched else _event_id(date, canonical)
-        if matched and matched.get("date") != date:
-            touched_previous = True
+        for event_id, title_tokens in known_titles.items():
+            sim = similarity(group_tokens, title_tokens)
+            if sim > best and sim >= match_threshold:
+                best, matched = sim, existing.get(event_id)
+        if matched is None:
+            event_id = _event_id(date, canonical)
+        else:
+            event_id = matched["id"]
+            if matched.get("date") != date:
+                touched_previous = True
+            elif not matched.get("_persisted", True):
+                merged_same_run += 1
 
         item_ids = [g["id"] for g in group if g.get("id")]
         published = [g.get("published_at") for g in group if g.get("published_at")]
@@ -188,10 +214,14 @@ def build_events(conn, date: str, items: List[Dict[str, Any]], cfg: Dict[str, An
             "metrics": {},
             "_items": group,
             "_item_ids": item_ids,
+            "_persisted": False,
         }
         events.append(event)
 
-    # score afterwards: scoring needs the full candidate set for percentile ranking
+        # 让本轮新事件立刻可被后续分组匹配（这正是之前 75% 事件只有一条材料的原因之一）
+        existing[event_id] = event
+        known_titles[event_id] = group_tokens
+
     scored = score.score_events(conn, date, events, cfg, now)
     for event in scored:
         tech = score.detect_tech_burst(event, cfg)
@@ -200,9 +230,107 @@ def build_events(conn, date: str, items: List[Dict[str, Any]], cfg: Dict[str, An
 
     if touched_previous:
         print("[radar] some clusters matched events from a previous day")
-    if min_heat > 0:
-        pass
+    if merged_same_run:
+        print("[radar] %d groups merged into events created in the same run" % merged_same_run)
     return scored
+
+
+def build_stories(conn, date: str, events: List[Dict[str, Any]], cfg: Dict[str, Any],
+                  now: str) -> List[Dict[str, Any]]:
+    """事件之上再聚一层「故事」：同一件事的不同角度合成一条。
+
+    分组信号有两个：
+    * 标题相似度（包含系数），用于几乎相同的措辞；
+    * **稀有词共现**：两个事件共享 ≥2 个当日少见的关键词（地名、机构名、专有名词），
+      即视为同一件事的不同角度。这条规则能合并「西藏地震 / 那曲最大地震 / 亲历者讲述」，
+      但不会因为共享「中国」「报道」这类烂大街的词而误合并。
+    """
+    cluster_cfg = cfg.get("cluster") or {}
+    threshold = float(cluster_cfg.get("story_threshold") or 0.42)
+    if not events:
+        return []
+
+    token_sets = [tokens(e.get("title", "")) for e in events]
+    total = len(events)
+    # 文档频率：一个词出现在多少个事件里
+    df: Dict[str, int] = {}
+    for token_set in token_sets:
+        for token in token_set:
+            df[token] = df.get(token, 0) + 1
+
+    def is_rare(token: str) -> bool:
+        if len(token) < 2:
+            return False
+        if _is_story_stop_token(token):
+            return False
+        return df.get(token, 0) <= max(2, int(total * 0.08))
+
+    pairs: List[Tuple[int, int]] = []
+    for i in range(total):
+        if not token_sets[i]:
+            continue
+        for j in range(i + 1, total):
+            other = token_sets[j]
+            if not other:
+                continue
+            inter = token_sets[i] & other
+            if not inter:
+                continue
+            containment = len(inter) / float(min(len(token_sets[i]), len(other)))
+            shared_rare = sum(1 for token in inter if is_rare(token))
+            if containment >= threshold or shared_rare >= 2:
+                pairs.append((i, j))
+
+    roots = _union_find(total, pairs)
+
+    grouped: Dict[int, List[int]] = {}
+    for index, root in enumerate(roots):
+        grouped.setdefault(root, []).append(index)
+
+    stories: List[Dict[str, Any]] = []
+    for indices in grouped.values():
+        members = [events[i] for i in indices]
+        # 代表事件：覆盖材料最多的事件（标题最能代表这件事），热度作为并列条件
+        representative = max(members, key=lambda e: (int(e.get("item_count") or 0), e.get("heat", 0)))
+        title = representative.get("title", "")
+        # 故事 id 由成员事件集合决定：标题相近的两个故事不会再撞 id
+        member_ids = sorted(str(e["id"]) for e in members)
+        story_id = "st-" + hashlib.sha1("|".join(member_ids).encode("utf-8")).hexdigest()[:14]
+        heat = max(float(e.get("heat") or 0) for e in members)
+        angle_bonus = min(6.0, 2.0 * (len(members) - 1))
+        platforms = set()
+        for member in members:
+            platforms |= set((member.get("metrics") or {}).get("platforms") or [])
+        story = {
+            "id": story_id,
+            "date": date,
+            "title": title,
+            "summary": "",
+            "category": representative.get("category", ""),
+            "heat": round(min(100.0, heat + angle_bonus), 1),
+            "importance": round(max(float(e.get("importance") or 0) for e in members), 1),
+            "confidence": representative.get("confidence", "unverified"),
+            "event_count": len(members),
+            "item_count": sum(int(e.get("item_count") or 0) for e in members),
+            "platform_count": len(platforms),
+            "first_seen_at": min((e.get("first_seen_at") or now) for e in members),
+            "last_updated_at": now,
+            "metrics": {
+                "angles": [
+                    {"event_id": e["id"], "title": e.get("title", ""),
+                     "heat": e.get("heat"), "platform_count": e.get("platform_count")}
+                    for e in sorted(members, key=lambda x: x.get("heat", 0), reverse=True)
+                ],
+                "event_ids": member_ids,
+                "angle_count": len(members),
+            },
+        }
+        for member in members:
+            member["story_id"] = story_id
+        stories.append(story)
+
+    stories.sort(key=lambda s: (s["importance"], s["heat"]), reverse=True)
+    return stories
 
 
 def _day_before(date: str) -> str:

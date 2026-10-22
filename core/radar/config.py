@@ -25,13 +25,42 @@ DEFAULTS: Dict[str, Any] = {
         "max_retries": 3,
     },
     "limits": {
-        "max_candidates": 150,
-        "max_events": 60,
+        "max_candidates": 400,
+        "max_events": 150,
         "max_report_events": 12,
         "source_timeout_seconds": 12,
         "source_retries": 1,
         "min_minutes_between_collects": 20,
         "min_minutes_between_reports": 60,
+        "hotlist_top_n": 10,
+        "news_top_n": 40,
+    },
+    "cluster": {
+        # 同一轮采集内的合并阈值（token 集合相似度）
+        "within_run_threshold": 0.30,
+        # 跨轮：新一组材料与已存在事件匹配的阈值（原来写死 0.55，过严导致同一件事被拆开）
+        "match_threshold": 0.35,
+        # 事件之上聚成「故事」的阈值
+        "story_threshold": 0.42,
+    },
+    "backoff": {
+        # 连续失败达到该次数后降频（每 degrade_interval_minutes 分钟才重试一次）
+        "degrade_after": 3,
+        "degrade_interval_minutes": 60,
+        # 连续失败达到该次数后自动停用，直到手动重置
+        "pause_after": 6,
+    },
+    "filters": {
+        # 全局噪音词：命中即丢弃（娱乐段子、抽奖、标题党）
+        "noise_keywords": [
+            "吃不吃挑战", "返厂了", "抽奖", "转发抽", "表情包", "壁纸",
+            "cp向", "磕糖", "二创", "鬼畜", "整活", "梗图",
+        ],
+        # 各来源的最低互动门槛（engagement 字段名 -> 最小值）
+        "min_engagement": {
+            "bilibili_popular": {"view": 50000},
+            "hackernews": {"points": 40},
+        },
     },
     "scoring": {
         "velocity": 0.30,
@@ -74,7 +103,18 @@ DEFAULTS: Dict[str, Any] = {
         ],
     },
     "retention": {"days": 90},
-    "llm": {"enabled": False, "provider": "", "note": "默认关闭：调查结论由本地规则与已采集证据生成"},
+    "llm": {
+        "enabled": False,
+        "provider": "openai_compatible",
+        "base_url": "",
+        "model": "",
+        "api_key_env": "RADAR_LLM_API_KEY",
+        "timeout_seconds": 45,
+        "max_attempts": 2,
+        "max_events": 12,
+        "temperature": 0.2,
+        "note": "默认关闭。支持任意 OpenAI 兼容端点或本地 Ollama；未配置时回退到本地抽取式摘要",
+    },
     "sources": {},
 }
 
@@ -109,7 +149,7 @@ def load() -> Dict[str, Any]:
     cfg = copy.deepcopy(DEFAULTS)
     try:
         if CONFIG_PATH.exists():
-            raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8") or "{}")
+            raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8-sig") or "{}")
             if isinstance(raw, dict):
                 cfg = _merge(cfg, raw)
             else:

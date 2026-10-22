@@ -77,7 +77,7 @@ class TestScriptContracts(unittest.TestCase):
     DYNAMIC_IDS = {
         "saveSettings", "setDailyTime", "setTopEvents", "setMinHeat", "setTopics",
         "setKeywords", "setExclude", "setPushEnabled", "setPushItems", "setAlertThreshold",
-        "wVelocity", "wCross", "wEngage", "wVerify", "wInterest",
+        "wVelocity", "wCross", "wEngage", "wVerify", "wInterest", "resetSources",
     }
 
     def test_index_has_every_id_app_js_uses(self):

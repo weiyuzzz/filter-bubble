@@ -12,7 +12,7 @@ import uuid
 from typing import Any, Dict, Optional
 
 from .. import db
-from . import cluster, config as radar_config, investigate, push, report, sources, store
+from . import cluster, config as radar_config, investigate, push, report, sources, store, summarize
 
 try:
     from zoneinfo import ZoneInfo
@@ -113,14 +113,17 @@ def collect_and_report(cfg: Optional[Dict[str, Any]] = None, reason: str = "manu
         events = cluster.build_events(conn, date, items, cfg, now_iso())
         max_events = int((cfg.get("limits") or {}).get("max_events") or 60)
         events = sorted(events, key=lambda e: (e.get("importance", 0) + e.get("heat", 0)), reverse=True)[:max_events]
+        stories = cluster.build_stories(conn, date, events, cfg, now_iso())
 
         for event in events:
             store.assign_event(conn, event.get("_item_ids") or [], event["id"])
             store.upsert_event(conn, event)
             store.save_event_snapshot(conn, event["id"], date, event.get("item_count", 0),
                                       event.get("platform_count", 0), event.get("heat", 0))
+        store.replace_stories(conn, date, stories)
         conn.commit()
         stats["events"] = len(events)
+        stats["stories"] = len(stories)
         stats["items_considered"] = len(items)
 
         _set("reporting")
@@ -233,10 +236,13 @@ def status(conn, cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         "schedule": {"time": daily_time, "timezone": cfg.get("timezone"), "next_run": next_run},
         "push": push.status(conn, cfg, date),
         "push_enabled": bool(push_cfg.get("enabled")),
+        "summary_backend": summarize.backend_status(cfg),
+        "cluster": cfg.get("cluster") or {},
         "sources": {
             "total": len(all_sources),
             "ok": len([s for s in all_sources if s["status"] == "ok"]),
             "error": len([s for s in all_sources if s["status"] == "error"]),
+            "paused": len([s for s in all_sources if s["status"] == "paused"]),
             "disabled": len([s for s in all_sources if not s["enabled"]]),
             "unavailable": len([s for s in all_sources if s["kind"] == "unavailable"]),
         },

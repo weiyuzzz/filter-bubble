@@ -142,6 +142,36 @@ CREATE TABLE IF NOT EXISTS radar_push_log (
     PRIMARY KEY (date, channel)
 );
 
+CREATE TABLE IF NOT EXISTS radar_stories (
+    id TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
+    title TEXT NOT NULL,
+    summary TEXT,
+    category TEXT,
+    heat REAL NOT NULL DEFAULT 0,
+    importance REAL NOT NULL DEFAULT 0,
+    confidence TEXT NOT NULL DEFAULT 'unverified',
+    event_count INTEGER NOT NULL DEFAULT 0,
+    item_count INTEGER NOT NULL DEFAULT 0,
+    platform_count INTEGER NOT NULL DEFAULT 0,
+    first_seen_at TEXT NOT NULL,
+    last_updated_at TEXT NOT NULL,
+    metrics TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_radar_stories_date ON radar_stories(date DESC);
+
+CREATE TABLE IF NOT EXISTS radar_summaries (
+    cache_key TEXT PRIMARY KEY,
+    event_id TEXT,
+    provider TEXT,
+    model TEXT,
+    content_hash TEXT,
+    headline TEXT,
+    summary TEXT NOT NULL,
+    points TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS radar_runs (
     id TEXT PRIMARY KEY,
     kind TEXT NOT NULL,
@@ -159,6 +189,24 @@ def init() -> None:
     """Create radar tables if missing. Safe to call on every start."""
     with db.connect() as conn:
         conn.executescript(SCHEMA)
+        # 向后兼容的增量迁移：只加列，不动已有数据
+        _ensure_column(conn, "radar_events", "story_id", "TEXT")
+        _ensure_column(conn, "radar_sources", "paused_reason", "TEXT")
+        conn.commit()
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:
+    try:
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(%s)" % table).fetchall()}
+    except sqlite3.Error:
+        return
+    if column in existing:
+        return
+    try:
+        conn.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, column, decl))
+        print("[radar] migrated: %s.%s" % (table, column))
+    except sqlite3.Error as exc:
+        print("[radar] migration skipped %s.%s: %s" % (table, column, exc))
 
 
 # ---------- sources ----------
@@ -184,7 +232,7 @@ def record_source_result(conn: sqlite3.Connection, source_id: str, ok: bool,
     if ok:
         conn.execute(
             """UPDATE radar_sources SET status='ok', last_ok_at=?, last_error=NULL,
-                   consecutive_failures=0, last_item_count=?, last_latency_ms=?
+                   consecutive_failures=0, last_item_count=?, last_latency_ms=?, paused_reason=NULL
                WHERE source_id=?""",
             (now, item_count, latency_ms, source_id),
         )
@@ -195,6 +243,13 @@ def record_source_result(conn: sqlite3.Connection, source_id: str, ok: bool,
                WHERE source_id=?""",
             ((error or "")[:500], now, latency_ms, source_id),
         )
+
+
+def mark_source_paused(conn: sqlite3.Connection, source_id: str, reason: str) -> None:
+    conn.execute(
+        "UPDATE radar_sources SET status='paused', paused_reason=? WHERE source_id=?",
+        (reason[:200], source_id),
+    )
 
 
 def sources(conn: sqlite3.Connection) -> List[Dict[str, Any]]:
@@ -273,8 +328,8 @@ def upsert_event(conn: sqlite3.Connection, event: Dict[str, Any]) -> None:
     conn.execute(
         """INSERT INTO radar_events(id, date, title, summary, category, keywords, heat, importance,
                confidence, item_count, platform_count, source_count, first_seen_at,
-               last_updated_at, origin_item_id, tech_flag, investigation_state, metrics)
-           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               last_updated_at, origin_item_id, tech_flag, investigation_state, metrics, story_id)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT(id) DO UPDATE SET
              date=excluded.date,
              title=excluded.title, summary=excluded.summary, category=excluded.category,
@@ -283,7 +338,7 @@ def upsert_event(conn: sqlite3.Connection, event: Dict[str, Any]) -> None:
              platform_count=excluded.platform_count, source_count=excluded.source_count,
              last_updated_at=excluded.last_updated_at, origin_item_id=excluded.origin_item_id,
              tech_flag=excluded.tech_flag, investigation_state=excluded.investigation_state,
-             metrics=excluded.metrics""",
+             metrics=excluded.metrics, story_id=excluded.story_id""",
         (
             event["id"], event["date"], event["title"], event.get("summary", ""),
             event.get("category", ""), json.dumps(event.get("keywords") or [], ensure_ascii=False),
@@ -293,6 +348,7 @@ def upsert_event(conn: sqlite3.Connection, event: Dict[str, Any]) -> None:
             event["first_seen_at"], event["last_updated_at"], event.get("origin_item_id"),
             1 if event.get("tech_flag") else 0, event.get("investigation_state", "none"),
             json.dumps(event.get("metrics") or {}, ensure_ascii=False),
+            event.get("story_id"),
         ),
     )
 
@@ -510,6 +566,123 @@ def evidence_for_event(conn: sqlite3.Connection, event_id: str) -> List[Dict[str
 
 def set_investigation_state(conn: sqlite3.Connection, event_id: str, state: str) -> None:
     conn.execute("UPDATE radar_events SET investigation_state=? WHERE id=?", (state, event_id))
+
+
+# ---------- stories ----------
+
+def upsert_story(conn: sqlite3.Connection, story: Dict[str, Any]) -> None:
+    conn.execute(
+        """INSERT INTO radar_stories(id, date, title, summary, category, heat, importance,
+               confidence, event_count, item_count, platform_count, first_seen_at,
+               last_updated_at, metrics)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(id) DO UPDATE SET
+             date=excluded.date, title=excluded.title, summary=excluded.summary,
+             category=excluded.category, heat=excluded.heat, importance=excluded.importance,
+             confidence=excluded.confidence, event_count=excluded.event_count,
+             item_count=excluded.item_count, platform_count=excluded.platform_count,
+             last_updated_at=excluded.last_updated_at, metrics=excluded.metrics""",
+        (
+            story["id"], story["date"], story["title"], story.get("summary", ""),
+            story.get("category", ""), float(story.get("heat") or 0),
+            float(story.get("importance") or 0), story.get("confidence", "unverified"),
+            int(story.get("event_count") or 0), int(story.get("item_count") or 0),
+            int(story.get("platform_count") or 0), story["first_seen_at"],
+            story["last_updated_at"], json.dumps(story.get("metrics") or {}, ensure_ascii=False),
+        ),
+    )
+
+
+def replace_stories(conn: sqlite3.Connection, date: str, stories: List[Dict[str, Any]]) -> None:
+    """故事是纯聚合结果，每天重建：先清掉当天旧故事，避免历史残留与新结果并存。"""
+    conn.execute("DELETE FROM radar_stories WHERE date=?", (date,))
+    for story in stories:
+        upsert_story(conn, story)
+
+
+def stories_for_date(conn: sqlite3.Connection, date: str, limit: int = 80) -> List[Dict[str, Any]]:
+    rows = conn.execute(
+        "SELECT * FROM radar_stories WHERE date=? ORDER BY importance DESC, heat DESC LIMIT ?",
+        (date, limit),
+    ).fetchall()
+    out = []
+    for row in rows:
+        d = dict(row)
+        try:
+            d["metrics"] = json.loads(d.get("metrics") or "{}")
+        except ValueError:
+            d["metrics"] = {}
+        out.append(d)
+    return out
+
+
+def events_for_story(conn: sqlite3.Connection, story_id: str) -> List[Dict[str, Any]]:
+    rows = conn.execute(
+        "SELECT * FROM radar_events WHERE story_id=? ORDER BY heat DESC", (story_id,)
+    ).fetchall()
+    out = []
+    for row in rows:
+        d = dict(row)
+        for key, default in (("keywords", []), ("metrics", {})):
+            try:
+                d[key] = json.loads(d.get(key) or ("[]" if default == [] else "{}"))
+            except ValueError:
+                d[key] = default
+        d["tech_flag"] = bool(d.get("tech_flag"))
+        out.append(d)
+    return out
+
+
+def assign_story(conn: sqlite3.Connection, event_ids: Iterable[str], story_id: str) -> None:
+    for event_id in event_ids:
+        conn.execute("UPDATE radar_events SET story_id=? WHERE id=?", (story_id, event_id))
+
+
+# ---------- 摘要缓存 ----------
+
+def get_summary(conn: sqlite3.Connection, cache_key: str) -> Optional[Dict[str, Any]]:
+    row = conn.execute("SELECT * FROM radar_summaries WHERE cache_key=?", (cache_key,)).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    try:
+        d["points"] = json.loads(d.get("points") or "[]")
+    except ValueError:
+        d["points"] = []
+    return d
+
+
+def save_summary(conn: sqlite3.Connection, cache_key: str, payload: Dict[str, Any],
+                 now: str) -> None:
+    conn.execute(
+        """INSERT INTO radar_summaries(cache_key, event_id, provider, model, content_hash,
+               headline, summary, points, created_at)
+           VALUES(?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(cache_key) DO UPDATE SET
+             provider=excluded.provider, model=excluded.model, content_hash=excluded.content_hash,
+             headline=excluded.headline, summary=excluded.summary, points=excluded.points,
+             created_at=excluded.created_at""",
+        (
+            cache_key, payload.get("event_id", ""), payload.get("provider", ""),
+            payload.get("model", ""), payload.get("content_hash", ""),
+            payload.get("headline", ""), payload.get("summary", ""),
+            json.dumps(payload.get("points") or [], ensure_ascii=False), now,
+        ),
+    )
+
+
+# ---------- 数据源熔断 ----------
+
+def reset_source_failures(conn: sqlite3.Connection, source_id: Optional[str] = None) -> int:
+    if source_id:
+        cur = conn.execute(
+            """UPDATE radar_sources SET consecutive_failures=0, status='unknown',
+                   paused_reason=NULL WHERE source_id=?""", (source_id,))
+    else:
+        cur = conn.execute(
+            """UPDATE radar_sources SET consecutive_failures=0, status='unknown',
+                   paused_reason=NULL WHERE consecutive_failures>0""")
+    return cur.rowcount or 0
 
 
 def prune(conn: sqlite3.Connection, days: int) -> Dict[str, int]:
