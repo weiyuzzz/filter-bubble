@@ -248,3 +248,21 @@ def readme_excerpt(markdown: str) -> str:
         if sum(len(x) for x in lines) > 320:
             break
     return " ".join(lines)[:320].strip()
+
+
+def fetch_owner_repos(owner: str, per_page: int = 10) -> List[Dict[str, Any]]:
+    """Newest public repositories for a publisher (used by the follow feed)."""
+    if RATE_REMAINING is not None and RATE_REMAINING < 2:
+        return []
+    url = (
+        "https://api.github.com/users/%s/repos?type=owner&sort=created&direction=desc&per_page=%d"
+        % (urllib.parse.quote(owner), per_page)
+    )
+    raw = http_get(url, api=True)
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw.decode("utf-8", "replace"))
+    except ValueError:
+        return []
+    return data if isinstance(data, list) else []

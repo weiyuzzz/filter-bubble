@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install GitPulse as a macOS LaunchAgent.
-# It starts at login, keeps the local UI alive, and refreshes at 08:30 every day.
+# It starts at login, keeps the local UI alive, and refreshes at 08:00 every day.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -43,7 +43,7 @@ cat > "$AGENT" <<PLIST
   <key>EnvironmentVariables</key>
   <dict>
     <key>PYTHONPYCACHEPREFIX</key><string>$DIR/.pycache</string>
-    <key>GITPULSE_REFRESH_TIME</key><string>08:30</string>
+    <key>GITPULSE_REFRESH_TIME</key><string>08:00</string>
     <key>GITPULSE_TIMEZONE</key><string>Asia/Shanghai</string>
   </dict>
   <key>RunAtLoad</key><true/>
@@ -61,7 +61,7 @@ launchctl enable "gui/$(id -u)/com.gitpulse.server" 2>/dev/null || true
 
 echo "✓ 已安装 LaunchAgent：$AGENT"
 echo "  UI：      http://127.0.0.1:8791"
-echo "  自动刷新：每天 08:30（Asia/Shanghai，可在 plist 里改）"
+echo "  自动刷新：每天 08:00（Asia/Shanghai，可在 plist 里改）"
 echo "  日志：    $LOG_DIR/launchd.err.log"
 echo
 echo "如需卸载：$DIR/scripts/uninstall-daily.sh"

@@ -93,6 +93,7 @@
           <button class="tab" data-tab="surge" role="tab" aria-selected="false">热度猛增 <span class="tab-count" data-count="surge">0</span></button>
           <button class="tab" data-tab="fresh" role="tab" aria-selected="false">新星崛起 <span class="tab-count" data-count="fresh">0</span></button>
           <button class="tab" data-tab="sustained" role="tab" aria-selected="false">持续走热 <span class="tab-count" data-count="sustained">0</span></button>
+          <button class="tab" data-tab="following" role="tab" aria-selected="false">关注 <span class="tab-count" data-count="following">0</span></button>
           <button class="tab" data-tab="saved" role="tab" aria-selected="false">已收藏 <span class="tab-count" data-count="saved">0</span></button>
         </nav>
         <div class="feed-tools">
@@ -125,13 +126,19 @@
         <div id="railTaste"></div>
       </section>
 
+      <section class="rail-card follow-card">
+        <header class="rail-head"><span>已关注发布者</span><button class="mini-link" id="followRefresh" title="刷新关注动态">刷新</button></header>
+        <div id="railFollows"></div>
+      </section>
+
       <section class="rail-card schedule-card">
         <header class="rail-head"><span>自动更新</span><span class="chip-live"><i></i>每日</span></header>
-        <div class="schedule-time" id="scheduleTime">08:30</div>
+        <div class="schedule-time" id="scheduleTime">08:00</div>
         <p class="rail-text">在本地生成，无需登录。每天打开页面，就是一份新日报。</p>
         <div class="schedule-row"><span>下次更新</span><span id="nextRun">—</span></div>
         <div class="schedule-row"><span>数据来源</span><span>Trending + Search</span></div>
         <div class="schedule-row"><span>最后生成</span><span id="lastGenerated">—</span></div>
+        <div class="schedule-row" id="retryRow" hidden><span>网络重试</span><span id="retryText">等待网络恢复</span></div>
       </section>
 
       <section class="rail-card quote-card">
@@ -184,6 +191,14 @@
 <button class="to-top" id="toTop" aria-label="回到顶部">
   <svg viewBox="0 0 24 24" fill="none"><path d="M12 19V5m-6 6 6-6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
 </button>
+<div class="brief-backdrop" id="briefBackdrop" hidden></div>
+<section class="brief-modal" id="briefModal" role="dialog" aria-modal="true" aria-labelledby="briefTitle" hidden>
+  <button class="brief-close" id="briefClose" aria-label="关闭项目速读">
+    <svg viewBox="0 0 24 24" fill="none"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+  </button>
+  <div class="brief-body" id="briefBody"></div>
+</section>
+
 <div class="toast-stack" id="toasts" aria-live="polite"></div>
 <script src="/app.js"></script>
 </body>

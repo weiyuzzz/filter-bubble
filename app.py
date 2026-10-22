@@ -19,7 +19,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, Optional, Tuple
 
-from core import config, db, digest, prefs
+from core import config, db, digest, follows, prefs
 
 MIME = {
     ".html": "text/html; charset=utf-8",
@@ -68,6 +68,7 @@ def _status_payload() -> Dict[str, Any]:
     try:
         exists = _today_exists(conn)
         last = db.get_meta(conn, "last_generated_date")
+        last_failed = db.get_meta(conn, "last_refresh_failed_at") or None
         row = conn.execute("SELECT date, generated_at FROM digests ORDER BY date DESC LIMIT 1").fetchone()
     finally:
         conn.close()
@@ -85,6 +86,7 @@ def _status_payload() -> Dict[str, Any]:
         "state": state,
         "today_ready": exists,
         "last_generated_date": last,
+        "last_refresh_failed_at": last_failed,
         "latest_date": row["date"] if row else None,
         "latest_generated_at": row["generated_at"] if row else None,
         "schedule": {
@@ -152,6 +154,19 @@ class Handler(BaseHTTPRequestHandler):
                 return _json(self, 200, prefs.profile(conn))
             finally:
                 conn.close()
+        if path == "/api/follows":
+            conn = db.connect()
+            try:
+                query = urllib.parse.parse_qs(parsed.query)
+                force = query.get("refresh", ["0"])[0] in ("1", "true", "yes")
+                if force:
+                    follows.refresh(conn, force=True, max_seconds=25)
+                return _json(self, 200, follows.summary(conn))
+            except Exception as exc:  # noqa: BLE001
+                print("[api] follows error:", exc)
+                return _json(self, 500, {"error": str(exc)})
+            finally:
+                conn.close()
         if path.startswith("/api/"):
             return _json(self, 404, {"error": "not found"})
         return self._static(path)
@@ -169,6 +184,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._feedback(conn, body)
             if path == "/api/bookmark":
                 return self._bookmark(conn, body)
+            if path == "/api/follow":
+                owner = str(body.get("owner") or "").strip()
+                try:
+                    result = follows.toggle(conn, owner)
+                except ValueError as exc:
+                    return _json(self, 400, {"error": str(exc)})
+                return _json(self, 200, result)
+            if path == "/api/follows/refresh":
+                follows.refresh(conn, force=True, max_seconds=30)
+                return _json(self, 200, follows.summary(conn))
             if path == "/api/rerank":
                 payload = digest.rerank(conn)
                 return _json(self, 200, payload)
@@ -247,11 +272,19 @@ def _scheduler(stop: threading.Event) -> None:
             conn = db.connect()
             try:
                 done_today = db.get_meta(conn, "last_generated_date") == digest.local_today().isoformat()
+                last_failed = db.get_meta(conn, "last_refresh_failed_at", "") or ""
             finally:
                 conn.close()
             now = digest.local_now()
             if done_today or digest.get_state().get("running"):
                 continue
+            if last_failed:
+                try:
+                    failed_at = dt.datetime.fromisoformat(last_failed)
+                    if (now - failed_at).total_seconds() < 600:
+                        continue
+                except (ValueError, TypeError):
+                    pass
             if now.strftime("%H:%M") >= config.REFRESH_TIME:
                 print("[schedule] daily refresh starting at", now.isoformat(timespec="seconds"))
                 digest.refresh_async()

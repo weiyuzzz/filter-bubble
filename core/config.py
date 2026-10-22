@@ -12,7 +12,7 @@ DB_PATH = pathlib.Path(os.environ.get("GITPULSE_DB", str(DATA_DIR / "gitpulse.db
 
 HOST = os.environ.get("GITPULSE_HOST", "127.0.0.1")
 PORT = int(os.environ.get("GITPULSE_PORT", "8791"))
-REFRESH_TIME = os.environ.get("GITPULSE_REFRESH_TIME", "08:30")
+REFRESH_TIME = os.environ.get("GITPULSE_REFRESH_TIME", "08:00")
 TIMEZONE = os.environ.get("GITPULSE_TIMEZONE", "Asia/Shanghai")
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()

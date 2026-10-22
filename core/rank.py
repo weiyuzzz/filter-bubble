@@ -5,7 +5,7 @@ import datetime as dt
 import math
 from typing import Any, Dict, List, Optional
 
-from . import prefs
+from . import brief, prefs
 
 LANG_COLORS = {
     "python": "#3572A5", "javascript": "#f1e05a", "typescript": "#3178c6", "rust": "#dea584",
@@ -73,7 +73,8 @@ def _insight(item: Dict[str, Any]) -> str:
 
 def build(candidates: List[Dict[str, Any]], model: Dict[str, float], bias: float,
           ready: bool, feedback: Dict[str, int], bookmarks: set,
-          histories: Optional[Dict[str, List[int]]] = None) -> List[Dict[str, Any]]:
+          histories: Optional[Dict[str, List[int]]] = None,
+          following: Optional[set] = None) -> List[Dict[str, Any]]:
     if not candidates:
         return []
 
@@ -155,6 +156,9 @@ def build(candidates: List[Dict[str, Any]], model: Dict[str, float], bias: float
         base = (0.56 * c["heat"] + 0.44 * match_base) if ready else (c["heat"] + match_base * 0.04)
         c["score"] = round(base + (4.0 if c["explore"] else 0.0), 2)
         c["categories"] = [label for _key, label in prefs.categories_for(c)]
+        c["brief"] = brief.build(c, c["categories"])
+        owner_key = (c.get("owner") or c["full_name"].split("/")[0]).lower()
+        c["following"] = owner_key in (following or set())
         c["feedback"] = feedback.get(c["full_name"], 0)
         c["bookmarked"] = c["full_name"] in bookmarks
         c["spark"] = (histories or {}).get(c["full_name"], [])

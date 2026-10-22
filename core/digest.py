@@ -7,7 +7,7 @@ import threading
 import time
 from typing import Any, Callable, Dict, List, Optional
 
-from . import config, db, github, prefs, rank
+from . import config, db, follows, github, prefs, rank
 from .translate import Translator
 
 try:
@@ -234,9 +234,10 @@ def generate(progress: Optional[Callable[[str], None]] = None) -> Dict[str, Any]
         weights, bias = prefs.load_model(conn)
         profile = prefs.profile(conn)
         names = [c["full_name"] for c in selected]
+        following = {o.lower() for o in follows.owners(conn)}
         ranked = rank.build(
             selected, weights, bias, profile["ready"], db.feedback_map(conn),
-            db.bookmarks(conn), _histories(conn, names)
+            db.bookmarks(conn), _histories(conn, names), following=following
         )
         items = _final_items(ranked)
 
@@ -269,8 +270,14 @@ def generate(progress: Optional[Callable[[str], None]] = None) -> Dict[str, Any]
             (today, json.dumps(payload, ensure_ascii=False), payload["generated_at"]),
         )
         db.set_meta(conn, "last_generated_date", today)
+        db.set_meta(conn, "last_refresh_failed_at", "")
         db.set_meta(conn, "profile_updated", db.now_iso())
         conn.commit()
+        said("更新关注发布者的动态")
+        try:
+            follows.refresh(conn, max_seconds=15)
+        except Exception as exc:  # noqa: BLE001
+            print("[digest] follow refresh failed:", exc)
         return payload
     finally:
         conn.close()
@@ -288,6 +295,15 @@ def _run(progress=None) -> None:
             STATE["stage"] = "完成"
     except Exception as exc:  # noqa: BLE001
         print("[digest] generation failed:", exc)
+        try:
+            failed_conn = db.connect()
+            try:
+                db.set_meta(failed_conn, "last_refresh_failed_at", db.now_iso())
+                failed_conn.commit()
+            finally:
+                failed_conn.close()
+        except Exception:  # noqa: BLE001
+            pass
         with _STATE_LOCK:
             STATE["last_error"] = str(exc)
             STATE["stage"] = "失败"
@@ -314,6 +330,10 @@ def latest(conn) -> Optional[Dict[str, Any]]:
         return None
     payload = json.loads(row["payload"])
     payload["_stored_date"] = row["date"]
+    followed = {o.lower() for o in follows.owners(conn)}
+    for item in payload.get("items", []):
+        owner = (item.get("owner") or item["full_name"].split("/")[0]).lower()
+        item["following"] = owner in followed
     return payload
 
 
@@ -333,9 +353,10 @@ def rerank(conn) -> Dict[str, Any]:
     profile = prefs.profile(conn)
     weights, bias = prefs.load_model(conn)
     names = [i["full_name"] for i in payload["items"]]
+    following = {o.lower() for o in follows.owners(conn)}
     items = _final_items(rank.build(
         payload["items"], weights, bias, profile["ready"], db.feedback_map(conn),
-        db.bookmarks(conn), _histories(conn, names)
+        db.bookmarks(conn), _histories(conn, names), following=following
     ))
     for idx, item in enumerate(items, 1):
         item["rank"] = idx

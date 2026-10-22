@@ -63,6 +63,28 @@ CREATE TABLE IF NOT EXISTS translations (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS follows (
+    owner TEXT PRIMARY KEY COLLATE NOCASE,
+    avatar TEXT,
+    created_at TEXT NOT NULL,
+    last_checked_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS follow_events (
+    id TEXT PRIMARY KEY,
+    owner TEXT NOT NULL COLLATE NOCASE,
+    repo TEXT,
+    kind TEXT NOT NULL,
+    title TEXT,
+    body TEXT,
+    url TEXT,
+    created_at TEXT NOT NULL,
+    fetched_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_follow_events_created
+    ON follow_events(created_at DESC);
+
 CREATE TABLE IF NOT EXISTS readmes (
     full_name TEXT PRIMARY KEY,
     excerpt TEXT NOT NULL,

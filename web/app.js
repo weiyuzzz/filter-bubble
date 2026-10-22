@@ -12,6 +12,10 @@
     status: null,
     tab: localStorage.getItem("gp.tab") || "recommend",
     busy: new Set(),
+    followBusy: new Set(),
+    follows: { owners: [], events: [], counts: { owners: 0, events: 0 } },
+    followRefreshBusy: false,
+    briefRepo: null,
     poll: null,
     firstPaint: true,
     resetArmed: false,
@@ -26,6 +30,7 @@
     open: '<svg viewBox="0 0 24 24" fill="none"><path d="M14 4h6v6M20 4l-9 9M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     spark: '<svg viewBox="0 0 24 24" fill="none"><path d="M12 3l1.7 5.1L19 10l-5.3 1.9L12 17l-1.7-5.1L5 10l5.3-1.9L12 3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z" fill="currentColor"/></svg>',
     check: '<svg viewBox="0 0 24 24" fill="none"><path d="m5 12.5 4.2 4.2L19 7" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    arrow: '<svg viewBox="0 0 24 24" fill="none"><path d="M5 12h14m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     alert: '<svg viewBox="0 0 24 24" fill="none"><path d="M12 8v5m0 3h.01M10.3 4.2 2.7 18a1.4 1.4 0 0 0 1.3 2h16a1.4 1.4 0 0 0 1.3-2L13.7 4.2a1.4 1.4 0 0 0-2.4 0Z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   };
 
@@ -122,6 +127,7 @@
     const items = (state.digest && state.digest.items) || [];
     const out = {};
     Object.keys(filters).forEach((key) => { out[key] = items.filter(filters[key]).length; });
+    out.following = (state.follows.events || []).length;
     return out;
   }
 
@@ -160,6 +166,11 @@
     return null;
   }
 
+  function isFollowing(owner) {
+    const key = String(owner || "").toLowerCase();
+    return (state.follows.owners || []).some((o) => String(o.owner || "").toLowerCase() === key);
+  }
+
   function hueFor(text) {
     let h = 0;
     for (let i = 0; i < text.length; i += 1) h = (h * 31 + text.charCodeAt(i)) % 360;
@@ -185,6 +196,8 @@
     const actionBusy = state.busy.has(item.full_name);
     const initials = owner.replace(/[^a-zA-Z0-9]/g, "").slice(0, 2).toUpperCase() || "GH";
     const hue = hueFor(owner);
+    const following = item.following != null ? !!item.following : isFollowing(owner);
+    const followBusy = state.followBusy.has(owner.toLowerCase());
 
     const subBits = [];
     if (item.language) {
@@ -192,6 +205,7 @@
     }
     if (distance) subBits.push(`<span>${esc(distance)}</span>`);
     subBits.push(`<span>★ ${compact(item.stars)}</span>`);
+    subBits.push(`<button class="follow-chip${following ? " is-on" : ""}" data-follow="${esc(owner)}" title="${following ? "取消关注" : "关注发布者，新发布单独汇总"}" ${followBusy ? "disabled" : ""}>${following ? "已关注" : "+ 关注"}</button>`);
 
     const tags = [];
     cats.slice(0, 2).forEach((c) => tags.push(`<span class="tag cat">${esc(c)}</span>`));
@@ -237,6 +251,10 @@
 
         <div class="tags">${tags.join("")}</div>
 
+        <button class="brief-trigger" data-brief="${esc(item.full_name)}">
+          ${ICONS.spark}<b>项目速读</b><span>适合谁 · 怎么用 · 解决什么</span>${ICONS.arrow}
+        </button>
+
         <div class="card-stats">
           ${statToday}
           <div class="stat"><strong>${compact(item.stars)}</strong><span>总计 star</span></div>
@@ -278,7 +296,83 @@
     });
   }
 
+  function followIntroHTML(ownerCount) {
+    const busy = state.followRefreshBusy;
+    return `<div class="follow-intro">
+      <div>
+        <span class="mono-label">FOLLOWING FEED</span>
+        <h3>${ownerCount ? "他们最近发布了什么" : "关注喜欢的发布者"}</h3>
+        <p>${ownerCount
+          ? `${ownerCount} 位发布者 · 汇总近 ${state.follows.lookback_days || 14} 天的 release 与新仓库，独立于今日推荐`
+          : "关注后，他们的新版本和新仓库会单独汇总在这里，不混进每日热榜。"}</p>
+      </div>
+      <button class="follow-refresh" data-follow-refresh ${busy ? "disabled" : ""}>${busy ? "刷新中…" : "刷新动态"}</button>
+    </div>`;
+  }
+
+  function renderFollowEvent(event) {
+    const owner = event.owner || (event.repo || "").split("/")[0] || "GitHub";
+    const repo = (event.repo || "").split("/")[1] || event.repo || "";
+    const initials = owner.replace(/[^a-zA-Z0-9]/g, "").slice(0, 2).toUpperCase() || "GH";
+    const hue = hueFor(owner);
+    const isRepo = event.kind === "repo";
+    const version = !isRepo && event.title ? `<span class="event-version">${esc(event.title)}</span>` : "";
+    return `<article class="event-card" data-event="${esc(event.id)}">
+      <div class="avatar" style="--h:${hue}" aria-hidden="true">
+        <span>${esc(initials)}</span>
+        <img src="${esc(event.avatar || `https://github.com/${owner}.png?size=96`)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">
+      </div>
+      <div class="event-main">
+        <div class="event-head">
+          <span class="event-owner">${esc(owner)}</span>
+          <span class="event-kind${isRepo ? " repo" : ""}">${isRepo ? "新仓库" : "新版本"}</span>
+          <span class="event-time">${timeAgo(event.created_at)}</span>
+        </div>
+        <div class="event-title">
+          <a href="${esc(event.url)}" target="_blank" rel="noreferrer">${esc(repo || event.title)}</a>
+          ${version}
+        </div>
+        ${event.body ? `<p class="event-body" title="${esc(event.body)}">${esc(event.body)}</p>` : ""}
+        <div class="event-foot">
+          <a class="event-link" href="${esc(event.url)}" target="_blank" rel="noreferrer">在 GitHub 查看 ${ICONS.open}</a>
+          <span class="event-follow">关注中 · ${isRepo ? "NEW REPO" : "RELEASE"}</span>
+        </div>
+      </div>
+    </article>`;
+  }
+
+  function renderFollowFeed() {
+    if (!state.digest && !state.follows.owners.length) return;
+    cardList.classList.add("is-follow");
+    $("#onboard").classList.add("hidden");
+    const owners = state.follows.owners || [];
+    const events = state.follows.events || [];
+    $("#resultCount").textContent = owners.length
+      ? `${events.length} 条发布动态 · ${owners.length} 位发布者`
+      : "关注发布者，建立自己的更新流";
+
+    if (!owners.length) {
+      cardList.innerHTML = followIntroHTML(0);
+      $("#empty").classList.remove("hidden");
+      $("#empty").innerHTML = `<div class="empty-mark">✦</div><h3>还没有关注发布者</h3><p>在任意项目卡片上点 <b style="color:var(--lime)">+ 关注</b>，他们的新 release 和新仓库会独立汇总在这里。</p><button class="ghost-btn" data-goto="recommend">去推荐里找</button>`;
+      return;
+    }
+
+    $("#empty").classList.add("hidden");
+    const body = events.length
+      ? `<div class="event-feed">${events.map(renderFollowEvent).join("")}</div>`
+      : `<div class="empty inline"><div class="empty-mark">◎</div><h3>暂时没有新发布</h3><p>已关注 ${owners.length} 位发布者。等他们发新版本或新建仓库，就会出现在这里。</p><button class="ghost-btn" data-follow-refresh>立即刷新</button></div>`;
+    cardList.innerHTML = followIntroHTML(owners.length) + body;
+  }
+
   function renderCards({ flip = false, learnRepo = null } = {}) {
+    if (state.tab === "following") {
+      renderFollowFeed();
+      return;
+    }
+    cardList.classList.remove("is-follow");
+    renderOnboard();
+
     if (!state.digest) return;
     const items = filtered();
     const previous = flip ? new Map($$(".card", cardList).map((el) => [el.dataset.repo, el.getBoundingClientRect().top])) : null;
@@ -406,6 +500,31 @@
       <p class="rail-note">每次 👍 / 👎 都会即时调整今日排序。</p>`;
   }
 
+  function renderFollowRail() {
+    const el = $("#railFollows");
+    if (!el) return;
+    const owners = state.follows.owners || [];
+    const refresh = $("#followRefresh");
+    if (refresh) {
+      refresh.disabled = state.followRefreshBusy;
+      refresh.textContent = state.followRefreshBusy ? "刷新中…" : "刷新";
+    }
+    if (!owners.length) {
+      el.innerHTML = `<div class="follow-empty">在项目卡片上点 <b style="color:var(--lime)">+ 关注</b>，他们发布的新版本 / 新仓库会单独出现在「关注」里。</div>`;
+      return;
+    }
+    el.innerHTML = owners.map((o) => {
+      const owner = o.owner;
+      const initials = owner.replace(/[^a-zA-Z0-9]/g, "").slice(0, 2).toUpperCase() || "GH";
+      const count = Number(o.event_count || 0);
+      return `<div class="follow-mini" data-goto="following">
+        <div class="avatar" style="--h:${hueFor(owner)}" aria-hidden="true"><span>${esc(initials)}</span><img src="${esc(o.avatar || `https://github.com/${owner}.png?size=96`)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()"></div>
+        <button class="follow-mini-copy" data-goto="following"><b>${esc(owner)}</b><small>${count ? count + " 条动态" : "等待新发布"}</small></button>
+        <button class="follow-mini-unfollow" data-unfollow="${esc(owner)}" title="取消关注 ${esc(owner)}" aria-label="取消关注 ${esc(owner)}">×</button>
+      </div>`;
+    }).join("") + `<button class="follow-view-btn" data-goto="following">查看关注动态 ${ICONS.arrow}</button>`;
+  }
+
   function renderDrawer() {
     const d = state.digest;
     if (!d) return;
@@ -444,6 +563,7 @@
     renderTabs();
     renderHero();
     renderRail();
+    renderFollowRail();
     renderOnboard();
     renderDrawer();
     renderCards();
@@ -489,6 +609,7 @@
               state.firstPaint = true;
               state.digest = digest.data;
               renderAll();
+              loadFollows();
               toast("今日日报已更新 · 共 " + digest.data.items.length + " 个项目");
               return;
             }
@@ -527,6 +648,9 @@
       $("#nextRun").textContent = nextRunLabel(status.schedule.next_run);
     }
     $("#lastGenerated").textContent = status.latest_generated_at ? timeAgo(status.latest_generated_at) : "—";
+    const failed = status.last_refresh_failed_at;
+    $("#retryRow").hidden = !failed;
+    if (failed) $("#retryText").textContent = `${timeAgo(failed)}失败 · 联网后补跑`;
   }
 
   /* ---------------- interactions ---------------- */
@@ -650,20 +774,176 @@
     }
   }
 
+  function syncFollowingFlags() {
+    if (!state.digest) return;
+    state.digest.items.forEach((item) => {
+      const owner = item.owner || item.full_name.split("/")[0];
+      item.following = isFollowing(owner);
+    });
+  }
+
+  function setTab(key) {
+    state.tab = key;
+    localStorage.setItem("gp.tab", state.tab);
+    state.firstPaint = true;
+    renderTabs();
+    renderCards();
+  }
+
+  async function loadFollows(force = false) {
+    if (force && state.followRefreshBusy) return;
+    if (force) {
+      state.followRefreshBusy = true;
+      renderFollowRail();
+      if (state.tab === "following") renderFollowFeed();
+    }
+    try {
+      const { data } = await api("/api/follows" + (force ? "?refresh=1" : ""));
+      state.follows = data;
+      syncFollowingFlags();
+      renderTabs();
+      renderFollowRail();
+      if (state.tab === "following") renderFollowFeed();
+      else if (state.digest) renderCards();
+      if (force) toast(`关注动态已更新 · ${data.events.length} 条`);
+    } catch (err) {
+      if (force) toast(err.message, "error");
+    } finally {
+      state.followRefreshBusy = false;
+      renderFollowRail();
+      if (state.tab === "following") renderFollowFeed();
+    }
+  }
+
+  async function toggleFollow(owner) {
+    const key = String(owner || "").toLowerCase();
+    if (!key || state.followBusy.has(key)) return;
+    state.followBusy.add(key);
+    try {
+      const { data } = await api("/api/follow", {
+        method: "POST",
+        body: JSON.stringify({ owner }),
+      });
+      state.follows = data.follows;
+      syncFollowingFlags();
+      renderTabs();
+      renderFollowRail();
+      renderCards();
+      if (data.following) {
+        const count = (data.follows.events || []).filter(
+          (e) => String(e.owner || "").toLowerCase() === key
+        ).length;
+        toast(count
+          ? `已关注 ${owner} · 已同步 ${count} 条近期发布`
+          : `已关注 ${owner} · 他的新发布会在「关注」里出现`);
+      } else {
+        toast(`已取消关注 ${owner}`);
+      }
+    } catch (err) {
+      toast(err.message, "error");
+    } finally {
+      state.followBusy.delete(key);
+      if (state.digest) renderCards();
+    }
+  }
+
+  function openBrief(repo) {
+    if (!state.digest) return;
+    const item = state.digest.items.find((i) => i.full_name === repo);
+    if (!item) return;
+    const b = item.brief || {};
+    const owner = item.owner || item.full_name.split("/")[0];
+    const short = item.name || item.full_name.split("/")[1];
+    const initials = owner.replace(/[^a-zA-Z0-9]/g, "").slice(0, 2).toUpperCase() || "GH";
+    const description = item.summary_zh || item.description || "这个项目还没有填写简介。";
+    const english = item.summary_zh && item.description ? item.description : "";
+    const scenario = (b.scenarios || []).map((x) => `<span class="brief-chip">${esc(x)}</span>`).join("");
+    const badge = item.badge ? `<span class="badge ${badgeClass(item.badge)}">${esc(item.badge)}</span>` : "";
+    const today = Number(item.stars_today || 0);
+    $("#briefBody").innerHTML = `
+      <div class="brief-head">
+        <div class="avatar" style="--h:${hueFor(owner)}" aria-hidden="true"><span>${esc(initials)}</span><img src="${esc(item.avatar || `https://github.com/${owner}.png?size=96`)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()"></div>
+        <div>
+          <div class="brief-kicker">PROJECT BRIEF · ${esc(b.category || (item.categories || [])[0] || "TECH")}</div>
+          <h2 class="brief-title" id="briefTitle"><span class="owner">${esc(owner)} /</span> ${esc(short)}</h2>
+          <div class="brief-sub">${badge}<span>${esc(item.language || "Unknown")}</span><span>★ ${compact(item.stars)}</span>${today ? `<span>今日 +${exact(today)}</span>` : ""}</div>
+        </div>
+      </div>
+      <p class="brief-desc">${esc(description)}</p>
+      ${english ? `<p class="brief-desc-en"><span class="en-tag">EN</span> ${esc(english)}</p>` : ""}
+      <div class="brief-grid">
+        <div class="brief-block">
+          <div class="brief-label">适合谁</div>
+          <p>${esc(b.audience || "正在寻找这类工具的开发者与技术团队")}</p>
+        </div>
+        <div class="brief-block usage">
+          <div class="brief-label">怎么用</div>
+          <p>${esc(b.usage || "按 README 安装依赖后运行，通常以 CLI 或本地服务方式使用。")}</p>
+        </div>
+        <div class="brief-block problem wide">
+          <div class="brief-label">解决什么问题</div>
+          <p>${esc(b.problem || "把一类重复的技术工作变成可复用的工具或参考实现。")}</p>
+        </div>
+      </div>
+      ${scenario ? `<div class="brief-scenarios"><h4>典型场景</h4><div class="brief-chips">${scenario}</div></div>` : ""}
+      <div class="brief-foot">
+        <div class="brief-meta">
+          <span>上手门槛 <b>${esc(b.difficulty || "看 README")}</b></span>
+          <span>Fork <b>${compact(item.forks)}</b></span>
+          <span>${item.age_days != null ? `年龄 <b>${item.age_days} 天</b>` : ""}</span>
+        </div>
+        <a class="brief-open" href="${esc(item.url)}" target="_blank" rel="noreferrer">打开 GitHub ${ICONS.open}</a>
+      </div>
+      <p class="brief-note">${esc(b.note || "根据项目简介、语言与 topics 自动归纳，具体命令与限制以 README 为准。")}</p>`;
+    state.briefRepo = repo;
+    const modal = $("#briefModal");
+    const backdrop = $("#briefBackdrop");
+    modal.hidden = false;
+    backdrop.hidden = false;
+    requestAnimationFrame(() => {
+      modal.classList.add("open");
+      backdrop.classList.add("open");
+    });
+    document.body.style.overflow = "hidden";
+  }
+
+  function closeBrief() {
+    const modal = $("#briefModal");
+    if (!modal || modal.hidden) return;
+    modal.classList.remove("open");
+    $("#briefBackdrop").classList.remove("open");
+    document.body.style.overflow = "";
+    state.briefRepo = null;
+    setTimeout(() => {
+      modal.hidden = true;
+      $("#briefBackdrop").hidden = true;
+    }, 300);
+  }
+
   function bind() {
     $$(".tab").forEach((tab) => {
       tab.addEventListener("click", () => {
-        state.tab = tab.dataset.tab;
-        localStorage.setItem("gp.tab", state.tab);
-        state.firstPaint = true;
-        renderTabs();
-        renderCards();
+        setTab(tab.dataset.tab);
         const active = $(".tab.is-active");
         if (active) active.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
       });
     });
 
     cardList.addEventListener("click", (event) => {
+      const followBtn = event.target.closest("[data-follow]");
+      if (followBtn) {
+        event.preventDefault();
+        return toggleFollow(followBtn.dataset.follow);
+      }
+      const briefBtn = event.target.closest("[data-brief]");
+      if (briefBtn) {
+        event.preventDefault();
+        return openBrief(briefBtn.dataset.brief);
+      }
+      if (event.target.closest("[data-follow-refresh]")) {
+        event.preventDefault();
+        return loadFollows(true);
+      }
       const action = event.target.closest("[data-act]");
       if (action) {
         event.preventDefault();
@@ -678,12 +958,28 @@
       }
       const goto = event.target.closest("[data-goto]");
       if (goto) {
-        state.tab = goto.dataset.goto;
-        localStorage.setItem("gp.tab", state.tab);
-        renderTabs();
-        renderCards();
+        event.preventDefault();
+        setTab(goto.dataset.goto);
       }
     });
+
+    $("#railFollows").addEventListener("click", (event) => {
+      const unfollow = event.target.closest("[data-unfollow]");
+      if (unfollow) {
+        event.preventDefault();
+        event.stopPropagation();
+        return toggleFollow(unfollow.dataset.unfollow);
+      }
+      const goto = event.target.closest("[data-goto]");
+      if (goto) {
+        event.preventDefault();
+        setTab(goto.dataset.goto);
+      }
+    });
+    $("#followRefresh").addEventListener("click", () => loadFollows(true));
+
+    $("#briefClose").addEventListener("click", closeBrief);
+    $("#briefBackdrop").addEventListener("click", closeBrief);
 
     $("#refreshBtn").addEventListener("click", refresh);
     const toTop = $("#toTop");
@@ -697,12 +993,9 @@
     $("#drawerBackdrop").addEventListener("click", closeDrawer);
     $("#resetBtn").addEventListener("click", resetTaste);
     $("#empty").addEventListener("click", (event) => {
+      if (event.target.closest("[data-follow-refresh]")) return loadFollows(true);
       const goto = event.target.closest("[data-goto]");
-      if (!goto) return;
-      state.tab = goto.dataset.goto;
-      localStorage.setItem("gp.tab", state.tab);
-      renderTabs();
-      renderCards();
+      if (goto) setTab(goto.dataset.goto);
     });
     $("#howBtn").addEventListener("click", () => {
       openDrawer();
@@ -713,7 +1006,13 @@
     });
 
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && $("#drawer").classList.contains("open")) closeDrawer();
+      if (event.key === "Escape") {
+        if (!$("#briefModal").hidden) {
+          closeBrief();
+          return;
+        }
+        if ($("#drawer").classList.contains("open")) closeDrawer();
+      }
       if (event.target.matches("input, textarea")) return;
       if (event.key === "t" && !event.metaKey && !event.ctrlKey) openDrawer();
       if (event.key === "r" && !event.metaKey && !event.ctrlKey) refresh();
@@ -731,12 +1030,14 @@
       if (digestRes.status === 202 || digestRes.data.pending) {
         renderPending((statusRes.data.state && statusRes.data.state.stage) || "正在生成今天的日报");
         $("#refreshBtn").disabled = true;
+        loadFollows();
         pollUntilReady();
         return;
       }
       state.digest = digestRes.data;
       renderAll();
       $("#refreshBtn").disabled = false;
+      loadFollows();
       if (location.hash === "#taste") openDrawer();
       
       if (statusRes.data.state && statusRes.data.state.running) {

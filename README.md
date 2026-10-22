@@ -1,15 +1,19 @@
 # GitPulse · 今日 GitHub 信号
 
-一个**完全本地运行**的 GitHub 每日热榜，重点是两件事：
+一个**完全本地运行**的 GitHub 每日热榜，重点覆盖四件事：
 
-1. 不只复述 Trending 排名，而是把「今天很热」「涨得很快」「刚冒出来」三种信号分开，再给出热度分、中文简介与 README 速读。
+1. 不只复述 Trending 排名，而是把「今天很热」「涨得很快」「刚冒出来」三种信号分开，再给出热度分、中文简介与项目速读。
 2. 它会学习你的口味。每个项目都可以点 **👍 喜欢 / 👎 不喜欢**，模型立即重排今日榜单，并把这些反馈沉淀成一份可解释的偏好画像。
+3. 你可以关注喜欢的发布者。他们之后的新 release / 新仓库会进入独立的「关注」视图，不混进每日热榜。
+4. 每个项目都有「项目速读」：适合谁、怎么用、解决什么问题、典型场景。
 
 无需登录，无需 API Key，无第三方 Python 依赖。数据与口味模型都只写在本机的 `data/gitpulse.db`。
 
 ![GitPulse 桌面端](docs/desktop.png)
 
 <p align="center"><img src="docs/mobile.png" width="360" alt="移动端"></p>
+
+> 截图中的关注与评价是演示数据；交付时已清空，打开后从空状态开始。
 
 ---
 
@@ -87,12 +91,39 @@ P(喜欢) = sigmoid(bias + Σ weight[feature])
 
 所有特征、权重、证据数都在「我的口味」抽屉里可见。点「清空口味记忆」会删除反馈与权重，榜单立即回到热度排序。
 
-### 4. 界面
+### 4. 关注发布者
+
+关注按钮在每张卡片的作者名旁。关注后，「关注」视图会汇总这位发布者近 14 天的：
+
+- GitHub Release（版本号 + release notes）；
+- 新建的公开仓库。
+
+抓取优先走 GitHub 的公开 Atom feed（不消耗 API 配额）；组织账号的 user feed 经常为空，会额外读取已知仓库的 releases feed。每 20 分钟最多刷新一次，最多关注 20 位发布者。
+
+关注动态和每日热榜是两条独立的数据流：热榜每天重算，关注动态只属于你自己。
+
+![关注动态](docs/follows.png)
+
+### 5. 项目速读
+
+每张卡片都有「项目速读」，打开后显示：
+
+- **适合谁**：目标用户/团队；
+- **怎么用**：CLI、Docker 自托管、编辑器插件、SDK/API、阅读型资源等，根据 topics 判断；
+- **解决什么问题**：这个方向最常见的痛点；
+- **典型场景**：结合 topics 生成的可落地场景；
+- **上手门槛**：需要命令行、Docker、某语言运行环境，或只需阅读。
+
+内容是**基于项目简介、语言与 topics 的自动归纳**，界面会明确提示“具体命令与限制以 README 为准”，不假装比 README 更懂项目。
+
+![项目速读](docs/brief.png)
+
+### 6. 界面
 
 - 编辑感深色版面 + 荧光绿信号色；桌面双栏，移动端单栏；
 - 顶部总览：收录数、今日新增 star、最快增速、平均口味匹配；
-- 五类视图：为你推荐 / 热度猛增 / 新星崛起 / 持续走热 / 已收藏；
-- 卡片内：热度环、中文简介、英文原文、README 速读、topics、今日/本周增量、匹配理由；
+- 六类视图：为你推荐 / 热度猛增 / 新星崛起 / 持续走热 / 关注 / 已收藏；
+- 卡片内：热度环、中文简介、英文原文、topics、今日/本周增量、匹配理由，以及「项目速读」入口；
 - 反馈后即时重排（FLIP 位移动画），并弹出模型学习提示；
 - 口味抽屉展示领域/语言/topic/关键词权重，以及会主动避开的特征。
 
@@ -109,8 +140,9 @@ P(喜欢) = sigmoid(bias + Σ weight[feature])
 安装后：
 
 - 登录时自动启动本地服务；
-- 服务常驻，每天 **08:30（Asia/Shanghai）** 自动刷新；
-- 即使 08:30 时电脑休眠，唤醒后也会补跑当天日报；
+- 服务常驻，每天 **08:00（Asia/Shanghai）** 自动刷新；
+- 如果 08:00 时断网，生成失败后每 10 分钟重试一次；联网后自动补跑当天日报；
+- 即使 08:00 时电脑休眠，唤醒后也会补跑当天日报；
 - 日志：`data/launchd.err.log`。
 
 卸载：
@@ -119,10 +151,27 @@ P(喜欢) = sigmoid(bias + Σ weight[feature])
 ./scripts/uninstall-daily.sh
 ```
 
-### 方式 B：cron（macOS / Linux）
+### 方式 B：Harness 自动化任务
+
+本次已在 DeepSeek Harness 中创建每日 **08:00** 的任务，提示词会运行：
+
+```bash
+./scripts/daily-update.sh
+```
+
+脚本行为：
+
+- 如果当天日报已存在：直接返回，不重复抓取；
+- 在线：触发本地服务刷新，并轮询到完成；
+- 离线：退出码 `75`，Harness 任务会等待 10 分钟后重试；本机调度器也会持续重试；
+- 服务未运行时：直接执行一次 `python3 app.py refresh`。
+
+Harness 日程适合“到点提醒/触发”，LaunchAgent 适合“关掉会话也能持续运行”，两者可以同时保留。
+
+### 方式 C：cron（macOS / Linux）
 
 ```cron
-30 8 * * * cd /path/to/gitpulse && /usr/bin/python3 app.py refresh >> data/cron.log 2>&1
+0 8 * * * cd /path/to/gitpulse && /usr/bin/python3 app.py refresh >> data/cron.log 2>&1
 ```
 
 这种方式只生成数据；要看界面仍需运行 `./run.sh`。
@@ -139,7 +188,7 @@ P(喜欢) = sigmoid(bias + Σ weight[feature])
 | --- | --- | --- |
 | `GITPULSE_PORT` | `8791` | 本地端口 |
 | `GITPULSE_HOST` | `127.0.0.1` | 只监听本机 |
-| `GITPULSE_REFRESH_TIME` | `08:30` | 每日刷新时间 |
+| `GITPULSE_REFRESH_TIME` | `08:00` | 每日刷新时间 |
 | `GITPULSE_TIMEZONE` | `Asia/Shanghai` | 时区 |
 | `GITPULSE_MAX_ITEMS` | `30` | 日报条数 |
 | `GITPULSE_TRANSLATE` | `1` | 设为 `0` 关闭中文翻译 |
@@ -172,6 +221,10 @@ GITPULSE_PORT=9000 GITPULSE_REFRESH_TIME=09:00 ./run.sh
 | POST | `/api/bookmark` | `{repo}`，切换收藏 |
 | POST | `/api/rerank` | 按当前模型重排 |
 | POST | `/api/reset` | 清空口味记忆 |
+| GET | `/api/follows` | 关注列表 + 发布动态 |
+| GET | `/api/follows?refresh=1` | 强制刷新关注动态 |
+| POST | `/api/follow` | `{owner}`，关注/取消关注 |
+| POST | `/api/follows/refresh` | 刷新全部关注 |
 | GET | `/api/prefs` | 当前偏好画像 |
 | GET | `/api/health` | 健康检查 |
 
@@ -181,6 +234,7 @@ GITPULSE_PORT=9000 GITPULSE_REFRESH_TIME=09:00 ./run.sh
 python3 app.py refresh   # 生成一次
 python3 app.py rerank    # 按最新模型重排
 python3 app.py reset     # 清空反馈
+./scripts/daily-update.sh  # 带网络检测的每日更新（Harness/cron 入口）
 python3 app.py serve     # 启动 UI + 每日调度
 ```
 
@@ -200,7 +254,7 @@ gitpulse/
 │   ├── db.py               # SQLite schema 与访问
 │   └── config.py           # 环境变量配置
 ├── web/                    # 原生前端
-├── scripts/                # LaunchAgent 安装/卸载
+├── scripts/                # LaunchAgent 安装/卸载、每日更新脚本
 ├── data/gitpulse.db        # 日报、反馈、权重（本地）
 └── run.sh
 ```
@@ -213,6 +267,8 @@ gitpulse/
 - 免费翻译在专业术语上偶有生硬；英文原文始终保留。
 - GitHub 页面结构变化可能影响 Trending 解析；解析失败时会保留上一份日报并在界面提示。
 - 部分网络环境无法加载 GitHub 头像；前端会自动回退到基于用户名生成的渐变首字母头像。
+- 关注动态依赖 GitHub 公开 Atom feed / Release feed；组织账号没有公开 activity 时，可能只能看到新仓库，不能看到 release。
+- 关注动态默认保留近 14 天、每位发布者最多展示 5 条，避免刷屏。
 - 后续可做：按 topic 静音、周报、邮件/系统通知、GitHub Star 同步、LLM 生成更自然的中文摘要、历史趋势 sparkline、多人配置。
 
 ---
