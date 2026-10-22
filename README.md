@@ -254,6 +254,37 @@ python app.py radar query 芯片 突破    # 自由关键词调查
 
 > 实测：`google/gemma-4-26b-a4b-it:free` 在当前时段经常被上游限流（429），而 `recursive/flint-v1.0:free` 可以正常返回。OpenRouter 的免费池是共享的，可用性会随时间变化。
 
+### 备用接口（额度用尽自动切换）
+
+免费模型有每日上限，用完后当天的 AI 功能就废了。所以支持配一个备用接口：
+
+- 主接口返回 **额度类错误**（429 / 402 / `free-models-per-day` / `insufficient`）时，自动切到备用接口重试；
+- 切换状态写在本机 `data/ai_state.json`，记录「到哪天为止用备用」；
+- **第二天自动切回主接口**，不需要手动改配置；
+- 全局设置页可以看当前用的是哪个接口、什么时候切回，也能「立即切回主接口」，两个 Key 分开保存。
+
+![全局设置](docs/llm-settings.png)
+
+```json
+{
+  "llm": {
+    "enabled": true,
+    "provider": "openai_compatible",
+    "base_url": "https://openrouter.ai/api/v1",
+    "model": "recursive/flint-v1.0:free",
+    "fallback": {
+      "enabled": true,
+      "provider": "openai_compatible",
+      "base_url": "https://api.deepseek.com",
+      "model": "deepseek-chat",
+      "api_key_env": "RADAR_LLM_API_KEY_FALLBACK"
+    }
+  }
+}
+```
+
+两个 Key 分开存：主接口用 `RADAR_LLM_API_KEY` 或 `data/ai_secrets.json` 里的 `llm_api_key`；备用接口用 `RADAR_LLM_API_KEY_FALLBACK` 或同文件的 `llm_api_key_fallback`。切换只影响调用路由，不改变你的配置。
+
 密钥只保存在本机 `data/ai_secrets.json`（已 gitignore），不会写进配置文件，接口也只返回掩码。配置本身写在 `app_settings.json`：
 
 ```json

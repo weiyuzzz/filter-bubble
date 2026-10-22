@@ -359,7 +359,14 @@ python -m unittest discover -s tests -v
 - 只写入 `data/ai_secrets.json`（已在 `.gitignore` 里），**不会**写进 `app_settings.json`
 - 任何接口都只返回「是否已配置」和掩码（如 `sk-o…7890`），不回传明文
 - 环境变量 `RADAR_LLM_API_KEY` 优先于文件，方便用 `.env` 或系统环境管理
+- 备用接口的 Key 单独存：环境变量 `RADAR_LLM_API_KEY_FALLBACK` 或文件里的 `llm_api_key_fallback`
 - 监控设置里可以一键「清除密钥」
+
+#### 主接口额度用尽怎么办
+
+在全局设置里填「备用接口」，主接口返回 429 / 402 / `free-models-per-day` 时会自动切换，
+并把切换状态写到 `data/ai_state.json`（记录「到哪天为止用备用」）；**第二天自动切回主接口**。
+页面会显示当前用的是哪个接口、什么时候切回，也可以手动「立即切回主接口」。
 
 #### 也可以直接改配置文件
 

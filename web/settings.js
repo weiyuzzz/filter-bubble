@@ -51,9 +51,15 @@
     const ai = data.ai || {};
     const key = llm.key || {};
     const stats = llm.stats || {};
+    const fb = llm.fallback || {};
+    const fbKey = fb.key || {};
+    const slot = { active: llm.active_slot || "primary" };
+    const switchState = llm.switch || {};
 
     $("#aiDot").className = "live-dot" + (llm.available ? "" : " live");
-    $("#aiState").textContent = llm.available ? "模型可用" : "模型不可用";
+    $("#aiState").textContent = slot.active === "fallback"
+      ? "使用备用模型"
+      : (llm.available ? "模型可用" : "模型不可用");
 
     body.innerHTML = `
       <section class="panel">
@@ -103,6 +109,49 @@
       </section>
 
       <section class="panel">
+        <h3>备用接口</h3>
+        <p class="hint">主接口额度用尽（429 / free-models-per-day 之类）时自动切到这里，第二天自动切回主接口。三个模块共用这套切换。</p>
+        <div class="field-row">
+          <div class="field"><label for="setFallbackEnabled">启用备用接口</label>
+            <select id="setFallbackEnabled">
+              <option value="1" ${fb.enabled ? "selected" : ""}>启用</option>
+              <option value="0" ${fb.enabled ? "" : "selected"}>关闭</option>
+            </select>
+          </div>
+          <div class="field"><label for="setFallbackProvider">接口类型</label>
+            <select id="setFallbackProvider">
+              <option value="openai_compatible" ${fb.provider === "openai_compatible" ? "selected" : ""}>OpenAI 兼容 / OpenRouter</option>
+              <option value="ollama" ${fb.provider === "ollama" ? "selected" : ""}>本地 Ollama</option>
+            </select>
+          </div>
+          <div class="field"><label for="setFallbackBaseUrl">接口地址</label>
+            <input id="setFallbackBaseUrl" type="text" placeholder="https://openrouter.ai/api/v1" value="${esc(fb.base_url || "")}">
+          </div>
+          <div class="field"><label for="setFallbackModel">模型名</label>
+            <input id="setFallbackModel" type="text" placeholder="例如 openai/gpt-4o-mini" value="${esc(fb.model || "")}">
+          </div>
+        </div>
+        <div class="field-row" style="margin-top:12px">
+          <div class="field"><label for="setFallbackKey">备用 API Key ${fbKey.configured ? `（已配置 ${esc(fbKey.masked)}）` : "（未配置）"}</label>
+            <input id="setFallbackKey" type="password" autocomplete="off" placeholder="${fbKey.configured ? "留空表示不修改" : "粘贴备用接口的 key"}">
+          </div>
+        </div>
+        <div class="ev-meta" style="margin-top:12px">
+          ${slot.active === "fallback"
+            ? `<span class="chip warn">当前使用备用接口（到 ${esc(switchState.fallback_until || "明天")} 自动切回）</span>`
+            : `<span class="chip ok">当前使用主接口</span>`}
+          ${fb.available ? chip("备用可用", "ok") : chip("备用未就绪：" + (fb.unavailable_reason || ""), "warn")}
+          ${switchState.reason ? `<span class="chip">切换原因：${esc(switchState.reason.slice(0, 40))}</span>` : ""}
+        </div>
+        <div class="ev-actions">
+          <button class="ghost-btn" id="testFallbackBtn" type="button">测试备用接口</button>
+          ${slot.active === "fallback" ? `<button class="ghost-btn" id="resetSlotBtn" type="button">立即切回主接口</button>` : ""}
+          ${fbKey.configured ? `<button class="ghost-btn" id="clearFallbackKeyBtn" type="button">清除备用密钥</button>` : ""}
+        </div>
+        <div id="fallbackTestResult" style="margin-top:12px"></div>
+      </section>
+
+      <section class="panel">
         <h3>AI 解读</h3>
         <div class="field-row">
           <div class="field"><label for="setBriefsEnabled">GitHub 项目 AI 解读</label>
@@ -131,7 +180,56 @@
     $("#testBtn").addEventListener("click", test);
     const clearBtn = $("#clearBtn");
     if (clearBtn) clearBtn.addEventListener("click", clearKey);
+    const testFb = $("#testFallbackBtn");
+    if (testFb) testFb.addEventListener("click", testFallback);
+    const clearFb = $("#clearFallbackKeyBtn");
+    if (clearFb) clearFb.addEventListener("click", clearFallbackKey);
+    const resetSlot = $("#resetSlotBtn");
+    if (resetSlot) resetSlot.addEventListener("click", resetSlotNow);
     loadErrors();
+  }
+
+  async function testFallback() {
+    const box = $("#fallbackTestResult");
+    if (box) box.innerHTML = `<p class="pending">正在请求备用接口…</p>`;
+    try {
+      const data = await api("/api/ai/test", { method: "POST", body: JSON.stringify({ slot: "fallback" }) });
+      const result = data.result || {};
+      if (box) {
+        box.innerHTML = result.ok
+          ? `<div class="claim"><div class="claim-head"><p class="claim-text">备用接口返回正常</p>${chip((result.latency_ms || 0) + "ms", "ok")}</div>
+             <div class="claim-rationale">模型：${esc(result.model || "")} · 接口：${esc(result.base_url || "")}</div></div>`
+          : `<div class="error-state" style="padding:12px 0"><p>备用接口不可用：${esc(result.reason || "未知原因")}</p></div>`;
+      }
+      toast(result.ok ? "备用接口可用" : "备用接口不可用", !result.ok);
+      render(data.settings);
+    } catch (error) {
+      if (box) box.innerHTML = `<p class="empty">测试失败：${esc(error.message)}</p>`;
+    }
+  }
+
+  async function clearFallbackKey() {
+    try {
+      const data = await api("/api/ai/settings", {
+        method: "POST", body: JSON.stringify({ clear_fallback_api_key: true }),
+      });
+      toast("已清除备用密钥");
+      render(data.settings);
+    } catch (error) {
+      toast("清除失败：" + error.message, true);
+    }
+  }
+
+  async function resetSlotNow() {
+    try {
+      const data = await api("/api/ai/settings", {
+        method: "POST", body: JSON.stringify({ reset_slot: true }),
+      });
+      toast("已切回主接口");
+      render(data.settings);
+    } catch (error) {
+      toast("切换失败：" + error.message, true);
+    }
   }
 
   async function loadErrors() {
@@ -161,7 +259,14 @@
         briefs_per_run: Number($("#setBriefsPerRun").value),
         concurrency: Number($("#setConcurrency").value),
       },
+      fallback: {
+        enabled: $("#setFallbackEnabled").value === "1",
+        provider: $("#setFallbackProvider").value,
+        base_url: $("#setFallbackBaseUrl").value.trim(),
+        model: $("#setFallbackModel").value.trim(),
+      },
       api_key: $("#setApiKey") ? $("#setApiKey").value.trim() : "",
+      fallback_api_key: $("#setFallbackKey") ? $("#setFallbackKey").value.trim() : "",
     };
     try {
       const data = await api("/api/ai/settings", { method: "POST", body: JSON.stringify(bodyData) });

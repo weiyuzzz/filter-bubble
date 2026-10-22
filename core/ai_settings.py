@@ -28,6 +28,14 @@ DEFAULTS: Dict[str, Any] = {
         "max_attempts": 2,
         "temperature": 0.2,
         "max_tokens": 1500,
+        # 备用接口：主接口额度用尽时自动切过来，第二天自动切回
+        "fallback": {
+            "enabled": False,
+            "provider": "openai_compatible",
+            "base_url": "",
+            "model": "",
+            "api_key_env": "RADAR_LLM_API_KEY_FALLBACK",
+        },
     },
     "ai": {
         # GitHub 项目 AI 解读：每天为多少个项目生成（其余按需在页面里生成）
@@ -82,9 +90,17 @@ def save(updates: Dict[str, Any]) -> Dict[str, Any]:
     llm = current.setdefault("llm", {})
     incoming_llm = updates.get("llm") or {}
     for key in ("enabled", "provider", "base_url", "model", "api_key_env",
-                "timeout_seconds", "max_attempts", "temperature"):
+                "timeout_seconds", "max_attempts", "temperature", "max_tokens"):
         if key in incoming_llm:
             llm[key] = incoming_llm[key]
+
+    # 备用接口是嵌套字典，单独合并，避免被上面的白名单忽略
+    incoming_fb = incoming_llm.get("fallback")
+    if isinstance(incoming_fb, dict) and incoming_fb:
+        fallback = current.setdefault("llm", {}).setdefault("fallback", {})
+        for key in ("enabled", "provider", "base_url", "model", "api_key_env"):
+            if key in incoming_fb:
+                fallback[key] = incoming_fb[key]
 
     ai = current.setdefault("ai", {})
     incoming_ai = updates.get("ai") or {}

@@ -171,5 +171,111 @@ class TestAiBrief(unittest.TestCase):
         self.assertEqual(item["brief"]["what"], "缓存里的解读")
 
 
+class TestFallback(unittest.TestCase):
+    """主接口额度用尽 → 切备用；第二天自动切回。"""
+
+    def setUp(self):
+        ai_client.reset_slot()
+        os.environ.pop("RADAR_LLM_API_KEY_FALLBACK", None)
+        ai_secrets.set_api_key(None, "fallback")
+        self.cfg = {
+            "llm": {
+                "enabled": True, "provider": "openai_compatible",
+                "base_url": "http://127.0.0.1:9/v1", "model": "primary-model",
+                "timeout_seconds": 2, "max_attempts": 1,
+                "fallback": {
+                    "enabled": True, "provider": "openai_compatible",
+                    "base_url": "http://127.0.0.1:9/v1", "model": "backup-model",
+                },
+            }
+        }
+
+    def tearDown(self):
+        ai_client.reset_slot()
+        ai_secrets.set_api_key(None, "fallback")
+
+    def test_quota_errors_are_detected(self):
+        self.assertTrue(ai_client.is_quota_error({"status": 429, "message": "x"}))
+        self.assertTrue(ai_client.is_quota_error({"status": 402, "message": ""}))
+        self.assertTrue(ai_client.is_quota_error(
+            {"status": 0, "message": "Rate limit exceeded: free-models-per-day"}))
+        self.assertFalse(ai_client.is_quota_error({"status": 500, "message": "server error"}))
+        self.assertFalse(ai_client.is_quota_error(None))
+
+    def test_fallback_disabled_reports_reason(self):
+        ok, reason, _ = ai_client.resolve({"llm": {"enabled": True, "model": "m"}}, "fallback")
+        self.assertFalse(ok)
+        self.assertIn("未配置备用接口", reason)
+
+    def test_fallback_resolves_when_configured(self):
+        ok, _reason, resolved = ai_client.resolve(self.cfg, "fallback")
+        self.assertTrue(ok)
+        self.assertEqual(resolved["model"], "backup-model")
+        self.assertEqual(resolved["slot"], "fallback")
+
+    def test_switch_and_next_day_revert(self):
+        ai_client.switch_to_fallback("quota exhausted")
+        self.assertEqual(ai_client.active_slot(), "fallback")
+        state = ai_client.slot_state()
+        self.assertTrue(state["fallback_until"])
+        self.assertIn("quota", state["reason"])
+
+        # 模拟到第二天：把到期日改成昨天
+        raw = ai_client._load_state()
+        raw["fallback_until"] = "2020-01-01"
+        ai_client._save_state(raw)
+        self.assertEqual(ai_client.active_slot(), "primary")
+        self.assertEqual(ai_client.slot_state()["fallback_until"], "")
+
+    def test_reset_slot_returns_to_primary(self):
+        ai_client.switch_to_fallback("x")
+        self.assertEqual(ai_client.active_slot(), "fallback")
+        ai_client.reset_slot()
+        self.assertEqual(ai_client.active_slot(), "primary")
+
+    def test_test_connection_targets_specific_slot(self):
+        result = ai_client.test_connection(self.cfg, "fallback")
+        self.assertEqual(result["slot"], "fallback")
+        self.assertFalse(result["ok"])  # 端口关着，只验证没有触发切换
+        self.assertEqual(ai_client.active_slot(), "primary")
+
+    def test_status_exposes_fallback_and_slot(self):
+        status = ai_client.status(self.cfg)
+        self.assertEqual(status["active_slot"], "primary")
+        self.assertTrue(status["fallback"]["configured"])
+        self.assertIn("switch", status)
+
+    def test_primary_and_fallback_keys_are_separate(self):
+        ai_secrets.set_api_key("sk-primary-1234", "primary")
+        ai_secrets.set_api_key("sk-backup-5678", "fallback")
+        self.assertEqual(ai_secrets.get_api_key(ai_secrets.ENV_NAME, "primary")[0],
+                         "sk-primary-1234")
+        self.assertEqual(ai_secrets.get_api_key(ai_secrets.FALLBACK_ENV_NAME, "fallback")[0],
+                         "sk-backup-5678")
+        ai_secrets.set_api_key(None, "fallback")
+        self.assertEqual(ai_secrets.get_api_key(ai_secrets.FALLBACK_ENV_NAME, "fallback")[0], "")
+        self.assertEqual(ai_secrets.get_api_key(ai_secrets.ENV_NAME, "primary")[0],
+                         "sk-primary-1234")
+        ai_secrets.set_api_key(None, "primary")
+
+    def test_settings_save_persists_fallback_without_key(self):
+        from core import ai_api
+
+        if ai_settings.CONFIG_PATH.exists():
+            ai_settings.CONFIG_PATH.unlink()
+        ai_api._save({
+            "fallback": {"enabled": True, "provider": "openai_compatible",
+                         "base_url": "https://backup.example/v1", "model": "backup-model"},
+            "fallback_api_key": "sk-secret-backup",
+        })
+        raw = ai_settings.CONFIG_PATH.read_text(encoding="utf-8")
+        self.assertIn("backup-model", raw)
+        self.assertNotIn("sk-secret-backup", raw)
+        self.assertEqual(ai_secrets.get_api_key(ai_secrets.FALLBACK_ENV_NAME, "fallback")[0],
+                         "sk-secret-backup")
+        if ai_settings.CONFIG_PATH.exists():
+            ai_settings.CONFIG_PATH.unlink()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

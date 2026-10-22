@@ -1,5 +1,9 @@
 """全局密钥存储（大模型 API Key）。
 
+支持两个槽位：
+* ``primary``：主接口的 Key；
+* ``fallback``：备用接口的 Key（主接口额度用尽时自动切换）。
+
 * 只写 ``data/ai_secrets.json``，该文件已在 .gitignore 里；
 * 接口只返回「是否已配置」与掩码，绝不回传明文；
 * 环境变量优先，方便用 .env / 系统环境变量管理。
@@ -18,6 +22,10 @@ SECRETS_PATH = Path(os.environ.get("AI_SECRETS", str(DATA_DIR / "ai_secrets.json
 # 兼容旧路径（早期版本用的是 radar_secrets.json）
 LEGACY_PATH = Path(os.environ.get("RADAR_SECRETS", str(DATA_DIR / "radar_secrets.json")))
 ENV_NAME = "RADAR_LLM_API_KEY"
+FALLBACK_ENV_NAME = "RADAR_LLM_API_KEY_FALLBACK"
+
+SLOTS = ("primary", "fallback")
+_FIELD = {"primary": "llm_api_key", "fallback": "llm_api_key_fallback"}
 
 
 def _read() -> Dict[str, Any]:
@@ -41,28 +49,36 @@ def _write(data: Dict[str, Any]) -> None:
         pass
 
 
-def get_api_key(env_name: str = ENV_NAME) -> Tuple[str, str]:
+def _slot(value: str) -> str:
+    return value if value in SLOTS else "primary"
+
+
+def get_api_key(env_name: str = ENV_NAME, slot: str = "primary") -> Tuple[str, str]:
+    slot = _slot(slot)
     from_env = (os.environ.get(env_name) or "").strip()
     if from_env:
         return from_env, "env:" + env_name
-    stored = str(_read().get("llm_api_key") or "").strip()
+    stored = str(_read().get(_FIELD[slot]) or "").strip()
     if stored:
         return stored, "file:" + SECRETS_PATH.name
+    # 主接口兼容最早期只有 llm_api_key 的情况（字段名相同，无需额外处理）
     return "", ""
 
 
-def set_api_key(value: Optional[str]) -> bool:
+def set_api_key(value: Optional[str], slot: str = "primary") -> bool:
+    slot = _slot(slot)
+    field = _FIELD[slot]
     data = _read()
     value = (value or "").strip()
     if not value:
-        if "llm_api_key" in data:
-            data.pop("llm_api_key", None)
+        if field in data:
+            data.pop(field, None)
             _write(data)
             return True
         return False
-    if data.get("llm_api_key") == value:
+    if data.get(field) == value:
         return False
-    data["llm_api_key"] = value
+    data[field] = value
     _write(data)
     return True
 
@@ -75,6 +91,7 @@ def mask(key: str) -> str:
     return "%s…%s" % (key[:4], key[-4:])
 
 
-def public_state(env_name: str = ENV_NAME) -> Dict[str, Any]:
-    key, source = get_api_key(env_name)
-    return {"configured": bool(key), "masked": mask(key), "source": source, "env_name": env_name}
+def public_state(env_name: str = ENV_NAME, slot: str = "primary") -> Dict[str, Any]:
+    key, source = get_api_key(env_name, slot)
+    return {"configured": bool(key), "masked": mask(key), "source": source,
+            "env_name": env_name, "slot": _slot(slot)}

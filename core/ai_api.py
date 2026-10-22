@@ -24,7 +24,9 @@ def _err(status: int, message: str) -> Tuple[int, Dict[str, Any]]:
 def _public() -> Dict[str, Any]:
     cfg = ai_settings.load()
     llm = cfg.get("llm") or {}
+    fb = llm.get("fallback") or {}
     ok, reason, resolved = ai_client.resolve(cfg)
+    fb_ok, fb_reason, _fb_resolved = ai_client.resolve(cfg, "fallback")
     return {
         "llm": {
             "enabled": bool(llm.get("enabled")),
@@ -39,6 +41,20 @@ def _public() -> Dict[str, Any]:
             "key": ai_secrets.public_state(str(llm.get("api_key_env") or ai_secrets.ENV_NAME)),
             "stats": {k: ai_client.STATS.get(k) for k in
                       ("calls", "failures", "prompt_tokens", "completion_tokens", "last_error")},
+            # 主/备切换状态
+            "active_slot": ai_client.active_slot(),
+            "switch": ai_client.slot_state(),
+            "fallback": {
+                "enabled": bool(fb.get("enabled")),
+                "provider": fb.get("provider") or "openai_compatible",
+                "base_url": fb.get("base_url") or "",
+                "model": fb.get("model") or "",
+                "available": fb_ok,
+                "unavailable_reason": fb_reason,
+                "api_key_env": fb.get("api_key_env") or ai_secrets.FALLBACK_ENV_NAME,
+                "key": ai_secrets.public_state(
+                    str(fb.get("api_key_env") or ai_secrets.FALLBACK_ENV_NAME), "fallback"),
+            },
         },
         "ai": {
             "briefs_per_run": int((cfg.get("ai") or {}).get("briefs_per_run") or 12),
@@ -70,7 +86,10 @@ def handle_post(path: str, body: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
             return _ok(_save(body))
         if path == "/api/ai/test":
             cfg = ai_settings.load()
-            result = ai_client.test_connection(cfg)
+            slot = str(body.get("slot") or "primary")
+            if slot not in ("primary", "fallback"):
+                slot = "primary"
+            result = ai_client.test_connection(cfg, slot)
             return _ok({"result": result, "settings": _public()})
         if path == "/api/ai/clear-key":
             changed = ai_secrets.set_api_key(None)
@@ -134,13 +153,44 @@ def _save(body: Dict[str, Any]) -> Dict[str, Any]:
         except (TypeError, ValueError):
             continue
 
+    # 备用接口
+    incoming_fb = body.get("fallback") if isinstance(body.get("fallback"), dict) else {}
+    if incoming_fb:
+        fb_updates: Dict[str, Any] = {}
+        for key in ("enabled", "provider", "base_url", "model", "api_key_env"):
+            if key not in incoming_fb:
+                continue
+            value = incoming_fb[key]
+            if key == "enabled":
+                fb_updates[key] = _coerce(value, "bool")
+            elif key == "provider":
+                provider = str(value or "")
+                if provider in ai_client.PROVIDERS:
+                    fb_updates[key] = provider
+            else:
+                fb_updates[key] = str(value or "")[:300]
+            saved["fallback_" + key] = fb_updates[key]
+        if fb_updates:
+            updates["llm"]["fallback"] = fb_updates
+
     ai_settings.save(updates)
 
+    if body.get("reset_slot"):
+        ai_client.reset_slot()
+        saved["slot"] = "primary"
+
     if body.get("clear_api_key"):
-        if ai_secrets.set_api_key(None):
+        if ai_secrets.set_api_key(None, "primary"):
             saved["api_key"] = "cleared"
     elif str(body.get("api_key") or "").strip():
-        if ai_secrets.set_api_key(str(body["api_key"])):
+        if ai_secrets.set_api_key(str(body["api_key"]), "primary"):
             saved["api_key"] = "saved"
+
+    if body.get("clear_fallback_api_key"):
+        if ai_secrets.set_api_key(None, "fallback"):
+            saved["fallback_api_key"] = "cleared"
+    elif str(body.get("fallback_api_key") or "").strip():
+        if ai_secrets.set_api_key(str(body["fallback_api_key"]), "fallback"):
+            saved["fallback_api_key"] = "saved"
 
     return {"saved": saved, "settings": _public()}

@@ -1,7 +1,12 @@
 """全局大模型客户端。
 
 负责：解析配置、发请求、结构化错误、失败分类与重试、错误日志、用量统计。
-两个模块（GitHub 项目解读、热点摘要）以及后续新功能都通过它调用模型。
+所有模块（GitHub 项目解读、热点摘要、学术论文）都通过它调用模型。
+
+支持主接口 + 备用接口：
+* 主接口额度用尽（429/402/额度类错误）时自动切到备用接口；
+* 切换状态写进 ``data/ai_state.json``，记录「切到哪天为止」；
+* 到了第二天自动切回主接口，避免一直用备用的（备用通常更贵或更慢）。
 """
 from __future__ import annotations
 
@@ -20,11 +25,16 @@ from .config import DATA_DIR
 
 PROVIDERS = ("openai_compatible", "ollama")
 ERROR_LOG = Path(os.environ.get("AI_ERROR_LOG", str(DATA_DIR / "llm-errors.log")))
+STATE_PATH = Path(os.environ.get("AI_STATE", str(DATA_DIR / "ai_state.json")))
 
 STATS: Dict[str, Any] = {"calls": 0, "failures": 0, "prompt_tokens": 0,
                          "completion_tokens": 0, "last_error": "", "last_latency_ms": 0}
 
 RETRY_STATUSES = (429, 500, 502, 503, 504)
+# 这些错误说明「这个接口暂时用不了」，值得切备用
+QUOTA_STATUSES = (402, 429)
+QUOTA_PATTERNS = ("rate limit", "quota", "insufficient", "free-models-per-day",
+                  "exceeded your", "budget", "credit")
 HINTS = {
     401: "API Key 无效或已过期，请在全局设置里重新填写。",
     403: "这个 Key 没有访问该模型的权限，或模型需要付费额度。",
@@ -37,15 +47,111 @@ HINTS = {
 }
 
 
+# ---------------- 主/备切换状态 ----------------
+
+def _today() -> str:
+    return dt.datetime.now().astimezone().date().isoformat()
+
+
+def _load_state() -> Dict[str, Any]:
+    try:
+        if STATE_PATH.exists():
+            data = json.loads(STATE_PATH.read_text(encoding="utf-8-sig") or "{}")
+            if isinstance(data, dict):
+                return data
+    except Exception:  # noqa: BLE001
+        pass
+    return {}
+
+
+def _save_state(state: Dict[str, Any]) -> None:
+    try:
+        STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        STATE_PATH.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n",
+                              encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001
+        print("[ai] state write failed:", exc)
+
+
+def active_slot() -> str:
+    """当前应该优先用哪个接口。切到备用后，到第二天自动回到主接口。"""
+    state = _load_state()
+    until = str(state.get("fallback_until") or "")
+    if until and _today() <= until:
+        return "fallback"
+    if until and _today() > until:
+        # 新的一天：清掉切换标记，回到主接口
+        state.pop("fallback_until", None)
+        state.pop("fallback_reason", None)
+        _save_state(state)
+    return "primary"
+
+
+def switch_to_fallback(reason: str = "") -> None:
+    """主接口额度用尽：切到备用，并记录到明天为止。"""
+    state = _load_state()
+    tomorrow = (dt.datetime.now().astimezone().date() + dt.timedelta(days=1)).isoformat()
+    state["fallback_until"] = tomorrow
+    state["fallback_reason"] = (reason or "")[:200]
+    state["switched_at"] = dt.datetime.now().astimezone().isoformat(timespec="seconds")
+    _save_state(state)
+    print("[ai] 主接口额度用尽，已切换到备用接口（到 %s）" % tomorrow)
+
+
+def reset_slot() -> None:
+    state = _load_state()
+    state.pop("fallback_until", None)
+    state.pop("fallback_reason", None)
+    state.pop("switched_at", None)
+    _save_state(state)
+
+
+def slot_state() -> Dict[str, Any]:
+    state = _load_state()
+    return {
+        "active": active_slot(),
+        "fallback_until": state.get("fallback_until") or "",
+        "reason": state.get("fallback_reason") or "",
+        "switched_at": state.get("switched_at") or "",
+    }
+
+
+def is_quota_error(error: Optional[Dict[str, Any]]) -> bool:
+    if not error:
+        return False
+    status = int(error.get("status") or 0)
+    if status in QUOTA_STATUSES:
+        return True
+    message = (str(error.get("message") or "") + " " + str(error.get("detail") or "")).lower()
+    return any(pattern in message for pattern in QUOTA_PATTERNS)
+
+
 # ---------------- 配置 ----------------
 
-def resolve(settings: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
-    """返回 (是否可用, 原因, 规范化配置)。settings 可以是整个 app_settings 或只有 llm 段。"""
+def _llm_block(settings: Dict[str, Any], slot: str = "primary") -> Dict[str, Any]:
+    """取出主接口或备用接口的配置；备用继承主接口的通用参数。"""
     llm = settings.get("llm") if isinstance(settings.get("llm"), dict) else settings
-    llm = llm or {}
+    llm = dict(llm or {})
+    if slot != "fallback":
+        return llm
+
+    fallback = llm.get("fallback") if isinstance(llm.get("fallback"), dict) else {}
+    inherited = {k: llm.get(k) for k in ("enabled", "timeout_seconds", "max_attempts",
+                                         "temperature", "max_tokens") if k in llm}
+    merged = {**inherited, **fallback}
+    # 备用是否可用由它自己的 enabled 决定；没写就跟随主开关
+    merged["enabled"] = bool(fallback.get("enabled", False)) and bool(llm.get("enabled", True))
+    merged.setdefault("api_key_env", ai_secrets.FALLBACK_ENV_NAME)
+    return merged
+
+
+def resolve(settings: Dict[str, Any], slot: str = "primary") -> Tuple[bool, str, Dict[str, Any]]:
+    """返回 (是否可用, 原因, 规范化配置)。settings 可以是整个 app_settings 或只有 llm 段。"""
+    llm = _llm_block(settings, slot)
 
     if not llm.get("enabled"):
-        return False, "未启用（全局设置 → 接入大模型）", llm
+        reason = "未启用（全局设置 → 接入大模型）" if slot == "primary" else "未配置备用接口"
+        return False, reason, llm
 
     provider = str(llm.get("provider") or "openai_compatible")
     if provider not in PROVIDERS:
@@ -61,14 +167,15 @@ def resolve(settings: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
         base_url = "http://127.0.0.1:%d" % default_port
     base_url = base_url.rstrip("/")
 
-    env_name = str(llm.get("api_key_env") or ai_secrets.ENV_NAME)
+    env_name = str(llm.get("api_key_env") or
+                   (ai_secrets.FALLBACK_ENV_NAME if slot == "fallback" else ai_secrets.ENV_NAME))
     if provider == "openai_compatible":
-        key, _source = ai_secrets.get_api_key(env_name)
+        key, _source = ai_secrets.get_api_key(env_name, slot)
         if not key and not base_url.startswith(("http://127.0.0.1", "http://localhost")):
             return False, "未填写 API Key（全局设置 → API Key）", llm
 
     return True, "", {**llm, "provider": provider, "model": model,
-                      "base_url": base_url, "api_key_env": env_name}
+                      "base_url": base_url, "api_key_env": env_name, "slot": slot}
 
 
 # ---------------- 错误处理 ----------------
@@ -179,7 +286,8 @@ def _build_request(llm: Dict[str, Any], messages: List[Dict[str, str]],
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
     headers = {"Content-Type": "application/json"}
-    key, _source = ai_secrets.get_api_key(llm.get("api_key_env") or ai_secrets.ENV_NAME)
+    key, _source = ai_secrets.get_api_key(
+        llm.get("api_key_env") or ai_secrets.ENV_NAME, llm.get("slot") or "primary")
     if key:
         headers["Authorization"] = "Bearer " + key
     if "openrouter.ai" in base:
@@ -197,14 +305,9 @@ def _extract(llm: Dict[str, Any], data: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def chat_result(messages: List[Dict[str, str]], settings: Dict[str, Any],
-                json_mode: bool = True) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
-    """调用模型，返回 (文本, 错误)。错误是结构化 dict，绝不抛异常。"""
-    ok, reason, llm = resolve(settings)
-    if not ok:
-        return None, {"status": 0, "message": reason, "detail": "",
-                      "hint": reason, "suggested_model": "", "retryable": False}
-
+def _attempt(llm: Dict[str, Any], messages: List[Dict[str, str]],
+             json_mode: bool) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+    """针对单个接口的一次完整调用（含内部重试与截断处理）。"""
     url, payload, headers = _build_request(llm, messages, json_mode)
     timeout = float(llm.get("timeout_seconds") or 60)
     attempts = max(1, min(3, int(llm.get("max_attempts") or 2)))
@@ -270,12 +373,50 @@ def chat_result(messages: List[Dict[str, str]], settings: Dict[str, Any],
             break
         time.sleep(min(6.0, 1.5 * (attempt + 1)))
 
-    STATS["failures"] += 1
-    STATS["last_error"] = (last_error or {}).get("message", "")[:300]
-    _log_error(int((last_error or {}).get("status") or 0), llm["model"],
-               (last_error or {}).get("message", ""), (last_error or {}).get("detail", ""))
-    print("[ai] call failed:", STATS["last_error"][:160])
     return None, last_error
+
+
+def chat_result(messages: List[Dict[str, str]], settings: Dict[str, Any],
+                json_mode: bool = True) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+    """调用模型，返回 (文本, 错误)。错误是结构化 dict，绝不抛异常。
+
+    先按当前激活的接口（主或备）调用；如果是额度类错误且配了备用接口，
+    自动切到备用并重试一次，同时记录「到明天为止都用备用」。
+    """
+    order = ["primary", "fallback"]
+    if active_slot() == "fallback":
+        order = ["fallback", "primary"]
+
+    first_error: Optional[Dict[str, Any]] = None
+    for index, slot in enumerate(order):
+        ok, reason, llm = resolve(settings, slot)
+        if not ok:
+            if slot == "primary" and not first_error:
+                first_error = {"status": 0, "message": reason, "detail": "", "hint": reason,
+                               "suggested_model": "", "retryable": False}
+            continue
+
+        text, error = _attempt(llm, messages, json_mode)
+        if text:
+            return text, None
+
+        if not first_error:
+            first_error = error
+
+        # 主接口额度用尽且有备用：切换并立即重试
+        if slot == "primary" and is_quota_error(error):
+            fallback_ok, _why, _cfg = resolve(settings, "fallback")
+            if fallback_ok and len(order) == 2:
+                switch_to_fallback((error or {}).get("message", ""))
+                continue
+
+    STATS["failures"] += 1
+    STATS["last_error"] = (first_error or {}).get("message", "")[:300]
+    _log_error(int((first_error or {}).get("status") or 0),
+               (first_error or {}).get("model", "") or "",
+               (first_error or {}).get("message", ""), (first_error or {}).get("detail", ""))
+    print("[ai] call failed:", STATS["last_error"][:160])
+    return None, first_error
 
 
 def chat(messages: List[Dict[str, str]], settings: Dict[str, Any],
@@ -293,25 +434,28 @@ TEST_MESSAGES = [
 ]
 
 
-def test_connection(settings: Dict[str, Any]) -> Dict[str, Any]:
-    ok, reason, llm = resolve(settings)
+def test_connection(settings: Dict[str, Any], slot: str = "primary") -> Dict[str, Any]:
+    """测指定接口（primary / fallback）。不触发自动切换，避免测试改变运行状态。"""
+    ok, reason, llm = resolve(settings, slot)
     if not ok:
         return {"ok": False, "reason": reason, "provider": llm.get("provider", ""),
-                "model": llm.get("model", ""), "latency_ms": 0, "error": None}
+                "model": llm.get("model", ""), "latency_ms": 0, "error": None, "slot": slot}
 
     started = time.time()
-    text, error = chat_result(TEST_MESSAGES, settings, json_mode=True)
+    text, error = _attempt(llm, TEST_MESSAGES, True)
     latency = int((time.time() - started) * 1000)
 
     if text is None:
         return {
             "ok": False,
+            "slot": slot,
             "provider": llm["provider"],
             "model": llm["model"],
             "base_url": llm["base_url"],
             "latency_ms": latency,
             "reason": (error or {}).get("message", "模型没有返回内容"),
             "hint": (error or {}).get("hint", ""),
+            "quota": is_quota_error(error),
             "error": error,
             "log_path": str(ERROR_LOG),
         }
@@ -324,7 +468,7 @@ def test_connection(settings: Dict[str, Any]) -> Dict[str, Any]:
         parsed = None
     protocol_ok = bool(parsed and parsed.get("ok") is True) or "pong" in sample.lower()
     return {
-        "ok": True, "responded": True, "protocol_ok": protocol_ok,
+        "ok": True, "responded": True, "protocol_ok": protocol_ok, "slot": slot,
         "provider": llm["provider"], "model": llm["model"], "base_url": llm["base_url"],
         "latency_ms": latency, "sample": sample, "error": None, "hint": "",
         "note": "" if protocol_ok else "模型有返回，但没有按要求的 JSON 格式回复（仍可用于摘要，只是结构化程度较低）",
@@ -333,9 +477,23 @@ def test_connection(settings: Dict[str, Any]) -> Dict[str, Any]:
 
 def status(settings: Dict[str, Any]) -> Dict[str, Any]:
     ok, reason, llm = resolve(settings)
+    active = active_slot()
+    fb_ok, fb_reason, fb = resolve(settings, "fallback")
     return {
         "available": ok,
         "reason": reason,
+        "active_slot": active,
+        "switch": slot_state(),
+        "fallback": {
+            "configured": bool(_llm_block(settings, "fallback").get("enabled")),
+            "available": fb_ok,
+            "reason": fb_reason,
+            "provider": fb.get("provider", ""),
+            "model": fb.get("model", ""),
+            "base_url": fb.get("base_url", ""),
+            "key": ai_secrets.public_state(
+                str(fb.get("api_key_env") or ai_secrets.FALLBACK_ENV_NAME), "fallback"),
+        },
         "provider": llm.get("provider", ""),
         "model": llm.get("model", ""),
         "base_url": llm.get("base_url", ""),
