@@ -594,8 +594,23 @@ def upsert_story(conn: sqlite3.Connection, story: Dict[str, Any]) -> None:
 
 
 def replace_stories(conn: sqlite3.Connection, date: str, stories: List[Dict[str, Any]]) -> None:
-    """故事是纯聚合结果，每天重建：先清掉当天旧故事，避免历史残留与新结果并存。"""
+    """故事是纯聚合结果，每天重建：先清掉当天旧故事，避免历史残留与新结果并存。
+
+    同时清掉当天事件上失效的 story_id：同一天多次运行时，上一轮的事件如果没进入本轮
+    的聚合范围，不能继续指向一个已经不存在的故事。
+    """
+    member_ids = []
+    for story in stories:
+        member_ids.extend((story.get("metrics") or {}).get("event_ids") or [])
     conn.execute("DELETE FROM radar_stories WHERE date=?", (date,))
+    if member_ids:
+        placeholders = ",".join("?" for _ in member_ids)
+        conn.execute(
+            "UPDATE radar_events SET story_id=NULL WHERE date=? AND id NOT IN (%s)" % placeholders,
+            [date] + member_ids,
+        )
+    else:
+        conn.execute("UPDATE radar_events SET story_id=NULL WHERE date=?", (date,))
     for story in stories:
         upsert_story(conn, story)
 

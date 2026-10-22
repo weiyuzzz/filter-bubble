@@ -304,6 +304,28 @@ class TestSummarisation(unittest.TestCase):
         self.assertEqual(parsed["headline"], "t")
 
 
+class TestStoryLifecycle(unittest.TestCase):
+    def test_stale_story_id_is_cleared(self):
+        """同一天多次运行时，未被本轮聚合的事件不应继续指向已删除的故事。"""
+        _reset_tables()
+        conn = db.connect()
+        try:
+            stale = {"id": "ev-stale", "date": "2026-10-23", "title": "旧事件",
+                     "first_seen_at": "2026-10-23T08:00:00+08:00",
+                     "last_updated_at": "2026-10-23T08:00:00+08:00",
+                     "story_id": "st-old", "item_count": 1, "platform_count": 1,
+                     "source_count": 1, "confidence": "unverified", "heat": 10,
+                     "importance": 10, "category": "", "keywords": [], "tech_flag": False,
+                     "investigation_state": "none", "metrics": {}}
+            store.upsert_event(conn, stale)
+            conn.commit()
+            store.replace_stories(conn, "2026-10-23", [])
+            row = conn.execute("SELECT story_id FROM radar_events WHERE id='ev-stale'").fetchone()
+        finally:
+            conn.close()
+        self.assertIsNone(row["story_id"])
+
+
 class TestReportStats(unittest.TestCase):
     def test_report_exposes_new_counters(self):
         _reset_tables()
