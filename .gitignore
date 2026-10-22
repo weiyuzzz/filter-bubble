@@ -15,3 +15,6 @@ runtime/
 
 # test scratch databases
 .testtmp/
+
+# local git credentials — NEVER commit these
+.ssh/
