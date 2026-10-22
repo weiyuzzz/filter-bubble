@@ -135,11 +135,12 @@ def generate(item: Dict[str, Any], settings: Dict[str, Any]) -> Optional[Dict[st
         description=_clean(item.get("description"), 300) or "无",
         readme=_clean(item.get("readme_zh") or item.get("readme") or "", 600) or "无",
     )
-    text, error = ai_client.chat_result(
+    text, error, used_info = ai_client.chat_result_ex(
         [{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}],
         settings, json_mode=True)
     if not text:
         return None
+    used_model = used_info.get("model") or ""
     data = ai_client.extract_json(text)
     if data is None:
         # 免费模型偶尔会把 JSON 写坏；再要一次，明确要求只输出 JSON
@@ -149,12 +150,16 @@ def generate(item: Dict[str, Any], settings: Dict[str, Any]) -> Optional[Dict[st
             {"role": "assistant", "content": text[:800]},
             {"role": "user", "content": "上面的输出不是合法 JSON。请只输出一个完整的 JSON 对象，不要任何解释或代码块。"},
         ]
-        retry_text, _err = ai_client.chat_result(retry_prompt, settings, json_mode=True)
+        retry_text, _err, retry_info = ai_client.chat_result_ex(retry_prompt, settings, json_mode=True)
         data = ai_client.extract_json(retry_text)
+        used_model = retry_info.get("model") or used_model
         if data is None:
             print("[ai] brief JSON invalid for", item.get("full_name"))
             return None
-    return _normalize(data)
+    normalized = _normalize(data)
+    if normalized and used_model:
+        normalized["_model"] = used_model
+    return normalized
 
 
 def apply(item: Dict[str, Any], ai: Dict[str, Any], model: str) -> None:
@@ -214,8 +219,10 @@ def enrich(items: List[Dict[str, Any]], settings: Optional[Dict[str, Any]] = Non
                 if not ai:
                     stats["failed"] += 1
                     continue
-                _save(conn, _key(item, model), item, model, ai)
-                apply(item, ai, model)
+                # 用实际服务的模型归属（主备切换后不要记成主接口的模型）
+                served = ai.pop("_model", "") or model
+                _save(conn, _key(item, model), item, served, ai)
+                apply(item, ai, served)
                 stats["generated"] += 1
         conn.commit()
     finally:
@@ -259,9 +266,10 @@ def generate_one(item: Dict[str, Any], settings: Optional[Dict[str, Any]] = None
         ai = generate(item, settings)
         if not ai:
             return None
-        _save(conn, _key(item, model), item, model, ai)
+        served = ai.pop("_model", "") or model
+        _save(conn, _key(item, model), item, served, ai)
         conn.commit()
     finally:
         conn.close()
-    apply(item, ai, model)
+    apply(item, ai, served)
     return ai

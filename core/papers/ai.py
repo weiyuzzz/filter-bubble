@@ -89,21 +89,23 @@ def analyze(paper: Dict[str, Any], settings: Dict[str, Any]) -> tuple:
     if not (paper.get("abstract") or "").strip():
         return None, "论文没有摘要，无法生成概况", llm.get("model", "")
 
-    text, error = ai_client.chat_result(build_prompt(paper), settings, json_mode=True)
+    text, error, used_info = ai_client.chat_result_ex(build_prompt(paper), settings, json_mode=True)
     if not text:
         return None, (error or {}).get("message", "模型没有返回内容"), llm.get("model", "")
+    used = used_info.get("model") or llm.get("model", "")
     data = ai_client.extract_json(text)
     if data is None:
         retry = build_prompt(paper) + [
             {"role": "assistant", "content": text[:600]},
             {"role": "user", "content": "上面的输出不是合法 JSON，请只输出一个完整 JSON 对象。"},
         ]
-        text, error = ai_client.chat_result(retry, settings, json_mode=True)
+        text, error, used_info = ai_client.chat_result_ex(retry, settings, json_mode=True)
         data = ai_client.extract_json(text) if text else None
+        used = used_info.get("model") or used
     normalized = normalize(data)
     if not normalized:
-        return None, "模型返回的内容缺少必要字段", llm.get("model", "")
-    return normalized, "", llm.get("model", "")
+        return None, "模型返回的内容缺少必要字段", used
+    return normalized, "", used
 
 
 def render_text(overview: Optional[Dict[str, Any]]) -> str:

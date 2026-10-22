@@ -12,6 +12,23 @@ _LLM_KEYS = ("enabled", "provider", "base_url", "model", "api_key_env",
              "timeout_seconds", "max_attempts", "temperature", "max_tokens")
 _AI_KEYS = ("briefs_per_run", "concurrency", "enable_briefs")
 
+# 常用服务商预置：避免"key 填了 DeepSeek、地址还停在 OpenRouter"这类错配
+PRESETS = [
+    {"id": "deepseek", "label": "DeepSeek", "provider": "openai",
+     "base_url": "https://api.deepseek.com", "model": "deepseek-chat",
+     "hint": "官方直连，deepseek-chat 便宜稳定"},
+    {"id": "openai", "label": "OpenAI", "provider": "openai",
+     "base_url": "https://api.openai.com/v1", "model": "gpt-4o-mini"},
+    {"id": "openrouter", "label": "OpenRouter", "provider": "openai",
+     "base_url": "https://openrouter.ai/api/v1", "model": "openai/gpt-4o-mini",
+     "hint": "一个 key 用多家模型，注意模型名要带厂商前缀"},
+    {"id": "anthropic", "label": "Anthropic (Claude)", "provider": "anthropic",
+     "base_url": "https://api.anthropic.com", "model": "claude-sonnet-4-20250514"},
+    {"id": "ollama", "label": "本地 Ollama", "provider": "local",
+     "base_url": "http://127.0.0.1:11434", "model": "qwen2.5:7b"},
+    {"id": "custom", "label": "自定义", "provider": "openai", "base_url": "", "model": ""},
+]
+
 
 def _ok(payload: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
     return 200, payload
@@ -30,12 +47,14 @@ def _public() -> Dict[str, Any]:
     return {
         "llm": {
             "enabled": bool(llm.get("enabled")),
-            "provider": llm.get("provider") or "openai_compatible",
+            "provider": ai_client.normalize_provider(llm.get("provider") or "openai"),
             "base_url": llm.get("base_url") or "",
             "model": llm.get("model") or "",
             "api_key_env": llm.get("api_key_env") or ai_secrets.ENV_NAME,
             "timeout_seconds": llm.get("timeout_seconds"),
             "providers": list(ai_client.PROVIDERS),
+            "provider_labels": dict(ai_client.PROVIDER_LABELS),
+            "presets": PRESETS,
             "available": ok,
             "unavailable_reason": reason,
             "key": ai_secrets.public_state(str(llm.get("api_key_env") or ai_secrets.ENV_NAME)),
@@ -49,7 +68,7 @@ def _public() -> Dict[str, Any]:
             "usage": ai_client.status(cfg).get("usage") or {},
             "fallback": {
                 "enabled": bool(fb.get("enabled")),
-                "provider": fb.get("provider") or "openai_compatible",
+                "provider": ai_client.normalize_provider(fb.get("provider") or "openai"),
                 "base_url": fb.get("base_url") or "",
                 "model": fb.get("model") or "",
                 "available": fb_ok,
@@ -132,9 +151,8 @@ def _save(body: Dict[str, Any]) -> Dict[str, Any]:
             if key == "enabled":
                 updates["llm"][key] = _coerce(value, "bool")
             elif key == "provider":
-                provider = str(value or "")
-                if provider in ai_client.PROVIDERS:
-                    updates["llm"][key] = provider
+                provider = ai_client.normalize_provider(str(value or ""))
+                updates["llm"][key] = provider
             elif key in ("timeout_seconds", "max_attempts"):
                 updates["llm"][key] = max(1, min(180, _coerce(value, "int")))
             elif key == "max_tokens":
@@ -173,9 +191,7 @@ def _save(body: Dict[str, Any]) -> Dict[str, Any]:
             if key == "enabled":
                 fb_updates[key] = _coerce(value, "bool")
             elif key == "provider":
-                provider = str(value or "")
-                if provider in ai_client.PROVIDERS:
-                    fb_updates[key] = provider
+                fb_updates[key] = ai_client.normalize_provider(str(value or ""))
             else:
                 fb_updates[key] = str(value or "")[:300]
             saved["fallback_" + key] = fb_updates[key]

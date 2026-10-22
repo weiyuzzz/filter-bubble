@@ -23,12 +23,36 @@ from typing import Any, Dict, List, Optional, Tuple
 from . import ai_secrets, ai_usage
 from .config import DATA_DIR
 
-PROVIDERS = ("openai_compatible", "ollama")
+# 三类接口：OpenAI 兼容（含 DeepSeek / OpenRouter / 各类中转）、Anthropic 原生、本地模型
+PROVIDERS = ("openai", "anthropic", "local")
+PROVIDER_LABELS = {
+    "openai": "OpenAI 兼容",
+    "anthropic": "Anthropic (Claude)",
+    "local": "本地模型",
+}
+# 旧值兼容：早期版本用的是 openai_compatible / ollama
+PROVIDER_ALIASES = {"openai_compatible": "openai", "ollama": "local"}
+
+
+def normalize_provider(value: str) -> str:
+    value = str(value or "").strip()
+    value = PROVIDER_ALIASES.get(value, value)
+    return value if value in PROVIDERS else "openai"
+
+
+ANTHROPIC_VERSION = "2023-06-01"
 ERROR_LOG = Path(os.environ.get("AI_ERROR_LOG", str(DATA_DIR / "llm-errors.log")))
 STATE_PATH = Path(os.environ.get("AI_STATE", str(DATA_DIR / "ai_state.json")))
 
 STATS: Dict[str, Any] = {"calls": 0, "failures": 0, "prompt_tokens": 0,
                          "completion_tokens": 0, "last_error": "", "last_latency_ms": 0}
+
+# 最近一次成功调用实际用的是哪个接口 / 模型（切换后用于归属，避免记成主接口的模型名）
+LAST_USED: Dict[str, Any] = {"slot": "", "model": "", "provider": "", "at": ""}
+
+
+def last_used() -> Dict[str, Any]:
+    return dict(LAST_USED)
 
 RETRY_STATUSES = (429, 500, 502, 503, 504)
 # 这些错误说明「这个接口暂时用不了」，值得切备用
@@ -153,9 +177,7 @@ def resolve(settings: Dict[str, Any], slot: str = "primary") -> Tuple[bool, str,
         reason = "未启用（全局设置 → 接入大模型）" if slot == "primary" else "未配置备用接口"
         return False, reason, llm
 
-    provider = str(llm.get("provider") or "openai_compatible")
-    if provider not in PROVIDERS:
-        return False, "不支持的接口类型：%s" % provider, llm
+    provider = normalize_provider(llm.get("provider") or "openai")
 
     model = str(llm.get("model") or "").strip()
     if not model:
@@ -163,13 +185,13 @@ def resolve(settings: Dict[str, Any], slot: str = "primary") -> Tuple[bool, str,
 
     base_url = str(llm.get("base_url") or "").strip()
     if not base_url:
-        default_port = 11434 if provider == "ollama" else 1234
+        default_port = 11434 if provider == "local" else 1234
         base_url = "http://127.0.0.1:%d" % default_port
     base_url = base_url.rstrip("/")
 
     env_name = str(llm.get("api_key_env") or
                    (ai_secrets.FALLBACK_ENV_NAME if slot == "fallback" else ai_secrets.ENV_NAME))
-    if provider == "openai_compatible":
+    if provider in ("openai", "anthropic"):
         key, _source = ai_secrets.get_api_key(env_name, slot)
         if not key and not base_url.startswith(("http://127.0.0.1", "http://localhost")):
             return False, "未填写 API Key（全局设置 → API Key）", llm
@@ -265,29 +287,50 @@ def _build_request(llm: Dict[str, Any], messages: List[Dict[str, str]],
                    json_mode: bool) -> Tuple[str, Dict[str, Any], Dict[str, str]]:
     provider = llm["provider"]
     temperature = float(llm.get("temperature", 0.2))
-    if provider == "ollama":
-        url = llm["base_url"] + "/api/chat"
+    max_tokens = int(llm.get("max_tokens") or 1500)
+    base = llm["base_url"]
+    key, _source = ai_secrets.get_api_key(
+        llm.get("api_key_env") or ai_secrets.ENV_NAME, llm.get("slot") or "primary")
+
+    # ---- 本地模型（Ollama / vLLM 的 /api/chat）----
+    if provider == "local":
+        url = base + "/api/chat"
         payload: Dict[str, Any] = {"model": llm["model"], "messages": messages, "stream": False,
                                    "options": {"temperature": temperature}}
-        max_tokens = int(llm.get("max_tokens") or 1500)
         if max_tokens > 0:
             payload["options"]["num_predict"] = max_tokens
         if json_mode:
             payload["format"] = "json"
-        return url, payload, {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json"}
+        if key:  # 有些自建服务需要鉴权
+            headers["Authorization"] = "Bearer " + key
+        return url, payload, headers
 
-    base = llm["base_url"]
+    # ---- Anthropic 原生（Claude）----
+    if provider == "anthropic":
+        url = base + ("/messages" if base.endswith("/v1") else "/v1/messages")
+        system_parts = [m["content"] for m in messages if m.get("role") == "system"]
+        dialog = [{"role": m["role"], "content": m["content"]}
+                  for m in messages if m.get("role") in ("user", "assistant")]
+        payload = {"model": llm["model"], "messages": dialog,
+                   "max_tokens": max_tokens if max_tokens > 0 else 1500,
+                   "temperature": temperature}
+        if system_parts:
+            payload["system"] = "\n".join(system_parts)
+        headers = {"Content-Type": "application/json",
+                   "anthropic-version": ANTHROPIC_VERSION}
+        if key:
+            headers["x-api-key"] = key
+        return url, payload, headers
+
+    # ---- OpenAI 兼容（OpenAI / DeepSeek / OpenRouter / 中转）----
     url = base + ("/chat/completions" if base.endswith("/v1") else "/v1/chat/completions")
     payload = {"model": llm["model"], "messages": messages, "temperature": temperature}
-    # 免费模型常常话很多，不限制长度容易把 JSON 截断；默认给 800 输出上限
-    max_tokens = int(llm.get("max_tokens") or 1500)
     if max_tokens > 0:
         payload["max_tokens"] = max_tokens
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
     headers = {"Content-Type": "application/json"}
-    key, _source = ai_secrets.get_api_key(
-        llm.get("api_key_env") or ai_secrets.ENV_NAME, llm.get("slot") or "primary")
     if key:
         headers["Authorization"] = "Bearer " + key
     if "openrouter.ai" in base:
@@ -297,12 +340,27 @@ def _build_request(llm: Dict[str, Any], messages: List[Dict[str, str]],
 
 
 def _extract(llm: Dict[str, Any], data: Dict[str, Any]) -> Optional[str]:
-    if llm["provider"] == "ollama":
+    provider = llm["provider"]
+    if provider == "local":
         return (data.get("message") or {}).get("content")
+    if provider == "anthropic":
+        blocks = data.get("content") or []
+        texts = [b.get("text") or "" for b in blocks if isinstance(b, dict) and b.get("type") == "text"]
+        return "\n".join(t for t in texts if t) or None
     choices = data.get("choices") or []
     if choices:
         return (choices[0].get("message") or {}).get("content")
     return None
+
+
+def _usage_of(llm: Dict[str, Any], data: Dict[str, Any]) -> Tuple[int, int]:
+    """不同接口的 usage 字段名不一样，统一成 (prompt, completion)。"""
+    usage = data.get("usage") or {}
+    if llm["provider"] == "anthropic":
+        return (int(usage.get("input_tokens") or 0), int(usage.get("output_tokens") or 0))
+    if llm["provider"] == "local":
+        return (int(usage.get("prompt_eval_count") or 0), int(usage.get("eval_count") or 0))
+    return (int(usage.get("prompt_tokens") or 0), int(usage.get("completion_tokens") or 0))
 
 
 def _attempt(llm: Dict[str, Any], messages: List[Dict[str, str]],
@@ -322,10 +380,10 @@ def _attempt(llm: Dict[str, Any], messages: List[Dict[str, str]],
         if data:
             text = _extract(llm, data)
             usage = data.get("usage") or {}
+            prompt_tokens, completion_tokens = _usage_of(llm, data)
             STATS["calls"] += 1
-            STATS["prompt_tokens"] += int(usage.get("prompt_tokens") or usage.get("prompt_eval_count") or 0)
-            STATS["completion_tokens"] += int(
-                usage.get("completion_tokens") or usage.get("eval_count") or 0)
+            STATS["prompt_tokens"] += prompt_tokens
+            STATS["completion_tokens"] += completion_tokens
 
             if text and text.strip():
                 STATS["last_error"] = ""
@@ -343,7 +401,7 @@ def _attempt(llm: Dict[str, Any], messages: List[Dict[str, str]],
                 "code": "truncated" if truncated else "empty",
                 "message": message,
                 "detail": "finish_reason=%s, completion_tokens=%s, reasoning_tokens=%s"
-                          % (finish, usage.get("completion_tokens"), reasoning_tokens),
+                          % (finish, completion_tokens, reasoning_tokens),
                 "hint": ("这个模型很可能是推理模型，思考过程吃掉了输出预算。"
                          "提高「最大输出 token」后重试，或换用非推理模型。"
                          if reasoning_tokens or truncated else "模型没有返回正文，稍后重试。"),
@@ -387,15 +445,12 @@ def _token_limits(settings: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def chat_result(messages: List[Dict[str, str]], settings: Dict[str, Any],
-                json_mode: bool = True) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
-    """调用模型，返回 (文本, 错误)。错误是结构化 dict，绝不抛异常。
+def chat_result_full(messages: List[Dict[str, str]], settings: Dict[str, Any],
+                     json_mode: bool = True):
+    """调用模型，返回 (文本, 错误, 实际使用的接口信息)。
 
-    顺序：
-    1. 全局暂停中（主备 token 都用尽）→ 直接返回暂停错误，不发请求；
-    2. 按当前激活接口开始，逐个尝试；本地 token 超限的接口直接跳过；
-    3. 主接口因额度错误失败 → 切备用；
-    4. 两个接口都不可用 → 暂停 24 小时并重新计数。
+    错误是结构化 dict，绝不抛异常；第三个值是 {slot, model, provider}，
+    主备切换后调用方靠它正确归属缓存与展示。
     """
     limits = _token_limits(settings)
 
@@ -407,7 +462,7 @@ def chat_result(messages: List[Dict[str, str]], settings: Dict[str, Any],
             "detail": "paused_until=%s" % until,
             "hint": "%s 之后自动恢复并重新计数" % until,
             "suggested_model": "", "retryable": False,
-        }
+        }, {}
 
     order = ["primary", "fallback"] if active_slot() == "primary" else ["fallback", "primary"]
 
@@ -432,7 +487,7 @@ def chat_result(messages: List[Dict[str, str]], settings: Dict[str, Any],
             "detail": "paused_until=%s" % until,
             "hint": "%s 之后自动恢复并重新计数；也可以调高 token_limits 或换接口" % until,
             "suggested_model": "", "retryable": False,
-        }
+        }, {}
 
     first_error: Optional[Dict[str, Any]] = None
     for index, (slot, llm) in enumerate(plans):
@@ -445,7 +500,11 @@ def chat_result(messages: List[Dict[str, str]], settings: Dict[str, Any],
             STATS["calls"] - before[2],
         )
         if text:
-            return text, None
+            used = {"slot": slot, "model": llm.get("model", ""),
+                    "provider": llm.get("provider", ""),
+                    "at": dt.datetime.now().astimezone().isoformat(timespec="seconds")}
+            LAST_USED.update(used)
+            return text, None, used
         if not first_error:
             first_error = error
 
@@ -472,7 +531,23 @@ def chat_result(messages: List[Dict[str, str]], settings: Dict[str, Any],
                (first_error or {}).get("message", "") or first_reason,
                (first_error or {}).get("detail", ""))
     print("[ai] call failed:", STATS["last_error"][:160])
-    return None, first_error
+    return None, first_error, {}
+
+
+def chat_result(messages: List[Dict[str, str]], settings: Dict[str, Any],
+                json_mode: bool = True) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+    """调用模型，返回 (文本, 错误)。"""
+    text, error, _used = chat_result_full(messages, settings, json_mode)
+    return text, error
+
+
+def chat_result_ex(messages: List[Dict[str, str]], settings: Dict[str, Any],
+                   json_mode: bool = True) -> Tuple[Optional[str], Optional[Dict[str, Any]], Dict[str, Any]]:
+    """和 chat_result 一样，但额外返回「实际服务这次调用的接口与模型」。
+
+    主备切换后，调用方需要用它来正确归属（缓存键、界面展示的模型名）。
+    """
+    return chat_result_full(messages, settings, json_mode)
 
 
 def chat(messages: List[Dict[str, str]], settings: Dict[str, Any],

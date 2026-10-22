@@ -226,17 +226,19 @@ python app.py radar query 芯片 突破    # 自由关键词调查
 
 ### 接入大模型（可选）
 
-大模型是**全局配置**：GitHub 项目的 AI 解读和热点雷达的摘要共用同一套接口、模型与密钥。入口在左侧导航 **全局设置**。
+大模型是**全局配置**：GitHub 的 AI 解读、热点雷达的摘要、学术论文的概况共用同一套接口、模型与密钥。入口在左侧导航 **全局设置**。
 
 ![全局设置](docs/llm-settings.png)
 
-| 字段 | 填什么 |
-|---|---|
-| 接入大模型 | 启用 |
-| 接口类型 | OpenAI 兼容 / OpenRouter（或本地 Ollama） |
-| 接口地址 | `https://openrouter.ai/api/v1` 或 `http://127.0.0.1:11434` |
-| 模型名 | OpenRouter 的模型 slug，例如 `recursive/flint-v1.0:free` |
-| API Key | OpenRouter 的 `sk-or-...` |
+**接口类型分三类**，按服务商选：
+
+| 接口类型 | 适用于 | 地址示例 | 模型名示例 |
+|---|---|---|---|
+| OpenAI 兼容 | OpenAI、DeepSeek、OpenRouter、各类中转 | `https://api.deepseek.com`<br>`https://api.openai.com/v1`<br>`https://openrouter.ai/api/v1` | `deepseek-chat`<br>`gpt-4o-mini`<br>`openai/gpt-4o-mini` |
+| Anthropic (Claude) | Claude 原生接口（`/v1/messages` + `x-api-key`） | `https://api.anthropic.com` | `claude-sonnet-4-20250514` |
+| 本地模型 | Ollama / vLLM 等本机服务 | `http://127.0.0.1:11434` | `qwen2.5:7b` |
+
+不想手填可以先用 **「快速选择服务商」** 下拉：选 DeepSeek / OpenAI / OpenRouter / Anthropic / 本地 Ollama，会自动填好接口类型、地址和模型名，只需要再贴对应的 key。
 
 点 **保存设置** → 点 **测试连接**。测试会真实请求一次，并显示：
 
@@ -247,12 +249,15 @@ python app.py radar query 芯片 突破    # 自由关键词调查
 
 | 现象 | 含义 | 处理 |
 |---|---|---|
+| 401 `Missing Authentication header` | **地址和 key 不是同一家**（最常见） | 例如把 DeepSeek 的 `sk-...` 填在 `openrouter.ai` 地址上，key 本身没问题也会 401。用「快速选择服务商」重填地址，或手动改成 `https://api.deepseek.com` |
 | 429 + “temporarily rate-limited upstream” | 免费模型的上游共享池被限流，**不是 key 的问题** | 等 1–2 分钟重试，或换一个免费模型 |
 | 404 + “unavailable for free … use this slug instead” | 该模型已取消免费额度 | 按提示改用付费 slug，或换免费模型 |
-| 401 | key 无效或过期 | 重新填写 key |
-| 402 | 额度不足 | 检查 OpenRouter 余额 |
+| 402 | 额度不足 | 检查服务商余额 |
+| `model not found` | 模型名写错 | 服务商文档里的精确 ID，DeepSeek 是 `deepseek-chat` / `deepseek-reasoner` |
 
 > 实测：`google/gemma-4-26b-a4b-it:free` 在当前时段经常被上游限流（429），而 `recursive/flint-v1.0:free` 可以正常返回。OpenRouter 的免费池是共享的，可用性会随时间变化。
+>
+> 另一个实测：DeepSeek 的 `sk-...` key 打到 `https://api.deepseek.com` 返回 200，打 `https://openrouter.ai/api/v1` 返回 401 —— 同一把 key，换地址就是从「无效」变成「可用」。
 
 ### 备用接口与 Token 限额
 
@@ -273,13 +278,13 @@ python app.py radar query 芯片 突破    # 自由关键词调查
 {
   "llm": {
     "enabled": true,
-    "provider": "openai_compatible",
+    "provider": "openai",
     "base_url": "https://openrouter.ai/api/v1",
     "model": "recursive/flint-v1.0:free",
     "token_limits": { "primary": 500000, "fallback": 500000, "window_hours": 24 },
     "fallback": {
       "enabled": true,
-      "provider": "openai_compatible",
+      "provider": "openai",
       "base_url": "https://api.deepseek.com",
       "model": "deepseek-chat",
       "api_key_env": "RADAR_LLM_API_KEY_FALLBACK"
@@ -301,7 +306,7 @@ python app.py radar query 芯片 突破    # 自由关键词调查
 
 ```json
 {
-  "llm": { "enabled": true, "provider": "openai_compatible",
+  "llm": { "enabled": true, "provider": "openai",
            "base_url": "https://openrouter.ai/api/v1",
            "model": "recursive/flint-v1.0:free" },
   "ai": { "enable_briefs": true, "briefs_per_run": 12, "concurrency": 1 }

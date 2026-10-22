@@ -1742,3 +1742,67 @@ textarea { min-height: 68px; resize: vertical; line-height: 1.6; }
 .usage-chart svg { max-height: 170px; }
 .usage-chart.is-empty { padding: var(--fb-sp-2) 0; }
 
+
+/* ---------- 全局设置：宽松卡片布局 ---------- */
+.config-card { padding: var(--fb-sp-5); }
+.config-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--fb-sp-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--fb-sp-4);
+}
+.config-head h3 { margin: 0 0 4px; }
+.config-sub { margin: 0; font-size: var(--fb-fs-sm); color: var(--fb-text-3); line-height: 1.7; max-width: 62ch; }
+.config-state { display: flex; gap: 6px; flex-wrap: wrap; }
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--fb-sp-4) var(--fb-sp-5);
+}
+.config-grid .field { gap: 8px; }
+.config-grid .field label { font-size: var(--fb-fs-sm); }
+.config-grid input,
+.config-grid select {
+  width: 100%;
+  height: 44px;
+  padding: 0 14px;
+  font-size: var(--fb-fs-md);
+  border-radius: var(--fb-r-md);
+}
+.config-grid input[type="password"] {
+  font-family: var(--fb-mono);
+  letter-spacing: 0.02em;
+}
+.config-wide { grid-column: 1 / -1; }
+.field-hint { font-size: var(--fb-fs-xs); color: var(--fb-text-3); line-height: 1.6; }
+.field-hint code {
+  font-family: var(--fb-mono);
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--fb-surface-3);
+}
+.config-static {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border-radius: var(--fb-r-md);
+  border: 1px dashed var(--fb-border);
+  color: var(--fb-text-3);
+  font-size: var(--fb-fs-sm);
+}
+.config-actions {
+  display: flex;
+  gap: var(--fb-sp-2);
+  flex-wrap: wrap;
+  margin-top: var(--fb-sp-4);
+  padding-top: var(--fb-sp-4);
+  border-top: 1px solid var(--fb-border);
+}
+@media (max-width: 720px) {
+  .config-card { padding: var(--fb-sp-4); }
+  .config-grid { grid-template-columns: 1fr; }
+}

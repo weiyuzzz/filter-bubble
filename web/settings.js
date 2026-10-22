@@ -140,51 +140,66 @@
       : (llm.available ? "模型可用" : "模型不可用");
 
     body.innerHTML = `
-      <section class="panel">
-        <h3>大模型</h3>
-        <div class="field-row">
-          <div class="field"><label for="setEnabled">接入大模型</label>
+      <section class="panel config-card">
+        <header class="config-head">
+          <div>
+            <h3>主接口</h3>
+            <p class="config-sub">三个模块默认调用这个接口。下面选择服务商会自动填好地址和模型名。</p>
+          </div>
+          <div class="config-state">
+            ${llm.available ? chip("可用", "ok") : chip("不可用", "warn")}
+            ${stats.calls ? chip(`已调用 ${stats.calls} 次`) : ""}
+          </div>
+        </header>
+
+        <div class="config-grid">
+          <div class="field">
+            <label for="setPreset">快速选择服务商</label>
+            <select id="setPreset">
+              <option value="">— 选择后会填入地址与模型 —</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="setEnabled">接入大模型</label>
             <select id="setEnabled">
               <option value="1" ${llm.enabled ? "selected" : ""}>启用</option>
               <option value="0" ${llm.enabled ? "" : "selected"}>关闭（用本地规则）</option>
             </select>
           </div>
-          <div class="field"><label for="setProvider">接口类型</label>
+          <div class="field">
+            <label for="setProvider">接口类型</label>
             <select id="setProvider">
-              <option value="openai_compatible" ${llm.provider === "openai_compatible" ? "selected" : ""}>OpenAI 兼容 / OpenRouter</option>
-              <option value="ollama" ${llm.provider === "ollama" ? "selected" : ""}>本地 Ollama</option>
+              ${(llm.providers || ["openai"]).map((p) => `<option value="${esc(p)}" ${llm.provider === p ? "selected" : ""}>${esc((llm.provider_labels || {})[p] || p)}</option>`).join("")}
             </select>
           </div>
-          <div class="field"><label for="setBaseUrl">接口地址</label>
-            <input id="setBaseUrl" type="text" placeholder="https://openrouter.ai/api/v1" value="${esc(llm.base_url || "")}">
+          <div class="field">
+            <label for="setModel">模型名</label>
+            <input id="setModel" type="text" placeholder="例如 deepseek-chat" value="${esc(llm.model || "")}">
           </div>
-          <div class="field"><label for="setModel">模型名</label>
-            <input id="setModel" type="text" placeholder="例如 google/gemma-4-26b-a4b-it:free" value="${esc(llm.model || "")}">
+          <div class="field config-wide">
+            <label for="setBaseUrl">接口地址</label>
+            <input id="setBaseUrl" type="text" placeholder="例如 https://api.deepseek.com" value="${esc(llm.base_url || "")}">
+            <span class="field-hint">DeepSeek 用 <code>https://api.deepseek.com</code>，OpenRouter 用 <code>https://openrouter.ai/api/v1</code>，Claude 用 <code>https://api.anthropic.com</code>，本地填 <code>http://127.0.0.1:11434</code>。</span>
           </div>
-        </div>
-
-        <div class="field-row" style="margin-top:12px">
-          <div class="field"><label for="setApiKey">API Key ${key.configured ? `（已配置 ${esc(key.masked)} · ${esc(key.source)}）` : "（未配置）"}</label>
-            <input id="setApiKey" type="password" autocomplete="off" placeholder="${key.configured ? "留空表示不修改" : "粘贴 OpenRouter 的 sk-or-... key"}">
+          <div class="field config-wide">
+            <label for="setApiKey">API Key ${key.configured ? `（已配置 ${esc(key.masked)} · ${esc(key.source)}）` : "（未配置）"}</label>
+            <input id="setApiKey" type="password" autocomplete="off" spellcheck="false" placeholder="${key.configured ? "已保存，留空表示不修改" : "粘贴这家服务商自己的 key"}">
+            <span class="field-hint">每个服务商的 key 不通用：把 DeepSeek 的 key 填到 OpenRouter 地址上会返回 401。</span>
           </div>
-          <div class="field"><label for="setTokenLimitPrimary">每日 token 上限（0 = 不限）</label>
+          <div class="field">
+            <label for="setTokenLimitPrimary">每日 token 上限</label>
             <input id="setTokenLimitPrimary" type="number" min="0" step="1000" value="${esc(limits.primary || 0)}">
+            <span class="field-hint">0 表示不限。达到上限自动切备用接口。</span>
           </div>
-          <div class="field"><label for="setTokenWindowHours">统计窗口（小时）</label>
+          <div class="field">
+            <label for="setTokenWindowHours">统计窗口（小时）</label>
             <input id="setTokenWindowHours" type="number" min="1" max="168" value="${esc(limits.window_hours || 24)}">
+            <span class="field-hint">默认 24 小时，跨窗口重新计数。</span>
           </div>
         </div>
 
-        <div class="ev-meta" style="margin-top:12px">
-          ${llm.available ? chip("模型可用", "ok") : chip("模型不可用：" + (llm.unavailable_reason || ""), "warn")}
-          ${stats.calls ? chip(`已调用 ${stats.calls} 次`) : ""}
-          ${stats.failures ? chip(`失败 ${stats.failures} 次`, "warn") : ""}
-          ${stats.prompt_tokens ? chip(`输入 ${stats.prompt_tokens} tokens`) : ""}
-          ${stats.completion_tokens ? chip(`输出 ${stats.completion_tokens} tokens`) : ""}
-        </div>
-        <p class="hint">密钥只写入本机 <code>${esc(data.secrets_path || "data/ai_secrets.json")}</code>，不会进入配置文件，也不会回传到页面。配置写入 <code>${esc(data.path || "app_settings.json")}</code>。</p>
-
-        <div class="ev-actions">
+        <p class="hint">密钥只写入本机 <code>${esc(data.secrets_path || "data/ai_secrets.json")}</code>，不进配置文件，也不会回传到页面。</p>
+        <div class="config-actions">
           <button class="primary-btn" id="saveBtn" type="button">保存设置</button>
           <button class="ghost-btn" id="testBtn" type="button">测试连接</button>
           ${key.configured ? `<button class="ghost-btn" id="clearBtn" type="button">清除密钥</button>` : ""}
@@ -192,45 +207,69 @@
         <div id="testResult" style="margin-top:12px"></div>
       </section>
 
-      <section class="panel">
-        <h3>备用接口</h3>
-        <p class="hint">主接口额度用尽（429 / free-models-per-day 之类）时自动切到这里，第二天自动切回主接口。三个模块共用这套切换。</p>
-        <div class="field-row">
-          <div class="field"><label for="setFallbackEnabled">启用备用接口</label>
+      <section class="panel config-card">
+        <header class="config-head">
+          <div>
+            <h3>备用接口</h3>
+            <p class="config-sub">主接口额度用尽或报 429/402 时自动切过来；第二天自动切回主接口。</p>
+          </div>
+          <div class="config-state">
+            ${slot.active === "fallback"
+              ? `<span class="chip warn">正在使用备用</span>`
+              : `<span class="chip ok">主接口在用</span>`}
+            ${fb.available ? chip("备用可用", "ok") : chip("备用未就绪", "warn")}
+          </div>
+        </header>
+
+        <div class="config-grid">
+          <div class="field">
+            <label for="setFallbackPreset">快速选择服务商</label>
+            <select id="setFallbackPreset">
+              <option value="">— 选择后会填入地址与模型 —</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="setFallbackEnabled">启用备用接口</label>
             <select id="setFallbackEnabled">
               <option value="1" ${fb.enabled ? "selected" : ""}>启用</option>
               <option value="0" ${fb.enabled ? "" : "selected"}>关闭</option>
             </select>
           </div>
-          <div class="field"><label for="setFallbackProvider">接口类型</label>
+          <div class="field">
+            <label for="setFallbackProvider">接口类型</label>
             <select id="setFallbackProvider">
-              <option value="openai_compatible" ${fb.provider === "openai_compatible" ? "selected" : ""}>OpenAI 兼容 / OpenRouter</option>
-              <option value="ollama" ${fb.provider === "ollama" ? "selected" : ""}>本地 Ollama</option>
+              ${(llm.providers || ["openai"]).map((p) => `<option value="${esc(p)}" ${fb.provider === p ? "selected" : ""}>${esc((llm.provider_labels || {})[p] || p)}</option>`).join("")}
             </select>
           </div>
-          <div class="field"><label for="setFallbackBaseUrl">接口地址</label>
-            <input id="setFallbackBaseUrl" type="text" placeholder="https://openrouter.ai/api/v1" value="${esc(fb.base_url || "")}">
+          <div class="field">
+            <label for="setFallbackModel">模型名</label>
+            <input id="setFallbackModel" type="text" placeholder="例如 deepseek-chat" value="${esc(fb.model || "")}">
           </div>
-          <div class="field"><label for="setFallbackModel">模型名</label>
-            <input id="setFallbackModel" type="text" placeholder="例如 openai/gpt-4o-mini" value="${esc(fb.model || "")}">
+          <div class="field config-wide">
+            <label for="setFallbackBaseUrl">接口地址</label>
+            <input id="setFallbackBaseUrl" type="text" placeholder="例如 https://api.deepseek.com" value="${esc(fb.base_url || "")}">
+            <span class="field-hint">换成另一家服务商时，地址和 key 必须一起换。</span>
           </div>
-        </div>
-        <div class="field-row" style="margin-top:12px">
-          <div class="field"><label for="setFallbackKey">备用 API Key ${fbKey.configured ? `（已配置 ${esc(fbKey.masked)}）` : "（未配置）"}</label>
-            <input id="setFallbackKey" type="password" autocomplete="off" placeholder="${fbKey.configured ? "留空表示不修改" : "粘贴备用接口的 key"}">
+          <div class="field config-wide">
+            <label for="setFallbackKey">备用 API Key ${fbKey.configured ? `（已配置 ${esc(fbKey.masked)}）` : "（未配置）"}</label>
+            <input id="setFallbackKey" type="password" autocomplete="off" spellcheck="false" placeholder="${fbKey.configured ? "已保存，留空表示不修改" : "粘贴备用服务商自己的 key"}">
           </div>
-          <div class="field"><label for="setTokenLimitFallback">备用接口每日 token 上限（0 = 不限）</label>
+          <div class="field">
+            <label for="setTokenLimitFallback">备用接口每日 token 上限</label>
             <input id="setTokenLimitFallback" type="number" min="0" step="1000" value="${esc(limits.fallback || 0)}">
+            <span class="field-hint">备用也超限 → 暂停 AI，等待窗口结束后重算。</span>
+          </div>
+          <div class="field">
+            <label>当前状态</label>
+            <div class="config-static">
+              ${slot.active === "fallback"
+                ? `到 ${esc(switchState.fallback_until || "明天")} 自动切回`
+                : (fb.unavailable_reason ? esc(fb.unavailable_reason) : "已就绪")}
+            </div>
           </div>
         </div>
-        <div class="ev-meta" style="margin-top:12px">
-          ${slot.active === "fallback"
-            ? `<span class="chip warn">当前使用备用接口（到 ${esc(switchState.fallback_until || "明天")} 自动切回）</span>`
-            : `<span class="chip ok">当前使用主接口</span>`}
-          ${fb.available ? chip("备用可用", "ok") : chip("备用未就绪：" + (fb.unavailable_reason || ""), "warn")}
-          ${switchState.reason ? `<span class="chip">切换原因：${esc(switchState.reason.slice(0, 40))}</span>` : ""}
-        </div>
-        <div class="ev-actions">
+
+        <div class="config-actions">
           <button class="ghost-btn" id="testFallbackBtn" type="button">测试备用接口</button>
           ${slot.active === "fallback" ? `<button class="ghost-btn" id="resetSlotBtn" type="button">立即切回主接口</button>` : ""}
           ${fbKey.configured ? `<button class="ghost-btn" id="clearFallbackKeyBtn" type="button">清除备用密钥</button>` : ""}
@@ -238,8 +277,13 @@
         <div id="fallbackTestResult" style="margin-top:12px"></div>
       </section>
 
-      <section class="panel">
-        <h3>Token 用量</h3>
+      <section class="panel config-card">
+        <header class="config-head">
+          <div>
+            <h3>Token 用量</h3>
+            <p class="config-sub">本地记账，用来在超限前切换到备用接口，而不是等报错。</p>
+          </div>
+        </header>
         ${usageChart(usage, limits)}
       </section>
 
@@ -280,6 +324,31 @@
     if (resetSlot) resetSlot.addEventListener("click", resetSlotNow);
     const resumeAi = $("#resumeAiBtn");
     if (resumeAi) resumeAi.addEventListener("click", resumeAiNow);
+
+    // 服务商预设：一次填好接口类型 / 地址 / 模型，避免 key 与地址错配
+    const presetList = llm.presets || data.presets || [];
+    const presetOptions = presetList
+      .map((p) => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join("");
+    document.querySelectorAll("#setPreset, #setFallbackPreset").forEach((select) => {
+      select.insertAdjacentHTML("beforeend", presetOptions);
+    });
+    const presets = {};
+    presetList.forEach((p) => { presets[p.id] = p; });
+    const bindPreset = (selectId, providerId, baseUrlId, modelId) => {
+      const select = $(selectId);
+      if (!select) return;
+      select.addEventListener("change", () => {
+        const preset = presets[select.value];
+        if (!preset) return;
+        if (preset.provider) $(providerId).value = preset.provider;
+        if (preset.base_url) $(baseUrlId).value = preset.base_url;
+        if (preset.model) $(modelId).value = preset.model;
+        toast(`已填入 ${preset.label}，点「保存设置」生效`);
+      });
+    };
+    bindPreset("#setPreset", "#setProvider", "#setBaseUrl", "#setModel");
+    bindPreset("#setFallbackPreset", "#setFallbackProvider", "#setFallbackBaseUrl", "#setFallbackModel");
+
     loadErrors();
   }
 

@@ -346,8 +346,8 @@ python -m unittest discover -s tests -v
 ![全局设置](llm-settings.png)
 
 1. 「接入大模型生成摘要」选 **启用**
-2. 「接口类型」选 **OpenAI 兼容 / OpenRouter**（本地模型选 Ollama）
-3. 「接口地址」填 `https://openrouter.ai/api/v1`（Ollama 填 `http://127.0.0.1:11434`）
+2. 「接口类型」选三类之一：**OpenAI 兼容**（OpenAI / DeepSeek / OpenRouter）、**Anthropic (Claude)**、**本地模型**
+3. 「接口地址」按服务商填：`https://openrouter.ai/api/v1`、`https://api.deepseek.com`、`https://api.anthropic.com`、本地 `http://127.0.0.1:11434`
 4. 「模型名」填 OpenRouter 上的模型，例如 `openai/gpt-4o-mini`
 5. 在 **API Key** 里粘贴 `sk-or-...`，点 **保存设置**
 6. 点 **测试连接**，会真的发一次请求并显示：是否返回、耗时、模型回显、返回内容片段
@@ -385,7 +385,7 @@ python -m unittest discover -s tests -v
 ```json
 "llm": {
   "enabled": true,
-  "provider": "ollama",
+  "provider": "local",
   "base_url": "http://127.0.0.1:11434",
   "model": "qwen2.5:7b"
 }

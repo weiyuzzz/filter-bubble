@@ -10,6 +10,8 @@ from ..ai_client import (  # noqa: F401
     STATS,
     chat,
     chat_result,
+    chat_result_ex,
+    last_used,
     read_errors,
     resolve,
     status,
@@ -17,6 +19,6 @@ from ..ai_client import (  # noqa: F401
 )
 
 __all__ = [
-    "ERROR_LOG", "PROVIDERS", "STATS", "chat", "chat_result", "read_errors",
-    "resolve", "status", "test_connection",
+    "ERROR_LOG", "PROVIDERS", "STATS", "chat", "chat_result", "chat_result_ex",
+    "last_used", "read_errors", "resolve", "status", "test_connection",
 ]

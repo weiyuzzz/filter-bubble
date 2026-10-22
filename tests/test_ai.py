@@ -385,5 +385,85 @@ class TestTokenLimits(unittest.TestCase):
             ai_settings.CONFIG_PATH.unlink()
 
 
+class TestProviders(unittest.TestCase):
+    """接口类型分三类：OpenAI 兼容 / Anthropic 原生 / 本地模型。"""
+
+    def setUp(self):
+        from core import ai_usage
+
+        ai_usage.resume()
+        ai_client.reset_slot()
+
+    def test_three_providers(self):
+        self.assertEqual(set(ai_client.PROVIDERS), {"openai", "anthropic", "local"})
+
+    def test_old_values_are_mapped(self):
+        self.assertEqual(ai_client.normalize_provider("openai_compatible"), "openai")
+        self.assertEqual(ai_client.normalize_provider("ollama"), "local")
+        self.assertEqual(ai_client.normalize_provider("anthropic"), "anthropic")
+        self.assertEqual(ai_client.normalize_provider("nonsense"), "openai")
+
+    def test_anthropic_request_shape(self):
+        llm = {"provider": "anthropic", "model": "claude-sonnet-4-20250514",
+               "base_url": "https://api.anthropic.com", "max_tokens": 700,
+               "temperature": 0.2, "slot": "primary", "api_key_env": "X"}
+        url, payload, headers = ai_client._build_request(
+            llm,
+            [{"role": "system", "content": "sys"},
+             {"role": "user", "content": "hi"},
+             {"role": "assistant", "content": "yo"},
+             {"role": "user", "content": "again"}],
+            json_mode=True)
+        self.assertEqual(url, "https://api.anthropic.com/v1/messages")
+        self.assertEqual(payload["system"], "sys")
+        self.assertEqual(payload["max_tokens"], 700)
+        self.assertEqual([m["role"] for m in payload["messages"]], ["user", "assistant", "user"])
+        self.assertIn("anthropic-version", headers)
+        self.assertNotIn("response_format", payload)
+
+    def test_anthropic_extract_and_usage(self):
+        llm = {"provider": "anthropic"}
+        data = {"content": [{"type": "text", "text": "hello"},
+                            {"type": "text", "text": "world"}],
+                "usage": {"input_tokens": 11, "output_tokens": 7}}
+        self.assertEqual(ai_client._extract(llm, data), "hello\nworld")
+        self.assertEqual(ai_client._usage_of(llm, data), (11, 7))
+
+    def test_local_request_shape(self):
+        llm = {"provider": "local", "model": "qwen2.5:7b",
+               "base_url": "http://127.0.0.1:11434", "max_tokens": 500,
+               "temperature": 0.2, "slot": "primary", "api_key_env": "X"}
+        url, payload, _headers = ai_client._build_request(llm, [{"role": "user", "content": "hi"}], True)
+        self.assertEqual(url, "http://127.0.0.1:11434/api/chat")
+        self.assertTrue(payload["stream"] is False)
+        self.assertEqual(payload["options"]["num_predict"], 500)
+        self.assertEqual(payload["format"], "json")
+
+    def test_openai_request_shape(self):
+        llm = {"provider": "openai", "model": "deepseek-chat",
+               "base_url": "https://api.deepseek.com", "max_tokens": 300,
+               "temperature": 0.2, "slot": "primary", "api_key_env": "X"}
+        url, payload, _headers = ai_client._build_request(llm, [{"role": "user", "content": "hi"}], True)
+        self.assertEqual(url, "https://api.deepseek.com/v1/chat/completions")
+        self.assertEqual(payload["max_tokens"], 300)
+        self.assertEqual(payload["response_format"], {"type": "json_object"})
+
+    def test_chat_result_ex_reports_serving_model(self):
+        """主备切换后，调用方要能拿到真正服务的模型名。"""
+        original = ai_client._attempt
+        ai_client._attempt = lambda llm, messages, json_mode: ("ok-text", None)
+        try:
+            cfg = {"llm": {"enabled": True, "provider": "openai",
+                           "base_url": "http://127.0.0.1:9/v1", "model": "primary-model",
+                           "token_limits": {"primary": 0, "fallback": 0, "window_hours": 24}}}
+            text, error, used = ai_client.chat_result_ex([{"role": "user", "content": "x"}], cfg)
+        finally:
+            ai_client._attempt = original
+        self.assertEqual(text, "ok-text")
+        self.assertIsNone(error)
+        self.assertEqual(used.get("model"), "primary-model")
+        self.assertEqual(used.get("slot"), "primary")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -163,12 +163,13 @@ def summarize_event(conn, event: Dict[str, Any], items: List[Dict[str, Any]],
     used_provider = "extractive"
     used_model = ""
     if ok:
-        raw = llm.chat(_prompt(event, items), cfg, json_mode=True)
+        raw, _err, used_info = llm.chat_result_ex(_prompt(event, items), cfg, json_mode=True)
         parsed = _parse_llm(raw)
         if parsed:
             result = parsed
-            used_provider = provider
-            used_model = model
+            # 主备切换后记为实际服务的接口
+            used_provider = used_info.get("provider") or provider
+            used_model = used_info.get("model") or model
 
     if result is None:
         result = extractive(event, items)
