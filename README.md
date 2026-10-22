@@ -168,6 +168,39 @@ python3 app.py push
 
 ---
 
+## 全球热点雷达（独立模块）
+
+在同一个应用里新增了第二个模块：**全球热点雷达**，入口是 <http://127.0.0.1:8791/radar.html>，页面顶部可以在「GitHub 热点 / 全球热点雷达」之间随时切换。
+
+它监控中文互联网、国际新闻和可免费访问的公开社交信息，自动聚类热点，并支持**事件起源追溯、事实主张拆解、多方证据核验、国内外报道对比和每日自动推送**。
+
+- **完全独立**：新的 `radar_*` 表、独立的 `radar-scheduler` 线程（默认 09:00）、独立的推送配置与去重日志。原有 GitHub 的采集、筛选、评分、日报、推送和接口一行未改。
+- **全部免费**：不需要任何付费 API 或订阅。已实测可用 16 个源（中国新闻网、新浪、IT之家、量子位、微博热搜、百度热搜、B站、今日头条、网易、V2EX、德国之声、Hacker News、TechCrunch、BBC 等）。
+- **诚实标注**：无法访问或无合规免费入口的平台（X、抖音、小红书、贴吧、Instagram、Threads、TikTok、知乎、arXiv、Reddit）会明确显示「未接入 / 受限」，不会伪造数据。
+- **不编造结论**：调查只使用已采集的公开材料，每条结论都指回具体链接；找不到来源就写「尚未找到最早来源」；证据不足就写「证据不足」。
+
+六个子页面：每日热点 / 事件调查 / 科技突破核验 / 数据源管理 / 历史记录 / 监控设置。
+
+```bash
+python app.py radar collect          # 采集 + 生成雷达日报
+python app.py radar query 芯片 突破   # 自由关键词调查
+```
+
+```json
+// social_radar.json（缺失也能运行，缺项用默认值）
+{
+  "schedule": { "daily_time": "09:00" },
+  "push": { "enabled": false, "items": 5 },
+  "interests": { "topics": ["AI 与大模型", "芯片与半导体"], "keywords": [], "exclude": [] },
+  "scoring": { "velocity": 0.3, "cross_platform": 0.2, "engagement": 0.2,
+               "verification": 0.2, "interest": 0.1 }
+}
+```
+
+详细说明（数据源实测结果、评分公式、调查方法、存储结构、已知限制）见 [docs/radar.md](docs/radar.md)。
+
+---
+
 ## 每日自动化
 
 ### 方式 A：LaunchAgent（推荐，macOS）

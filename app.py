@@ -134,10 +134,30 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    # ---------- radar (independent module; failures never touch the GitHub flow) ----------
+    def _radar(self, path: str, parsed, body: Optional[Dict[str, Any]]):
+        try:
+            from core.radar import api as radar_api
+        except Exception as exc:  # noqa: BLE001
+            print("[radar] unavailable:", exc)
+            return _json(self, 503, {"error": "radar module unavailable: %s" % exc})
+        try:
+            if body is None:
+                query = {k: v[0] for k, v in urllib.parse.parse_qs(parsed.query).items()}
+                status, payload = radar_api.handle_get(path, query)
+            else:
+                status, payload = radar_api.handle_post(path, body)
+        except Exception as exc:  # noqa: BLE001
+            print("[radar] handler error:", exc)
+            status, payload = 500, {"error": str(exc)}
+        return _json(self, status, payload)
+
     # ---------- API ----------
     def do_GET(self):  # noqa: N802
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+        if path == "/api/radar" or path.startswith("/api/radar/"):
+            return self._radar(path, parsed, None)
         if path == "/api/health":
             return _json(self, 200, {"ok": True, "time": db.now_iso()})
         if path == "/api/status":
@@ -184,6 +204,8 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         body = _read_body(self)
+        if path.startswith("/api/radar/"):
+            return self._radar(path, parsed, body)
         conn = db.connect()
         try:
             if path == "/api/refresh":
@@ -319,6 +341,14 @@ def serve() -> None:
         digest.refresh_async()
     stop = threading.Event()
     threading.Thread(target=_scheduler, args=(stop,), daemon=True, name="filter-bubble-scheduler").start()
+    # 全球热点雷达：独立线程、独立表、独立时间表。这里的任何异常都不能影响 GitHub 服务启动。
+    try:
+        from core.radar import service as radar_service
+        from core.radar import store as radar_store
+        radar_store.init()
+        radar_service.start_scheduler(stop)
+    except Exception as exc:  # noqa: BLE001
+        print("[radar] scheduler not started:", exc)
     httpd = Server((config.HOST, config.PORT), Handler)
     url = "http://%s:%d" % (config.HOST, config.PORT)
     print("\n  Filter Bubble  %s\n  daily refresh %s (%s)\n" % (url, config.REFRESH_TIME, config.TIMEZONE))
@@ -379,6 +409,37 @@ def main() -> None:
             print("✓ feedback cleared")
         finally:
             conn.close()
+    elif cmd == "radar":
+        # 独立入口：python app.py radar [collect|report|investigate <event_id>|query <text>]
+        from core.radar import config as radar_config, investigate, service, store
+
+        store.init()
+        radar_cfg = radar_config.cached()
+        sub = sys.argv[2] if len(sys.argv) > 2 else "collect"
+        if sub == "collect":
+            result = service.collect_and_report(radar_cfg, reason="cli")
+            print(json.dumps(result.get("stats") or {}, ensure_ascii=False, default=str))
+            sys.exit(0 if result.get("ok") else 1)
+        if sub == "report":
+            print(service.generate_report_only(radar_cfg))
+            sys.exit(0)
+        if sub == "investigate" and len(sys.argv) > 3:
+            conn = db.connect()
+            try:
+                print(json.dumps(investigate.run(conn, sys.argv[3], radar_cfg), ensure_ascii=False)[:4000])
+            finally:
+                conn.close()
+            sys.exit(0)
+        if sub == "query" and len(sys.argv) > 3:
+            conn = db.connect()
+            try:
+                print(json.dumps(investigate.run_query(conn, " ".join(sys.argv[3:]), radar_cfg),
+                                 ensure_ascii=False)[:4000])
+            finally:
+                conn.close()
+            sys.exit(0)
+        print(__doc__)
+        sys.exit(1)
     else:
         print(__doc__)
         sys.exit(1)

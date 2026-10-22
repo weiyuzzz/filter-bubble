@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "enabled": true,
+  "timezone": "Asia/Shanghai",
+
+  "schedule": {
+    "daily_time": "09:00",
+    "retry_after_minutes": 10,
+    "max_retries": 3
+  },
+
+  "limits": {
+    "max_candidates": 150,
+    "max_events": 60,
+    "max_report_events": 12,
+    "source_timeout_seconds": 12,
+    "source_retries": 1,
+    "min_minutes_between_collects": 20,
+    "min_minutes_between_reports": 60
+  },
+
+  "scoring": {
+    "velocity": 0.3,
+    "cross_platform": 0.2,
+    "engagement": 0.2,
+    "verification": 0.2,
+    "interest": 0.1
+  },
+
+  "report": {
+    "length": "standard",
+    "top_events": 12,
+    "section_limits": { "zh_web": 8, "intl": 8, "tech": 8, "investigations": 5 }
+  },
+
+  "push": {
+    "enabled": false,
+    "channel": "radar-wechat",
+    "items": 5,
+    "alert_threshold": 82,
+    "max_attempts": 3,
+    "fallback_to_main_key": true,
+    "sendkey_env": "RADAR_SERVERCHAN_SENDKEY"
+  },
+
+  "interests": {
+    "topics": [
+      "AI 与大模型",
+      "芯片与半导体",
+      "开源软件",
+      "国际科技公司",
+      "游戏与消费电子",
+      "国际新闻",
+      "中国科技发展与科研成果",
+      "产业竞争与经济事件"
+    ],
+    "keywords": [],
+    "synonyms": {},
+    "exclude": [],
+    "languages": ["zh", "en"]
+  },
+
+  "investigation": {
+    "min_heat": 70,
+    "max_evidence": 60,
+    "tech_auto_check": true,
+    "tech_keywords": [
+      "芯片", "半导体", "光刻", "大模型", "人工智能", "量子", "可控核聚变",
+      "超导", "6G", "卫星", "航空发动机", "新材料", "量产", "首次实现",
+      "国际领先", "突破"
+    ]
+  },
+
+  "retention": { "days": 90 },
+
+  "llm": {
+    "enabled": false,
+    "provider": "",
+    "note": "默认关闭：调查结论由本地规则与已采集证据生成，不调用任何外部模型"
+  },
+
+  "sources": {}
+}
