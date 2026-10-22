@@ -2,14 +2,12 @@
   "version": 1,
   "enabled": true,
   "timezone": "Asia/Shanghai",
-
   "schedule": {
     "daily_time": "08:00",
     "collect_interval_minutes": 60,
     "retry_after_minutes": 10,
     "max_retries": 3
   },
-
   "limits": {
     "max_candidates": 600,
     "max_events": 220,
@@ -21,43 +19,51 @@
     "hotlist_top_n": 10,
     "news_top_n": 40
   },
-
   "cluster": {
     "within_run_threshold": 0.3,
     "match_threshold": 0.35,
     "story_threshold": 0.42
   },
-
   "backoff": {
     "degrade_after": 3,
     "degrade_interval_minutes": 60,
     "pause_after": 6
   },
-
   "newsnow": {
     "api_url": "https://newsnow.busiyi.world/api/s",
     "verify_domain": true,
     "note": "抖音/知乎/贴吧/华尔街见闻/财联社/澎湃/凤凰走这个第三方聚合 API；可在 sources 里单独关闭某个平台，例如 \"sources\": {\"douyin\": {\"enabled\": false}}"
   },
-
   "filters": {
     "noise_keywords": [
-      "吃不吃挑战", "返厂了", "抽奖", "转发抽", "表情包", "壁纸",
-      "cp向", "磕糖", "二创", "鬼畜", "整活", "梗图"
+      "吃不吃挑战",
+      "返厂了",
+      "抽奖",
+      "转发抽",
+      "表情包",
+      "壁纸",
+      "cp向",
+      "磕糖",
+      "二创",
+      "鬼畜",
+      "整活",
+      "梗图"
     ],
     "rules": [],
     "rules_note": "关键词语法，每行一条：[组名] / +必须词 / !排除词 / /正则/ => 别名 / @每组上限。示例：[\"科技\", \"+芯片\", \"!抽奖\"]",
     "min_engagement": {
-      "bilibili_popular": { "view": 50000 },
-      "hackernews": { "points": 40 }
+      "bilibili_popular": {
+        "view": 50000
+      },
+      "hackernews": {
+        "points": 40
+      }
     }
   },
-
   "rss": {
     "feeds": [],
     "feeds_note": "自定义 RSS 源，加源不用改代码。每项：{id, name, url, platform?, language?, max_items?, enabled?}"
   },
-
   "scoring": {
     "velocity": 0.3,
     "cross_platform": 0.2,
@@ -65,13 +71,16 @@
     "verification": 0.2,
     "interest": 0.1
   },
-
   "report": {
     "length": "standard",
     "top_events": 12,
-    "section_limits": { "zh_web": 8, "intl": 8, "tech": 8, "investigations": 5 }
+    "section_limits": {
+      "zh_web": 8,
+      "intl": 8,
+      "tech": 8,
+      "investigations": 5
+    }
   },
-
   "push": {
     "enabled": false,
     "channel": "radar-wechat",
@@ -81,7 +90,6 @@
     "fallback_to_main_key": true,
     "sendkey_env": "RADAR_SERVERCHAN_SENDKEY"
   },
-
   "interests": {
     "topics": [
       "AI 与大模型",
@@ -96,22 +104,37 @@
     "keywords": [],
     "synonyms": {},
     "exclude": [],
-    "languages": ["zh", "en"]
+    "languages": [
+      "zh",
+      "en"
+    ]
   },
-
   "investigation": {
     "min_heat": 70,
     "max_evidence": 60,
     "tech_auto_check": true,
     "tech_keywords": [
-      "芯片", "半导体", "光刻", "大模型", "人工智能", "量子", "可控核聚变",
-      "超导", "6G", "卫星", "航空发动机", "新材料", "量产", "首次实现",
-      "国际领先", "突破"
+      "芯片",
+      "半导体",
+      "光刻",
+      "大模型",
+      "人工智能",
+      "量子",
+      "可控核聚变",
+      "超导",
+      "6G",
+      "卫星",
+      "航空发动机",
+      "新材料",
+      "量产",
+      "首次实现",
+      "国际领先",
+      "突破"
     ]
   },
-
-  "retention": { "days": 90 },
-
+  "retention": {
+    "days": 90
+  },
   "llm": {
     "enabled": false,
     "provider": "openai_compatible",
@@ -124,6 +147,31 @@
     "temperature": 0.2,
     "note": "可在网页「监控设置 → 大模型」里配置；API Key 只存本地 data/radar_secrets.json。未配置时自动回退到本地抽取式摘要"
   },
-
-  "sources": {}
+  "sources": {},
+  "papers": {
+    "enabled": true,
+    "daily_time": "08:30",
+    "interval_hours": 24,
+    "lookback_days": 3,
+    "fetch_per_source": 30,
+    "per_discipline_limit": 10,
+    "sources": {
+      "crossref": true,
+      "pubmed": true,
+      "europepmc": true,
+      "biorxiv": true,
+      "medrxiv": true,
+      "huggingface": true,
+      "openalex": false
+    },
+    "openalex_api_key_env": "OPENALEX_API_KEY",
+    "crossref_mailto": "",
+    "ai": {
+      "enabled": true,
+      "max_per_run": 24,
+      "max_per_day": 20,
+      "concurrency": 2
+    },
+    "note": "论文每天更新一次（interval_hours=24），AI 每日调用上限 ai.max_per_day，额度存在数据库里，重启不会清零"
+  }
 }

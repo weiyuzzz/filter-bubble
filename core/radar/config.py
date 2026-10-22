@@ -65,6 +65,8 @@ DEFAULTS: Dict[str, Any] = {
         "enabled": True,
         # 每天几点采集论文（与雷达 08:00 的日报错开）
         "daily_time": "08:30",
+        # 采集间隔：24 = 每天只抓一次，避免反复抓取和反复调用模型
+        "interval_hours": 24,
         # 回溯天数：覆盖数据源的更新延迟
         "lookback_days": 3,
         # 每个来源每次最多取多少条
@@ -83,7 +85,8 @@ DEFAULTS: Dict[str, Any] = {
         },
         "openalex_api_key_env": "OPENALEX_API_KEY",
         "crossref_mailto": "",
-        "ai": {"enabled": True, "max_per_run": 24, "concurrency": 2},
+        # max_per_day 是每日模型调用上限，存在数据库里，重启不会清零
+        "ai": {"enabled": True, "max_per_run": 24, "max_per_day": 20, "concurrency": 2},
     },
     "filters": {
         # 全局噪音词：命中即丢弃（娱乐段子、抽奖、标题党）

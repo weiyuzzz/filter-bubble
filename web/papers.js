@@ -130,6 +130,10 @@
     if (stats.ai_done) parts.push(chip(`已完成 AI 概况 ${stats.ai_done} 篇`, "ok"));
     if (stats.ai_failed) parts.push(chip(`AI 失败 ${stats.ai_failed} 篇`, "warn"));
     if (status && status.queue) parts.push(chip(`队列 ${status.queue}`));
+    const budget = (status && status.ai_budget) || {};
+    if (budget.limit) {
+      parts.push(chip(`今日 AI 额度 ${budget.used || 0}/${budget.limit}`));
+    }
 
     let banner = "";
     const errors = ((data && data.papers) || []).map((p) => (p.ai || {}).error || "").filter(Boolean);

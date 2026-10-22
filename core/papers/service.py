@@ -44,6 +44,8 @@ def _cfg_block(cfg: Dict[str, Any]) -> Dict[str, Any]:
     defaults = {
         "enabled": True,
         "daily_time": "08:30",
+        # 论文每天更新一次（不影响雷达的每小时采集）
+        "interval_hours": 24,
         "lookback_days": 3,
         "fetch_per_source": 30,
         "per_discipline_limit": 10,
@@ -52,7 +54,8 @@ def _cfg_block(cfg: Dict[str, Any]) -> Dict[str, Any]:
                     "openalex": False},
         "openalex_api_key_env": "OPENALEX_API_KEY",
         "crossref_mailto": "",
-        "ai": {"enabled": True, "max_per_run": 24, "concurrency": 2},
+        # max_per_day 是每日调用上限，跨进程持久化，重启也不会清零
+        "ai": {"enabled": True, "max_per_run": 24, "max_per_day": 20, "concurrency": 2},
     }
     merged = dict(defaults)
     merged.update({k: v for k, v in papers.items() if k in defaults})
@@ -223,20 +226,42 @@ def enqueue(papers: List[Dict[str, Any]], limit: int) -> int:
 
 
 def analyze_pending(cfg: Dict[str, Any], limit: Optional[int] = None) -> int:
+    """把待分析论文补进队列，受「每次上限」与「每日额度」双重约束。
+
+    每日额度存在数据库里，服务重启或手动多点几次都不会突破上限；
+    额度按「入队」计数（不是按成功），失败重试也算一次，避免反复重试烧额度。
+    """
     block = _cfg_block(cfg)
     ai_cfg = block.get("ai") or {}
     if not ai_cfg.get("enabled", True):
         return 0
-    cap = int(limit if limit is not None else ai_cfg.get("max_per_run") or 24)
+
+    per_run = int(ai_cfg.get("max_per_run") or 24)
+    per_day = int(ai_cfg.get("max_per_day") or 20)
+    cap = int(limit if limit is not None else per_run)
+
+    today = dt.datetime.now().astimezone().date().isoformat()
     conn = db.connect()
     try:
+        used = store.ai_budget_used(conn, today)
+        remaining = max(0, per_day - used)
+        if remaining <= 0:
+            print("[papers] AI 每日额度已用完（%d/%d），今天不再分析" % (used, per_day))
+            return 0
+        cap = min(cap, remaining)
         papers = store.pending_papers(conn, cap, paper_ai.PROMPT_VERSION)
+        if not papers:
+            return 0
+        added = enqueue(papers, cap)
+        if added:
+            store.ai_budget_add(conn, today, added)
+        return added
     finally:
         conn.close()
-    return enqueue(papers, cap)
 
 
 def retry_one(paper_id: str) -> bool:
+    """手动重试单篇：计入当日额度（手动操作也不掩盖真实开销），但不因额度耗尽而拒绝。"""
     conn = db.connect()
     try:
         paper = store.get_paper(conn, paper_id)
@@ -244,6 +269,8 @@ def retry_one(paper_id: str) -> bool:
             return False
         store.save_overview(conn, paper_id, "pending", None, "", paper_ai.PROMPT_VERSION,
                             content_hash_value=store.content_hash(paper))
+        today = dt.datetime.now().astimezone().date().isoformat()
+        store.ai_budget_add(conn, today, 1)
     finally:
         conn.close()
     _QUEUE.put(paper_id)
@@ -282,22 +309,33 @@ def list_papers(discipline: str, limit: int, offset: int = 0) -> Dict[str, Any]:
 
 def status(cfg: Dict[str, Any]) -> Dict[str, Any]:
     block = _cfg_block(cfg)
+    ai_cfg = block.get("ai") or {}
+    today = dt.datetime.now().astimezone().date().isoformat()
     conn = db.connect()
     try:
         store.init()
         runs = store.latest_runs(conn)
         stats = store.stats(conn)
         counts = store.discipline_counts(conn)
+        used = store.ai_budget_used(conn, today)
+        last_run = conn.execute("SELECT MAX(finished_at) t FROM paper_source_runs").fetchone()["t"]
     finally:
         conn.close()
+    per_day = int(ai_cfg.get("max_per_day") or 20)
     return {
         "enabled": bool(block.get("enabled", True)),
         "state": get_state(),
         "queue": queue_size(),
-        "schedule": {"daily_time": block.get("daily_time"), "lookback_days": block.get("lookback_days")},
+        "schedule": {"daily_time": block.get("daily_time"),
+                     "interval_hours": block.get("interval_hours"),
+                     "lookback_days": block.get("lookback_days"),
+                     "last_run_at": last_run or ""},
         "limits": {"per_discipline_limit": block.get("per_discipline_limit"),
                    "fetch_per_source": block.get("fetch_per_source"),
-                   "ai_max_per_run": (block.get("ai") or {}).get("max_per_run")},
+                   "ai_max_per_run": ai_cfg.get("max_per_run"),
+                   "ai_max_per_day": per_day},
+        "ai_budget": {"date": today, "used": used, "limit": per_day,
+                      "remaining": max(0, per_day - used)},
         "stats": stats,
         "counts": counts,
         "sources": runs,
@@ -323,7 +361,11 @@ def _minutes_since(iso: Any) -> float:
 
 
 def scheduler_loop(stop: threading.Event) -> None:
-    """每天到点采集一次论文，并把待分析队列补满。失败不影响其他模块。"""
+    """论文每天只跑一次：到点采集，然后按每日额度补 AI 队列。
+
+    频率由 ``papers.interval_hours``（默认 24）控制，与雷达的每小时采集完全独立；
+    这样既不会反复抓取，也不会反复调用模型。失败不影响其他模块。
+    """
     print("[papers] scheduler started")
     while not stop.wait(60):
         try:
@@ -333,6 +375,7 @@ def scheduler_loop(stop: threading.Event) -> None:
                 continue
             now = dt.datetime.now().astimezone()
             daily_time = str(block.get("daily_time") or "08:30")
+            interval_hours = float(block.get("interval_hours") or 24)
             if now.strftime("%H:%M") < daily_time:
                 continue
             conn = db.connect()
@@ -341,14 +384,16 @@ def scheduler_loop(stop: threading.Event) -> None:
                 last = conn.execute("SELECT MAX(finished_at) t FROM paper_source_runs").fetchone()["t"]
             finally:
                 conn.close()
-            if _minutes_since(last) < 60 * 12:
+            if _minutes_since(last) < interval_hours * 60:
                 continue
             if get_state().get("running"):
                 continue
             print("[papers] daily collect at", now.isoformat(timespec="seconds"))
             summary = collect(cfg)
             _set("idle", last_result=summary)
-            analyze_pending(cfg)
+            queued = analyze_pending(cfg)
+            if queued:
+                print("[papers] queued %d papers for AI (daily budget)" % queued)
         except Exception as exc:  # noqa: BLE001 - 调度线程不能死
             print("[papers] scheduler error:", exc)
 

@@ -286,5 +286,79 @@ class TestApiValidation(Base):
         self.assertEqual(status, 404)
 
 
+class TestAiBudget(Base):
+    """论文每天更新一次，AI 调用有每日硬上限，重启不清零。"""
+
+    def setUp(self):
+        super().setUp()
+        conn = db.connect()
+        try:
+            conn.execute("DELETE FROM paper_ai_budget")
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _make_papers(self, count):
+        conn = self.conn()
+        try:
+            items = [_paper(doi="10.9/%d" % i, title="Paper %d" % i,
+                            abstract="Abstract body number %d with enough words." % i)
+                     for i in range(count)]
+            store.upsert_papers(conn, items)
+        finally:
+            conn.close()
+
+    def test_daily_budget_blocks_after_limit(self):
+        from core.papers import service
+
+        self._make_papers(5)
+        cfg = {"papers": {"ai": {"enabled": True, "max_per_run": 10, "max_per_day": 2}}}
+        self.assertEqual(service.analyze_pending(cfg), 2)
+        self.assertEqual(service.analyze_pending(cfg), 0)  # 额度已用完
+        while service.queue_size():
+            service._QUEUE.get_nowait()
+            service._QUEUE.task_done()
+
+    def test_budget_persists_across_calls(self):
+        from core.papers import service
+
+        self._make_papers(3)
+        cfg = {"papers": {"ai": {"enabled": True, "max_per_run": 1, "max_per_day": 5}}}
+        self.assertEqual(service.analyze_pending(cfg), 1)
+        self.assertEqual(service.analyze_pending(cfg), 1)
+        conn = self.conn()
+        try:
+            import datetime as dt
+            today = dt.datetime.now().astimezone().date().isoformat()
+            self.assertEqual(store.ai_budget_used(conn, today), 2)
+        finally:
+            conn.close()
+        while service.queue_size():
+            service._QUEUE.get_nowait()
+            service._QUEUE.task_done()
+
+    def test_disabled_ai_does_not_consume_budget(self):
+        from core.papers import service
+
+        self._make_papers(2)
+        cfg = {"papers": {"ai": {"enabled": False}}}
+        self.assertEqual(service.analyze_pending(cfg), 0)
+        conn = self.conn()
+        try:
+            import datetime as dt
+            today = dt.datetime.now().astimezone().date().isoformat()
+            self.assertEqual(store.ai_budget_used(conn, today), 0)
+        finally:
+            conn.close()
+
+    def test_status_exposes_budget(self):
+        from core.papers import service
+
+        status = service.status({"papers": {"ai": {"max_per_day": 7}}})
+        self.assertEqual(status["ai_budget"]["limit"], 7)
+        self.assertEqual(status["ai_budget"]["remaining"], 7)
+        self.assertEqual(status["schedule"]["interval_hours"], 24)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
