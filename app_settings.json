@@ -1,6 +1,5 @@
-﻿{
+{
   "version": 1,
-
   "llm": {
     "enabled": true,
     "provider": "openai_compatible",
@@ -13,7 +12,6 @@
     "max_tokens": 1500,
     "note": "API Key 不写在这里：在网页「全局设置」里填，只存 data/ai_secrets.json；也可用环境变量 RADAR_LLM_API_KEY。"
   },
-
   "ai": {
     "enable_briefs": true,
     "briefs_per_run": 6,

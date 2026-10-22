@@ -22,6 +22,16 @@ def _err(status: int, message: str) -> Tuple[int, Dict[str, Any]]:
 
 def handle_get(path: str, query: Dict[str, str]) -> Tuple[int, Dict[str, Any]]:
     cfg = radar_config.cached()
+    if path.startswith("/api/radar/papers"):
+        try:
+            from ..papers import api as papers_api
+        except Exception as exc:  # noqa: BLE001 - 论文模块坏了不能影响雷达
+            return _err(503, "papers module unavailable: %s" % exc)
+        try:
+            return papers_api.handle_get(path, query, cfg)
+        except Exception as exc:  # noqa: BLE001
+            print("[papers] GET error:", exc)
+            return _err(500, str(exc))
     conn = db.connect()
     try:
         store.init()
@@ -107,6 +117,16 @@ def _investigation_view(conn, event_id: str) -> Dict[str, Any]:
 
 def handle_post(path: str, body: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
     cfg = radar_config.cached()
+    if path.startswith("/api/radar/papers"):
+        try:
+            from ..papers import api as papers_api
+        except Exception as exc:  # noqa: BLE001
+            return _err(503, "papers module unavailable: %s" % exc)
+        try:
+            return papers_api.handle_post(path, body, cfg)
+        except Exception as exc:  # noqa: BLE001
+            print("[papers] POST error:", exc)
+            return _err(500, str(exc))
     conn = db.connect()
     try:
         store.init()

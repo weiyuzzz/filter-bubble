@@ -445,6 +445,15 @@ def serve() -> None:
         radar_service.start_scheduler(stop)
     except Exception as exc:  # noqa: BLE001
         print("[radar] scheduler not started:", exc)
+    # 学术论文：独立调度 + 有界 AI 队列，失败不影响雷达和 GitHub
+    try:
+        from core.papers import service as papers_service
+        from core.papers import store as papers_store
+        papers_store.init()
+        papers_service.start_worker(stop, 2)
+        papers_service.start_scheduler(stop)
+    except Exception as exc:  # noqa: BLE001
+        print("[papers] scheduler not started:", exc)
     httpd = Server((config.HOST, config.PORT), Handler)
     url = "http://%s:%d" % (config.HOST, config.PORT)
     print("\n  Filter Bubble  %s\n  daily refresh %s (%s)\n" % (url, config.REFRESH_TIME, config.TIMEZONE))
@@ -534,6 +543,46 @@ def main() -> None:
             finally:
                 conn.close()
             sys.exit(0)
+        if sub == "papers":
+            from core.papers import probe as papers_probe, service as papers_service, store as papers_store
+
+            papers_store.init()
+            action = sys.argv[3] if len(sys.argv) > 3 else "collect"
+            if action == "test-sources":
+                only = sys.argv[4] if len(sys.argv) > 4 else ""
+                report = papers_probe.run(radar_cfg, only)
+                print(papers_probe.format_text(report))
+                print("\nJSON:")
+                print(json.dumps(report, ensure_ascii=False, indent=2)[:6000])
+                sys.exit(0 if report.get("usable") else 1)
+            if action == "collect":
+                summary = papers_service.collect(radar_cfg)
+                print(json.dumps(summary, ensure_ascii=False, indent=2, default=str)[:4000])
+                queued = papers_service.analyze_pending(radar_cfg)
+                if queued:
+                    stop = threading.Event()
+                    papers_service.start_worker(stop, 2)
+                    print("[papers] 已排队 %d 篇，等待 AI 概况…" % queued)
+                    for _ in range(180):
+                        if papers_service.queue_size() == 0:
+                            break
+                        time.sleep(1)
+                    stop.set()
+                sys.exit(0)
+            if action == "analyze":
+                queued = papers_service.analyze_pending(radar_cfg)
+                print("queued:", queued)
+                sys.exit(0)
+            if action == "status":
+                conn = db.connect()
+                try:
+                    print(json.dumps(papers_service.status(radar_cfg), ensure_ascii=False,
+                                     indent=2, default=str)[:4000])
+                finally:
+                    conn.close()
+                sys.exit(0)
+            print(__doc__)
+            sys.exit(1)
         print(__doc__)
         sys.exit(1)
     else:

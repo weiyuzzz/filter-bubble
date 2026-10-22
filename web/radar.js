@@ -81,6 +81,7 @@
     if (name === "history") loadHistory();
     if (name === "settings") loadSettings();
     if (name === "tech") loadTech();
+    if (name === "papers") loadPapers();
   }
 
   // ---------- status board ----------
@@ -643,6 +644,193 @@
     }
   }
 
+  // ---------- 学术论文 ----------
+  const PAPER_LABELS = [
+    ["research", "研究内容"], ["method", "核心方法"], ["findings", "主要发现"],
+    ["significance", "研究意义"], ["limits", "信息局限"],
+  ];
+
+  function papersState() {
+    if (!state.papers) {
+      state.papers = { discipline: localStorage.getItem("radar.papers") || "all", items: [], status: null, busy: false };
+    }
+    return state.papers;
+  }
+
+  function renderDisciplines(status) {
+    const box = $("#papersDisciplines");
+    if (!box) return;
+    const current = papersState().discipline;
+    const list = (status && status.disciplines) || [];
+    const counts = (status && status.counts) || {};
+    box.innerHTML = list.map((d) => {
+      const total = counts[d.key] || 0;
+      return `<button class="papers-chip ${d.key === current ? "is-active" : ""}" role="tab"
+        aria-selected="${d.key === current}" data-discipline="${esc(d.key)}">${esc(d.label)}
+        <span class="count-pill">${total}</span></button>`;
+    }).join("");
+  }
+
+  function paperAiBlock(paper) {
+    const ai = paper.ai || {};
+    if (ai.status === "done" && ai.overview) {
+      const rows = PAPER_LABELS
+        .filter(([key]) => ai.overview[key])
+        .map(([key, label]) => `<div class="paper-ai-row"><span>${label}</span><p>${esc(ai.overview[key])}</p></div>`)
+        .join("");
+      return `<div class="paper-ai">
+        <div class="paper-ai-head">AI 中文概况 ${chip(ai.model || "模型", "info")}</div>
+        ${rows}
+      </div>`;
+    }
+    if (ai.status === "failed") {
+      return `<div class="paper-ai is-failed">
+        <div class="paper-ai-head">AI 概况生成失败</div>
+        <p class="paper-ai-error">${esc(ai.error || "未知错误")}</p>
+        <button class="ghost-btn paper-retry" type="button" data-retry="${esc(paper.id)}">重试</button>
+      </div>`;
+    }
+    return `<div class="paper-ai is-pending">
+      <div class="paper-ai-head">AI 中文概况</div>
+      <p class="pending">${ai.status === "queued" ? "已排队，等待分析…" : "正在分析…"}</p>
+    </div>`;
+  }
+
+  function paperCard(paper) {
+    const url = paper.url || (paper.doi ? "https://doi.org/" + paper.doi : "");
+    const labels = (paper.discipline_labels || []).map((x) => chip(x)).join("");
+    const source = paper.venue || paper.source;
+    return `<article class="paper-card">
+      <h3 class="paper-title">${url
+        ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(paper.title)}</a>`
+        : esc(paper.title)}</h3>
+      <div class="paper-meta">
+        ${labels}
+        ${chip(source)}
+        ${paper.published_at ? `<span class="paper-date">${esc(paper.published_at)}</span>` : ""}
+      </div>
+      <div class="paper-abstract-block">
+        <div class="paper-label">原始摘要</div>
+        <p class="paper-abstract">${paper.abstract ? esc(paper.abstract) : "该来源没有提供摘要"}</p>
+      </div>
+      ${paperAiBlock(paper)}
+      ${url ? `<a class="paper-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">阅读原文 ↗</a>` : ""}
+    </article>`;
+  }
+
+  function renderPapersNotice(data, status) {
+    const box = $("#papersNotice");
+    if (!box) return;
+    const parts = [];
+    const failed = (status && status.sources || []).filter((s) => s.status !== "ok");
+    if (failed.length) {
+      parts.push(`<span class="chip warn">来源失败：${failed.map((s) => esc(s.source)).join("、")}</span>`);
+    }
+    const stats = (status && status.stats) || {};
+    if (stats.total) {
+      parts.push(chip(`共 ${stats.total} 篇`));
+      parts.push(chip(`摘要覆盖 ${Math.round((stats.abstract_ratio || 0) * 100)}%`));
+    }
+    if (stats.ai_done) parts.push(chip(`已完成 AI 概况 ${stats.ai_done} 篇`, "ok"));
+    if (stats.ai_failed) parts.push(chip(`AI 失败 ${stats.ai_failed} 篇`, "warn"));
+    const queue = status && status.queue;
+    if (queue) parts.push(chip(`队列 ${queue}`));
+
+    // 模型不可用时给一条明确说明，避免误以为论文数据有问题
+    let banner = "";
+    const items = (data && data.papers) || [];
+    const errors = items.map((p) => (p.ai || {}).error || "").filter(Boolean);
+    if (errors.length) {
+      const quota = errors.some((e) => /rate limit|额度|quota/i.test(e));
+      banner = quota
+        ? `<div class="papers-banner">模型额度不足（免费模型有每日上限），论文原文与摘要仍可正常查看。额度恢复后点卡片上的「重试」即可生成概况。</div>`
+        : `<div class="papers-banner">AI 概况暂时失败：${esc(errors[0].slice(0, 80))}</div>`;
+    }
+    box.innerHTML = (parts.length ? `<div class="ev-meta">${parts.join("")}</div>` : "") + banner;
+  }
+
+  function renderPaperSources(status) {
+    const box = $("#papersSources");
+    if (!box) return;
+    const runs = (status && status.sources) || [];
+    if (!runs.length) {
+      box.innerHTML = "";
+      return;
+    }
+    const rows = runs.map((r) => `<tr>
+      <td>${esc(r.source)}</td>
+      <td>${r.status === "ok" ? chip("正常", "ok") : chip(r.status === "running" ? "采集中" : "失败", "warn")}</td>
+      <td class="mono">${r.fetched ?? "—"}</td>
+      <td class="mono">${r.with_abstract ?? "—"}</td>
+      <td class="mono">${r.duration_ms ? r.duration_ms + "ms" : "—"}</td>
+      <td class="mono">${esc(fmtTime(r.finished_at || r.started_at))}</td>
+      <td class="mono">${esc((r.error || "").slice(0, 60))}</td>
+    </tr>`).join("");
+    box.innerHTML = `<div class="section-title">论文来源状态</div>
+      <div class="table-wrap"><table class="data-table">
+        <thead><tr><th>来源</th><th>状态</th><th>获取</th><th>含摘要</th><th>耗时</th><th>最近</th><th>错误</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`;
+  }
+
+  async function loadPapers() {
+    const ps = papersState();
+    const result = $("#papersResult");
+    if (!result) return;
+    try {
+      const [data, status] = await Promise.all([
+        api(`/api/radar/papers?discipline=${encodeURIComponent(ps.discipline)}&limit=10`),
+        api("/api/radar/papers/status"),
+      ]);
+      ps.status = status;
+      ps.items = data.papers || [];
+      renderDisciplines(status);
+      renderPapersNotice(data, status);
+      renderPaperSources(status);
+      const updated = $("#papersUpdated");
+      if (updated) {
+        const stamp = (status.stats || {}).last_fetched_at || "";
+        updated.textContent = stamp ? "更新于 " + fmtTime(stamp) : "";
+      }
+      if (!ps.items.length) {
+        result.innerHTML = `<div class="empty-state"><div class="empty-mark">∅</div>
+          <h3>${esc(data.label || "该学科")}还没有论文</h3>
+          <p>点右上角「采集论文」抓取最近几天的公开论文；如果来源都失败，下方会显示具体错误。</p></div>`;
+      } else {
+        result.innerHTML = `<div class="papers-list">${ps.items.map(paperCard).join("")}</div>`;
+      }
+      const pending = ps.items.some((p) => ["pending", "queued"].includes((p.ai || {}).status));
+      if (pending) setTimeout(() => { if (state.view === "papers") loadPapers(); }, 6000);
+    } catch (error) {
+      result.innerHTML = `<div class="error-state"><div class="empty-mark">!</div>
+        <h3>论文加载失败</h3><p>${esc(error.message)}</p></div>`;
+    }
+  }
+
+  async function collectPapers() {
+    const ps = papersState();
+    if (ps.busy) return;
+    ps.busy = true;
+    const button = $("#papersCollectBtn");
+    if (button) { button.disabled = true; button.textContent = "采集中…"; }
+    try {
+      const data = await api("/api/radar/papers/collect", { method: "POST", body: "{}" });
+      toast(data.started ? "已开始采集论文…" : "已有采集任务在跑");
+      for (let i = 0; i < 60; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const status = await api("/api/radar/papers/status");
+        if (!(status.state && status.state.running)) break;
+      }
+      toast("采集完成");
+      await loadPapers();
+    } catch (error) {
+      toast("采集失败：" + error.message, true);
+    } finally {
+      ps.busy = false;
+      if (button) { button.disabled = false; button.textContent = "采集论文"; }
+    }
+  }
+
   // ---------- actions ----------
   async function triggerCollect() {
     try {
@@ -688,6 +876,21 @@
     });
 
     document.addEventListener("click", (event) => {
+      const chipNode = event.target.closest("[data-discipline]");
+      if (chipNode) {
+        const ps = papersState();
+        ps.discipline = chipNode.dataset.discipline;
+        localStorage.setItem("radar.papers", ps.discipline);
+        loadPapers();
+        return;
+      }
+      const retryNode = event.target.closest("[data-retry]");
+      if (retryNode) {
+        api("/api/radar/papers/retry", { method: "POST", body: JSON.stringify({ id: retryNode.dataset.retry }) })
+          .then(() => { toast("已重新排队分析"); loadPapers(); })
+          .catch((error) => toast("重试失败：" + error.message, true));
+        return;
+      }
       const button = event.target.closest("[data-action]");
       if (!button) return;
       const action = button.dataset.action;
@@ -699,6 +902,11 @@
         openReport(button.dataset.date);
       }
     });
+
+    const papersCollect = $("#papersCollectBtn");
+    if (papersCollect) papersCollect.addEventListener("click", collectPapers);
+    const papersRefresh = $("#papersRefreshBtn");
+    if (papersRefresh) papersRefresh.addEventListener("click", loadPapers);
 
     $("#collectBtn").addEventListener("click", triggerCollect);
     $("#pushBtn").addEventListener("click", triggerPush);

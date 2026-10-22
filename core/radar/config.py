@@ -59,6 +59,32 @@ DEFAULTS: Dict[str, Any] = {
         # 校验返回链接的域名；不匹配的条目直接丢弃（防第三方数据被篡改）
         "verify_domain": True,
     },
+
+    # 学术论文模块（paper_* 表，与雷达数据隔离）
+    "papers": {
+        "enabled": True,
+        # 每天几点采集论文（与雷达 08:00 的日报错开）
+        "daily_time": "08:30",
+        # 回溯天数：覆盖数据源的更新延迟
+        "lookback_days": 3,
+        # 每个来源每次最多取多少条
+        "fetch_per_source": 30,
+        # 每个学科最多展示多少篇
+        "per_discipline_limit": 10,
+        "sources": {
+            "crossref": True,
+            "pubmed": True,
+            "europepmc": True,
+            "biorxiv": True,
+            "medrxiv": True,
+            "huggingface": True,
+            # OpenAlex 需要 API Key，默认关闭；没有 Key 时会因共享预算返回 429
+            "openalex": False,
+        },
+        "openalex_api_key_env": "OPENALEX_API_KEY",
+        "crossref_mailto": "",
+        "ai": {"enabled": True, "max_per_run": 24, "concurrency": 2},
+    },
     "filters": {
         # 全局噪音词：命中即丢弃（娱乐段子、抽奖、标题党）
         "noise_keywords": [

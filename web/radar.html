@@ -110,6 +110,7 @@
           <button class="radar-tab is-active" data-view="daily" role="tab" aria-selected="true">每日热点</button>
           <button class="radar-tab" data-view="investigate" role="tab" aria-selected="false">事件调查</button>
           <button class="radar-tab" data-view="tech" role="tab" aria-selected="false">科技突破核验</button>
+          <button class="radar-tab" data-view="papers" role="tab" aria-selected="false">学术论文</button>
           <button class="radar-tab" data-view="sources" role="tab" aria-selected="false">数据源管理</button>
           <button class="radar-tab" data-view="history" role="tab" aria-selected="false">历史记录</button>
           <button class="radar-tab" data-view="settings" role="tab" aria-selected="false">监控设置</button>
@@ -136,6 +137,20 @@
 
         <section class="radar-view" id="view-tech" role="tabpanel" hidden>
           <div id="techResult"><p class="pending">正在载入…</p></div>
+        </section>
+
+        <section class="radar-view" id="view-papers" role="tabpanel" hidden>
+          <div class="papers-toolbar">
+            <div class="papers-filters" id="papersDisciplines" role="tablist" aria-label="学科筛选"></div>
+            <div class="papers-actions">
+              <span class="updated-label" id="papersUpdated"></span>
+              <button class="ghost-btn" id="papersCollectBtn" type="button">采集论文</button>
+              <button class="ghost-btn" id="papersRefreshBtn" type="button">刷新列表</button>
+            </div>
+          </div>
+          <div id="papersNotice"></div>
+          <div id="papersResult"><p class="pending">正在载入论文…</p></div>
+          <div id="papersSources"></div>
         </section>
 
         <section class="radar-view" id="view-sources" role="tabpanel" hidden>
