@@ -17,6 +17,11 @@
       "base_url": "",
       "model": "",
       "api_key_env": "RADAR_LLM_API_KEY_FALLBACK"
+    },
+    "token_limits": {
+      "primary": 500000,
+      "fallback": 500000,
+      "window_hours": 24
     }
   },
   "ai": {

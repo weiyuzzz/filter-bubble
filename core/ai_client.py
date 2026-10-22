@@ -20,7 +20,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from . import ai_secrets
+from . import ai_secrets, ai_usage
 from .config import DATA_DIR
 
 PROVIDERS = ("openai_compatible", "ollama")
@@ -376,45 +376,101 @@ def _attempt(llm: Dict[str, Any], messages: List[Dict[str, str]],
     return None, last_error
 
 
+def _token_limits(settings: Dict[str, Any]) -> Dict[str, Any]:
+    """读取 token 限额配置。0 表示不限。"""
+    llm = settings.get("llm") if isinstance(settings.get("llm"), dict) else settings
+    raw = (llm or {}).get("token_limits") or {}
+    return {
+        "primary": int(raw.get("primary") or 0),
+        "fallback": int(raw.get("fallback") or 0),
+        "window_hours": float(raw.get("window_hours") or 24),
+    }
+
+
 def chat_result(messages: List[Dict[str, str]], settings: Dict[str, Any],
                 json_mode: bool = True) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
     """调用模型，返回 (文本, 错误)。错误是结构化 dict，绝不抛异常。
 
-    先按当前激活的接口（主或备）调用；如果是额度类错误且配了备用接口，
-    自动切到备用并重试一次，同时记录「到明天为止都用备用」。
+    顺序：
+    1. 全局暂停中（主备 token 都用尽）→ 直接返回暂停错误，不发请求；
+    2. 按当前激活接口开始，逐个尝试；本地 token 超限的接口直接跳过；
+    3. 主接口因额度错误失败 → 切备用；
+    4. 两个接口都不可用 → 暂停 24 小时并重新计数。
     """
-    order = ["primary", "fallback"]
-    if active_slot() == "fallback":
-        order = ["fallback", "primary"]
+    limits = _token_limits(settings)
 
-    first_error: Optional[Dict[str, Any]] = None
-    for index, slot in enumerate(order):
+    until = ai_usage.pause_until()
+    if until:
+        return None, {
+            "status": 0, "code": "paused",
+            "message": "AI 已暂停：主接口与备用接口的 token 额度都用完了",
+            "detail": "paused_until=%s" % until,
+            "hint": "%s 之后自动恢复并重新计数" % until,
+            "suggested_model": "", "retryable": False,
+        }
+
+    order = ["primary", "fallback"] if active_slot() == "primary" else ["fallback", "primary"]
+
+    plans: List[Tuple[str, Dict[str, Any]]] = []
+    first_reason = ""
+    for slot in order:
         ok, reason, llm = resolve(settings, slot)
         if not ok:
-            if slot == "primary" and not first_error:
-                first_error = {"status": 0, "message": reason, "detail": "", "hint": reason,
-                               "suggested_model": "", "retryable": False}
+            first_reason = first_reason or reason
             continue
+        if ai_usage.exhausted(slot, limits.get(slot) or 0):
+            first_reason = first_reason or ("%s 接口 token 额度已用尽（本地记账）" % slot)
+            print("[ai] %s 接口 token 额度已用尽，跳过" % slot)
+            continue
+        plans.append((slot, llm))
 
+    if not plans:
+        until = ai_usage.pause(limits.get("window_hours") or 24)
+        return None, {
+            "status": 0, "code": "paused",
+            "message": "主接口与备用接口的 token 额度都用完了，AI 先暂停",
+            "detail": "paused_until=%s" % until,
+            "hint": "%s 之后自动恢复并重新计数；也可以调高 token_limits 或换接口" % until,
+            "suggested_model": "", "retryable": False,
+        }
+
+    first_error: Optional[Dict[str, Any]] = None
+    for index, (slot, llm) in enumerate(plans):
+        before = (STATS["prompt_tokens"], STATS["completion_tokens"], STATS["calls"])
         text, error = _attempt(llm, messages, json_mode)
+        ai_usage.record(
+            slot,
+            STATS["prompt_tokens"] - before[0],
+            STATS["completion_tokens"] - before[1],
+            STATS["calls"] - before[2],
+        )
         if text:
             return text, None
-
         if not first_error:
             first_error = error
 
-        # 主接口额度用尽且有备用：切换并立即重试
+        # 主接口额度类错误 → 切到备用（如果还有备用可用）
         if slot == "primary" and is_quota_error(error):
-            fallback_ok, _why, _cfg = resolve(settings, "fallback")
-            if fallback_ok and len(order) == 2:
+            if any(s == "fallback" for s, _c in plans[index + 1:]):
+                switch_to_fallback((error or {}).get("message", ""))
+                continue
+            fb_ok, _why, _cfg = resolve(settings, "fallback")
+            if fb_ok:
                 switch_to_fallback((error or {}).get("message", ""))
                 continue
 
+    # 走完全部可用接口仍失败：如果是额度问题且备用也耗尽，就暂停
+    exhausted_all = all(ai_usage.exhausted(slot, limits.get(slot) or 0)
+                        for slot, _llm in plans) if plans else False
+    if is_quota_error(first_error) and exhausted_all:
+        ai_usage.pause(limits.get("window_hours") or 24)
+
     STATS["failures"] += 1
-    STATS["last_error"] = (first_error or {}).get("message", "")[:300]
+    STATS["last_error"] = (first_error or {}).get("message", "")[:300] or first_reason[:300]
     _log_error(int((first_error or {}).get("status") or 0),
                (first_error or {}).get("model", "") or "",
-               (first_error or {}).get("message", ""), (first_error or {}).get("detail", ""))
+               (first_error or {}).get("message", "") or first_reason,
+               (first_error or {}).get("detail", ""))
     print("[ai] call failed:", STATS["last_error"][:160])
     return None, first_error
 
@@ -506,6 +562,9 @@ def status(settings: Dict[str, Any]) -> Dict[str, Any]:
         "checked_at": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
         "key": ai_secrets.public_state(str((llm or {}).get("api_key_env") or ai_secrets.ENV_NAME)),
         "log_path": str(ERROR_LOG),
+        "token_limits": _token_limits(settings),
+        "usage": ai_usage.summary(_token_limits(settings),
+                                  float((_token_limits(settings).get("window_hours") or 24))),
     }
 
 

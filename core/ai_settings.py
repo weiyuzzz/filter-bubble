@@ -36,6 +36,9 @@ DEFAULTS: Dict[str, Any] = {
             "model": "",
             "api_key_env": "RADAR_LLM_API_KEY_FALLBACK",
         },
+        # token 限额：本地记账，超了自动切下一个接口；两个都超了暂停 window_hours 小时
+        # 0 表示不限
+        "token_limits": {"primary": 500000, "fallback": 500000, "window_hours": 24},
     },
     "ai": {
         # GitHub 项目 AI 解读：每天为多少个项目生成（其余按需在页面里生成）
@@ -101,6 +104,13 @@ def save(updates: Dict[str, Any]) -> Dict[str, Any]:
         for key in ("enabled", "provider", "base_url", "model", "api_key_env"):
             if key in incoming_fb:
                 fallback[key] = incoming_fb[key]
+
+    incoming_limits = incoming_llm.get("token_limits")
+    if isinstance(incoming_limits, dict) and incoming_limits:
+        limits = current.setdefault("llm", {}).setdefault("token_limits", {})
+        for key in ("primary", "fallback", "window_hours"):
+            if key in incoming_limits:
+                limits[key] = incoming_limits[key]
 
     ai = current.setdefault("ai", {})
     incoming_ai = updates.get("ai") or {}

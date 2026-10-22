@@ -7,6 +7,9 @@ data/*.db-wal
 data/*.log
 data/radar_secrets.json
 data/ai_secrets.json
+# 运行时状态（token 用量、主备切换）
+data/ai_usage.json
+data/ai_state.json
 .DS_Store
 
 .env

@@ -277,5 +277,113 @@ class TestFallback(unittest.TestCase):
             ai_settings.CONFIG_PATH.unlink()
 
 
+class TestTokenLimits(unittest.TestCase):
+    """token 限额：主超→切备；两个都超→暂停；恢复后重新计数。"""
+
+    def setUp(self):
+        from core import ai_usage
+
+        ai_usage.resume()
+        ai_client.reset_slot()
+
+    def tearDown(self):
+        from core import ai_usage
+
+        ai_usage.resume()
+        ai_client.reset_slot()
+
+    def test_record_and_limits(self):
+        from core import ai_usage
+
+        ai_usage.record("primary", 100, 50, 1)
+        self.assertEqual(ai_usage.used("primary"), 150)
+        self.assertEqual(ai_usage.remaining("primary", 1000), 850)
+        self.assertFalse(ai_usage.exhausted("primary", 1000))
+        ai_usage.record("primary", 900, 0, 1)
+        self.assertTrue(ai_usage.exhausted("primary", 1000))
+        self.assertIsNone(ai_usage.remaining("primary", 0))  # 0 = 不限
+
+    def test_pause_and_resume(self):
+        from core import ai_usage
+
+        until = ai_usage.pause(24)
+        self.assertTrue(until)
+        self.assertTrue(ai_usage.paused())
+        self.assertEqual(ai_usage.pause_until(), until)
+        ai_usage.record("primary", 10, 10, 1)
+        ai_usage.resume()
+        self.assertFalse(ai_usage.paused())
+        self.assertEqual(ai_usage.used("primary"), 0)
+
+    def test_both_exhausted_pauses_without_network(self):
+        from core import ai_usage
+
+        ai_usage.record("primary", 100, 100, 1)
+        ai_usage.record("fallback", 100, 100, 1)
+        cfg = {
+            "llm": {
+                "enabled": True, "provider": "openai_compatible",
+                "base_url": "http://127.0.0.1:9/v1", "model": "m", "timeout_seconds": 1,
+                "max_attempts": 1,
+                "token_limits": {"primary": 50, "fallback": 50, "window_hours": 24},
+                "fallback": {"enabled": True, "provider": "openai_compatible",
+                             "base_url": "http://127.0.0.1:9/v1", "model": "f"},
+            }
+        }
+        text, error = ai_client.chat_result([{"role": "user", "content": "x"}], cfg)
+        self.assertIsNone(text)
+        self.assertEqual((error or {}).get("code"), "paused")
+        self.assertTrue(ai_usage.paused())
+
+    def test_paused_short_circuits(self):
+        from core import ai_usage
+
+        ai_usage.pause(24)
+        text, error = ai_client.chat_result(
+            [{"role": "user", "content": "x"}],
+            {"llm": {"enabled": True, "model": "m",
+                     "token_limits": {"primary": 1000, "fallback": 1000, "window_hours": 24}}})
+        self.assertIsNone(text)
+        self.assertEqual((error or {}).get("code"), "paused")
+
+    def test_summary_shape(self):
+        from core import ai_usage
+
+        ai_usage.record("primary", 100, 20, 2)
+        data = ai_usage.summary({"primary": 1000, "fallback": 500}, 24)
+        self.assertEqual(data["slots"]["primary"]["tokens"], 120)
+        self.assertEqual(data["slots"]["primary"]["remaining"], 880)
+        self.assertAlmostEqual(data["slots"]["primary"]["ratio"], 0.12)
+        self.assertFalse(data["paused"])
+        self.assertIn("history", data)
+
+    def test_history_rollover(self):
+        from core import ai_usage
+
+        data = ai_usage.load()
+        data["date"] = "2020-01-01"
+        data["slots"]["primary"] = {"prompt": 70, "completion": 30, "calls": 2}
+        ai_usage._write(data)
+        refreshed = ai_usage.load()
+        self.assertEqual(refreshed["slots"]["primary"]["prompt"], 0)
+        self.assertEqual(refreshed["slots"]["primary"]["completion"], 0)
+        self.assertTrue(refreshed["history"])
+        self.assertEqual(refreshed["history"][-1]["primary"], 100)
+
+    def test_save_persists_token_limits(self):
+        from core import ai_api
+
+        if ai_settings.CONFIG_PATH.exists():
+            ai_settings.CONFIG_PATH.unlink()
+        saved = ai_api._save({"llm": {"token_limits": {"primary": 20000, "fallback": 50000,
+                                                      "window_hours": 12}}})
+        self.assertEqual(saved["saved"]["token_limit_primary"], 20000)
+        limits = ai_settings.load()["llm"]["token_limits"]
+        self.assertEqual(limits["primary"], 20000)
+        self.assertEqual(limits["window_hours"], 12)
+        if ai_settings.CONFIG_PATH.exists():
+            ai_settings.CONFIG_PATH.unlink()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

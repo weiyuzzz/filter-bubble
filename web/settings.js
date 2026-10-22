@@ -30,6 +30,82 @@
 
   const chip = (text, kind = "") => `<span class="chip ${kind}">${esc(text)}</span>`;
 
+  function usageChart(usage, limits) {
+    const slots = usage.slots || {};
+    const primary = slots.primary || {};
+    const fallback = slots.fallback || {};
+    const fmt = (n) => Number(n || 0).toLocaleString("en-US");
+
+    const meter = (label, data, kind) => {
+      const limit = Number(data.limit || 0);
+      const used = Number(data.tokens || 0);
+      const ratio = limit > 0 ? Math.min(1, used / limit) : 0;
+      const pct = limit > 0 ? Math.round(ratio * 100) : null;
+      return `<div class="usage-meter">
+        <div class="usage-meter-head">
+          <span>${esc(label)}</span>
+          <b>${fmt(used)} tokens${limit > 0 ? ` / ${fmt(limit)}（${pct}%）` : "（不限）"}</b>
+        </div>
+        <div class="usage-track"><span class="usage-fill ${kind}" style="width:${pct === null ? 0 : Math.max(2, pct)}%"></span></div>
+        <div class="usage-sub">调用 ${fmt(data.calls || 0)} 次 · 输入 ${fmt(data.prompt)} · 输出 ${fmt(data.completion)}</div>
+      </div>`;
+    };
+
+    const series = (usage.history || []).slice(-14);
+    series.push({ date: usage.date || "", primary: Number(primary.tokens || 0),
+                  fallback: Number(fallback.tokens || 0) });
+    const max = Math.max(1, ...series.map((d) => Number(d.primary || 0) + Number(d.fallback || 0)));
+    const W = 640, H = 150, padL = 30, padB = 22, gap = 8;
+    const bw = series.length ? Math.max(6, (W - padL - 10 - gap * (series.length - 1)) / series.length) : 10;
+    const chartH = H - padB - 18;
+    const bars = series.map((d, i) => {
+      const pv = Number(d.primary || 0);
+      const fv = Number(d.fallback || 0);
+      const x = padL + i * (bw + gap);
+      const hp = (pv / max) * chartH;
+      const hf = (fv / max) * chartH;
+      const yf = H - padB - hf;
+      const yp = yf - hp;
+      const label = (d.date || "").slice(5);
+      return `<g>
+        <title>${esc(d.date || "")}：主 ${fmt(pv)} · 备 ${fmt(fv)}</title>
+        <rect x="${x.toFixed(1)}" y="${yp.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, hp).toFixed(1)}" rx="3" fill="var(--fb-accent)"/>
+        <rect x="${x.toFixed(1)}" y="${yf.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, hf).toFixed(1)}" rx="3" fill="var(--fb-warn)"/>
+        ${i % 2 === 0 || series.length <= 7 ? `<text x="${(x + bw / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="9" fill="var(--fb-text-3)">${esc(label)}</text>` : ""}
+      </g>`;
+    }).join("");
+
+    const paused = usage.paused;
+    const hasData = series.some((d) => Number(d.primary || 0) + Number(d.fallback || 0) > 0);
+    const chart = hasData
+      ? `<div class="usage-chart">
+          <div class="usage-chart-head">
+            <span>最近 ${series.length} 天 token 消耗</span>
+            <span class="usage-legend"><i class="dot primary"></i>主接口 <i class="dot fallback"></i>备用接口</span>
+          </div>
+          <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="最近 token 消耗柱状图" preserveAspectRatio="xMidYMid meet">
+            <line x1="${padL}" y1="${H - padB}" x2="${W - 10}" y2="${H - padB}" stroke="var(--fb-border)"/>
+            ${bars}
+          </svg>
+        </div>`
+      : `<div class="usage-chart is-empty">
+          <p class="hint">还没有 token 消耗记录。生成 AI 解读、雷达摘要或论文概况后，这里会按天显示主/备接口的用量。</p>
+        </div>`;
+
+    return `
+      <div class="usage-head">
+        ${paused
+          ? `<span class="chip warn">AI 已暂停</span><span class="usage-note">${esc(usage.paused_until || "")} 自动恢复并重新计数</span>
+             <button class="ghost-btn" id="resumeAiBtn" type="button">立即恢复</button>`
+          : `<span class="chip ok">正常</span><span class="usage-note">统计窗口 ${esc(limits.window_hours || 24)} 小时 · 今天 ${esc(usage.date || "")}</span>`}
+      </div>
+      <div class="usage-grid">
+        ${meter("主接口", primary, "primary")}
+        ${meter("备用接口", fallback, "fallback")}
+      </div>
+      ${chart}`;
+  }
+
   function errorBlock(result) {
     const error = result.error || {};
     const rows = [];
@@ -55,6 +131,8 @@
     const fbKey = fb.key || {};
     const slot = { active: llm.active_slot || "primary" };
     const switchState = llm.switch || {};
+    const limits = llm.token_limits || { primary: 0, fallback: 0, window_hours: 24 };
+    const usage = llm.usage || { slots: {}, history: [], paused: false };
 
     $("#aiDot").className = "live-dot" + (llm.available ? "" : " live");
     $("#aiState").textContent = slot.active === "fallback"
@@ -88,6 +166,12 @@
         <div class="field-row" style="margin-top:12px">
           <div class="field"><label for="setApiKey">API Key ${key.configured ? `（已配置 ${esc(key.masked)} · ${esc(key.source)}）` : "（未配置）"}</label>
             <input id="setApiKey" type="password" autocomplete="off" placeholder="${key.configured ? "留空表示不修改" : "粘贴 OpenRouter 的 sk-or-... key"}">
+          </div>
+          <div class="field"><label for="setTokenLimitPrimary">每日 token 上限（0 = 不限）</label>
+            <input id="setTokenLimitPrimary" type="number" min="0" step="1000" value="${esc(limits.primary || 0)}">
+          </div>
+          <div class="field"><label for="setTokenWindowHours">统计窗口（小时）</label>
+            <input id="setTokenWindowHours" type="number" min="1" max="168" value="${esc(limits.window_hours || 24)}">
           </div>
         </div>
 
@@ -135,6 +219,9 @@
           <div class="field"><label for="setFallbackKey">备用 API Key ${fbKey.configured ? `（已配置 ${esc(fbKey.masked)}）` : "（未配置）"}</label>
             <input id="setFallbackKey" type="password" autocomplete="off" placeholder="${fbKey.configured ? "留空表示不修改" : "粘贴备用接口的 key"}">
           </div>
+          <div class="field"><label for="setTokenLimitFallback">备用接口每日 token 上限（0 = 不限）</label>
+            <input id="setTokenLimitFallback" type="number" min="0" step="1000" value="${esc(limits.fallback || 0)}">
+          </div>
         </div>
         <div class="ev-meta" style="margin-top:12px">
           ${slot.active === "fallback"
@@ -149,6 +236,11 @@
           ${fbKey.configured ? `<button class="ghost-btn" id="clearFallbackKeyBtn" type="button">清除备用密钥</button>` : ""}
         </div>
         <div id="fallbackTestResult" style="margin-top:12px"></div>
+      </section>
+
+      <section class="panel">
+        <h3>Token 用量</h3>
+        ${usageChart(usage, limits)}
       </section>
 
       <section class="panel">
@@ -186,7 +278,19 @@
     if (clearFb) clearFb.addEventListener("click", clearFallbackKey);
     const resetSlot = $("#resetSlotBtn");
     if (resetSlot) resetSlot.addEventListener("click", resetSlotNow);
+    const resumeAi = $("#resumeAiBtn");
+    if (resumeAi) resumeAi.addEventListener("click", resumeAiNow);
     loadErrors();
+  }
+
+  async function resumeAiNow() {
+    try {
+      const data = await api("/api/ai/resume", { method: "POST", body: "{}" });
+      toast("已恢复 AI，tokens 重新计数");
+      render(data.settings);
+    } catch (error) {
+      toast("恢复失败：" + error.message, true);
+    }
   }
 
   async function testFallback() {
@@ -264,6 +368,11 @@
         provider: $("#setFallbackProvider").value,
         base_url: $("#setFallbackBaseUrl").value.trim(),
         model: $("#setFallbackModel").value.trim(),
+      },
+      token_limits: {
+        primary: Number($("#setTokenLimitPrimary").value || 0),
+        fallback: Number($("#setTokenLimitFallback").value || 0),
+        window_hours: Number($("#setTokenWindowHours").value || 24),
       },
       api_key: $("#setApiKey") ? $("#setApiKey").value.trim() : "",
       fallback_api_key: $("#setFallbackKey") ? $("#setFallbackKey").value.trim() : "",

@@ -254,16 +254,20 @@ python app.py radar query 芯片 突破    # 自由关键词调查
 
 > 实测：`google/gemma-4-26b-a4b-it:free` 在当前时段经常被上游限流（429），而 `recursive/flint-v1.0:free` 可以正常返回。OpenRouter 的免费池是共享的，可用性会随时间变化。
 
-### 备用接口（额度用尽自动切换）
+### 备用接口与 Token 限额
 
-免费模型有每日上限，用完后当天的 AI 功能就废了。所以支持配一个备用接口：
+免费模型有每日上限，用完后当天的 AI 功能就废了。所以支持**主 + 备两个接口**，并且**本地记账** token 用量：
 
-- 主接口返回 **额度类错误**（429 / 402 / `free-models-per-day` / `insufficient`）时，自动切到备用接口重试；
-- 切换状态写在本机 `data/ai_state.json`，记录「到哪天为止用备用」；
-- **第二天自动切回主接口**，不需要手动改配置；
-- 全局设置页可以看当前用的是哪个接口、什么时候切回，也能「立即切回主接口」，两个 Key 分开保存。
+- 主接口返回额度类错误（429 / 402 / `free-models-per-day` / `insufficient`）→ 自动切备用；
+- 主接口 token 用量达到你设的上限（本地累计，不等报错）→ 直接切备用；
+- 备用接口也超限 / 也报额度错误 → **AI 暂停 24 小时**，期间所有模块直接返回「已暂停」，不再发请求；
+- 24 小时后自动恢复并**重新计数**，也可以手动「立即恢复」；
+- 切换状态写在本机 `data/ai_state.json`，用量写在 `data/ai_usage.json`（都已 gitignore）；
+- 全局设置里有「Token 用量」面板：主/备各自的已用/上限进度条 + 最近 14 天消耗柱状图。
 
 ![全局设置](docs/llm-settings.png)
+
+默认上限 50 万 tokens/天（`0` 表示不限）。三个模块（GitHub 解读、雷达摘要、论文概况）共用这套额度。
 
 ```json
 {
@@ -272,6 +276,7 @@ python app.py radar query 芯片 突破    # 自由关键词调查
     "provider": "openai_compatible",
     "base_url": "https://openrouter.ai/api/v1",
     "model": "recursive/flint-v1.0:free",
+    "token_limits": { "primary": 500000, "fallback": 500000, "window_hours": 24 },
     "fallback": {
       "enabled": true,
       "provider": "openai_compatible",
@@ -282,6 +287,13 @@ python app.py radar query 芯片 突破    # 自由关键词调查
   }
 }
 ```
+
+| 状态 | 行为 |
+|---|---|
+| 主接口正常 | 用主接口，主接口计数 +1 次调用与 token |
+| 主接口超限 / 额度错误 | 切备用（记录到明天），备用计数 |
+| 备用也超限 / 也报错 | 暂停 24 小时，返回 `code: paused` |
+| 24 小时后 / 手动恢复 | 清零重新计数，从主接口开始 |
 
 两个 Key 分开存：主接口用 `RADAR_LLM_API_KEY` 或 `data/ai_secrets.json` 里的 `llm_api_key`；备用接口用 `RADAR_LLM_API_KEY_FALLBACK` 或同文件的 `llm_api_key_fallback`。切换只影响调用路由，不改变你的配置。
 

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Tuple
 
-from . import ai_client, ai_secrets, ai_settings
+from . import ai_client, ai_secrets, ai_settings, ai_usage
 
 _LLM_KEYS = ("enabled", "provider", "base_url", "model", "api_key_env",
              "timeout_seconds", "max_attempts", "temperature", "max_tokens")
@@ -44,6 +44,9 @@ def _public() -> Dict[str, Any]:
             # 主/备切换状态
             "active_slot": ai_client.active_slot(),
             "switch": ai_client.slot_state(),
+            "token_limits": llm.get("token_limits") or {"primary": 0, "fallback": 0,
+                                                        "window_hours": 24},
+            "usage": ai_client.status(cfg).get("usage") or {},
             "fallback": {
                 "enabled": bool(fb.get("enabled")),
                 "provider": fb.get("provider") or "openai_compatible",
@@ -94,6 +97,12 @@ def handle_post(path: str, body: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
         if path == "/api/ai/clear-key":
             changed = ai_secrets.set_api_key(None)
             return _ok({"cleared": changed, "settings": _public()})
+        if path == "/api/ai/usage":
+            cfg = ai_settings.load()
+            return _ok(ai_client.status(cfg).get("usage") or {})
+        if path == "/api/ai/resume":
+            ai_usage.resume()
+            return _ok({"resumed": True, "settings": _public()})
         return _err(404, "not found")
     except Exception as exc:  # noqa: BLE001
         print("[ai] api POST error:", exc)
@@ -172,6 +181,20 @@ def _save(body: Dict[str, Any]) -> Dict[str, Any]:
             saved["fallback_" + key] = fb_updates[key]
         if fb_updates:
             updates["llm"]["fallback"] = fb_updates
+
+    # token 限额
+    incoming_limits = incoming_llm.get("token_limits")
+    if isinstance(incoming_limits, dict) and incoming_limits:
+        limits: Dict[str, Any] = {}
+        for key in ("primary", "fallback"):
+            if key in incoming_limits:
+                limits[key] = max(0, _coerce(incoming_limits[key], "int"))
+                saved["token_limit_" + key] = limits[key]
+        if "window_hours" in incoming_limits:
+            limits["window_hours"] = max(1.0, min(168.0, _coerce(incoming_limits["window_hours"], "float")))
+            saved["token_window_hours"] = limits["window_hours"]
+        if limits:
+            updates["llm"]["token_limits"] = limits
 
     ai_settings.save(updates)
 

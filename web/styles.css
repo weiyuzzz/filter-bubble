@@ -1719,3 +1719,26 @@ textarea { min-height: 68px; resize: vertical; line-height: 1.6; }
   line-height: 1.7;
 }
 
+
+/* ---------- Token 用量 ---------- */
+.usage-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: var(--fb-sp-3); }
+.usage-note { font-size: var(--fb-fs-xs); color: var(--fb-text-3); }
+.usage-grid { display: grid; gap: var(--fb-sp-3); grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.usage-meter { padding: var(--fb-sp-3); border: 1px solid var(--fb-border); border-radius: var(--fb-r-md); background: var(--fb-surface-2); }
+.usage-meter-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: var(--fb-fs-xs); color: var(--fb-text-2); }
+.usage-meter-head b { font-family: var(--fb-mono); color: var(--fb-text); }
+.usage-track { height: 8px; border-radius: 999px; background: var(--fb-surface-3); margin: 8px 0 6px; overflow: hidden; }
+.usage-fill { display: block; height: 100%; border-radius: 999px; }
+.usage-fill.primary { background: var(--fb-accent); }
+.usage-fill.fallback { background: var(--fb-warn); }
+.usage-sub { font-size: 11px; color: var(--fb-text-3); font-family: var(--fb-mono); }
+.usage-chart { margin-top: var(--fb-sp-3); }
+.usage-chart-head { display: flex; justify-content: space-between; align-items: center; font-size: var(--fb-fs-xs); color: var(--fb-text-3); margin-bottom: 6px; }
+.usage-legend { display: inline-flex; align-items: center; gap: 6px; }
+.usage-legend .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.usage-legend .dot.primary { background: var(--fb-accent); }
+.usage-legend .dot.fallback { background: var(--fb-warn); }
+.usage-chart svg { width: 100%; height: auto; display: block; }
+.usage-chart svg { max-height: 170px; }
+.usage-chart.is-empty { padding: var(--fb-sp-2) 0; }
+
