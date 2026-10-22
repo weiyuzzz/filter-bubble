@@ -263,6 +263,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+        # 开放到 tailnet 后，浏览器里的其它网站也可能向本机发 POST（CSRF）。
+        # 只接受 Origin 与 Host 一致的请求；没有 Origin 的（curl/脚本）照常放行。
+        origin = self.headers.get("Origin") or ""
+        if origin:
+            origin_host = urllib.parse.urlparse(origin).netloc
+            if origin_host and origin_host != (self.headers.get("Host") or ""):
+                return _json(self, 403, {"error": "cross-origin request blocked"})
         body = _read_body(self)
         if path == "/api/brief":
             return self._ai_brief(body)
@@ -455,8 +462,8 @@ def serve() -> None:
     except Exception as exc:  # noqa: BLE001
         print("[papers] scheduler not started:", exc)
     httpd = Server((config.HOST, config.PORT), Handler)
-    url = "http://%s:%d" % (config.HOST, config.PORT)
-    print("\n  Filter Bubble  %s\n  daily refresh %s (%s)\n" % (url, config.REFRESH_TIME, config.TIMEZONE))
+    for line in _serve_banner(config.HOST, config.PORT):
+        print(line)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
@@ -466,9 +473,85 @@ def serve() -> None:
         httpd.server_close()
 
 
+def _local_addresses() -> List[str]:
+    """列出本机可用于访问的地址：本地回环 + Tailscale + 局域网。"""
+    found: List[str] = []
+    try:
+        import socket
+
+        # 主网卡地址（连接一个外部地址但不发送数据）
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            probe.connect(("8.8.8.8", 80))
+            primary = probe.getsockname()[0]
+        except Exception:  # noqa: BLE001
+            primary = ""
+        finally:
+            probe.close()
+
+        candidates = []
+        try:
+            info = socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)
+            candidates.extend(item[4][0] for item in info)
+        except Exception:  # noqa: BLE001
+            pass
+        if primary:
+            candidates.append(primary)
+
+        for addr in candidates:
+            if not addr or addr.startswith("127.") or addr in found:
+                continue
+            # Tailscale 的地址段固定是 100.64.0.0/10
+            found.append(addr)
+    except Exception:  # noqa: BLE001
+        pass
+    tailnet = [a for a in found if a.startswith("100.")]
+    lan = [a for a in found if not a.startswith("100.")]
+    return tailnet + lan
+
+
+def _serve_banner(host: str, port: int) -> List[str]:
+    lines = ["", "  Filter Bubble  每日刷新 %s (%s)" % (config.REFRESH_TIME, config.TIMEZONE)]
+    if host in ("127.0.0.1", "localhost"):
+        lines.append("  监听 %s:%d —— 只有本机能访问" % (host, port))
+        lines.append("")
+        lines.append("  想让同 Tailscale 的其它设备访问：")
+        lines.append("    python app.py serve --host 0.0.0.0")
+        lines.append("  然后打开本机 Tailscale 地址对应的 URL（见下方说明）。")
+    else:
+        lines.append("  监听 %s:%d —— 同网络/同 tailnet 的设备可访问" % (host, port))
+        for addr in _local_addresses():
+            tag = "Tailscale" if addr.startswith("100.") else "局域网"
+            lines.append("    %-10s http://%s:%d" % (tag, addr, port))
+    lines.append("")
+    return lines
+
+
+def _cli_option(name: str, default: Optional[str] = None) -> Optional[str]:
+    """支持 --host 0.0.0.0 和 --host=0.0.0.0 两种写法。"""
+    args = sys.argv[1:]
+    for index, arg in enumerate(args):
+        if arg == name and index + 1 < len(args):
+            return args[index + 1]
+        if arg.startswith(name + "="):
+            return arg.split("=", 1)[1]
+    return default
+
+
 def main() -> None:
     db.init()
     cmd = sys.argv[1] if len(sys.argv) > 1 else "serve"
+    # --host / --port 可以覆盖配置，方便临时开放给 tailnet
+    host = _cli_option("--host")
+    if host:
+        config.HOST = host
+    port = _cli_option("--port")
+    if port:
+        try:
+            config.PORT = int(port)
+        except ValueError:
+            print("✗ --port 需要是数字")
+            sys.exit(1)
     if cmd == "serve":
         serve()
     elif cmd == "refresh":

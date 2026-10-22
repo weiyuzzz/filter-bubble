@@ -31,6 +31,62 @@ python3 app.py refresh     # 首次生成今日日报（约 1–2 分钟）
 
 **环境要求**：Python 3.9+（macOS 自带的 3.9 即可），macOS / Linux / Windows。前端是原生 HTML/CSS/JS，不需要 Node、npm 或构建步骤。
 
+### 从其它设备访问（Tailscale）
+
+默认只监听 `127.0.0.1`，别的机器访问不到。两台设备都在同一个 tailnet 时，按下面两步开：
+
+**1. 用可被外部访问的地址启动**
+
+```bash
+python app.py serve --host 0.0.0.0
+# 或者写进 .env 长期生效：GITPULSE_HOST=0.0.0.0
+```
+
+启动日志会直接列出可用地址：
+
+```
+  监听 0.0.0.0:8791 —— 同网络/同 tailnet 的设备可访问
+    Tailscale  http://100.x.y.z:8791
+    局域网      http://192.168.x.z:8791
+```
+
+**2. 放行 Windows 防火墙（只对 tailnet）**
+
+Windows 默认拦截入站，需要以管理员身份加一条只允许 Tailscale 网段的规则：
+
+```powershell
+# 双击即可（会弹 UAC）
+scripts\open-tailnet.cmd
+
+# 或者用管理员 PowerShell 直接跑
+powershell -ExecutionPolicy Bypass -File scripts\open-tailnet.ps1
+```
+
+它只放行 `100.64.0.0/10`（Tailscale 网段），局域网和公网仍然访问不到。撤销：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\open-tailnet.ps1 -Remove
+```
+
+然后在 Mac 上打开 `http://<Windows 机器的 Tailscale IP>:8791`。
+
+> macOS / Linux 不需要第 2 步（没有 Windows 防火墙那一层），直接 `--host 0.0.0.0` 即可。
+
+**更省事的做法**：如果 tailnet 开了 HTTPS，可以用 Tailscale 自带的代理，既不用改防火墙，也自带 HTTPS 证书：
+
+```bash
+tailscale serve --bg 8791
+tailscale serve status    # 会给出 https://<机器名>.<tailnet>.ts.net/
+```
+
+首次使用需要在管理台点一次授权链接（`https://login.tailscale.com/f/serve?node=...`）。
+
+**安全提示**：本程序没有登录体系，能访问端口的人就能操作它（改配置、触发采集、推送微信）。所以：
+
+- 不要把 `--host` 设成 `0.0.0.0` 却用「允许所有网络」的防火墙规则；
+- 优先用上面的 `open-tailnet` 脚本（限 tailnet）或 `tailscale serve`；
+- 不在公共网络上时把服务改回 `127.0.0.1`。
+
 ---
 
 ## 统一界面
@@ -439,7 +495,13 @@ Harness 日程适合“到点提醒/触发”，LaunchAgent 适合“关掉会�
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `GITPULSE_PORT` | `8791` | 本地端口（环境变量前缀保留 `GITPULSE_` 以兼容旧配置） |
-| `GITPULSE_HOST` | `127.0.0.1` | 只监听本机 |
+| `GITPULSE_HOST` | `127.0.0.1` | 只监听本机；改成 `0.0.0.0` 才能被同 tailnet / 局域网的设备访问 |
+
+也可以用命令行临时覆盖，不改环境变量：
+
+```bash
+python app.py serve --host 0.0.0.0 --port 9000
+```
 | `SERVERCHAN_SENDKEY` | 空 | Server酱 Turbo SendKey（`SCT...`），也可写在 `.env` |
 | `GITPULSE_PUSH_ITEMS` | `3` | 微信简报包含几个项目（1–5） |
 | `GITPULSE_REFRESH_TIME` | `08:00` | 每日刷新时间 |
