@@ -327,7 +327,7 @@ def refresh_async() -> bool:
             return False
         if _thread and _thread.is_alive():
             return False
-    _thread = threading.Thread(target=_run, name="gitpulse-refresh", daemon=True)
+    _thread = threading.Thread(target=_run, name="filter-bubble-refresh", daemon=True)
     _thread.start()
     return True
 

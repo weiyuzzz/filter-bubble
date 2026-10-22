@@ -1,4 +1,4 @@
-/* GitPulse — front-end controller */
+/* Filter Bubble — front-end controller */
 (() => {
   "use strict";
 

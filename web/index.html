@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0a0b0c">
-<title>GitPulse · 今日 GitHub 信号</title>
+<title>Filter Bubble · 今日 GitHub 信号</title>
 <meta name="description" content="每天为你筛出 GitHub 上最热、增长最猛与新崛起的项目，并随着你的评价越来越懂你。">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23c7f75c'/%3E%3Cpath d='M12 35h10l5-14 9 27 6-18 4 5h8' fill='none' stroke='%230a0b0c' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/styles.css">
@@ -14,11 +14,11 @@
 <div class="grain" aria-hidden="true"></div>
 
 <header class="topbar">
-  <a class="brand" href="/" aria-label="GitPulse 首页">
+  <a class="brand" href="/" aria-label="Filter Bubble 首页">
     <span class="brand-mark" aria-hidden="true">
       <svg viewBox="0 0 32 32" fill="none"><path d="M4 18h6l3-8 5 15 3-10 2 3h5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </span>
-    <span class="brand-word">Git<span>Pulse</span></span>
+    <span class="brand-word">Filter <span>Bubble</span></span>
   </a>
   <div class="topbar-meta">
     <span class="live-pill"><i class="live-dot"></i><span id="topDate">每日情报</span></span>
@@ -145,13 +145,13 @@
 
       <section class="rail-card quote-card">
         <p>“热度是入口，<br>偏好才是筛选器。”</p>
-        <span>— GitPulse</span>
+        <span>— Filter Bubble</span>
       </section>
     </aside>
   </div>
 
   <footer class="footer">
-    <div class="footer-brand"><span class="brand-mark small">✦</span><span>GitPulse</span></div>
+    <div class="footer-brand"><span class="brand-mark small">✦</span><span>Filter Bubble</span></div>
     <p>数据来自 GitHub Trending 与 Search API · 偏好只保存在你本机的 SQLite 里</p>
     <span class="mono">LOCAL / PRIVATE / DAILY</span>
   </footer>
@@ -181,7 +181,7 @@
     <section class="taste-section how">
       <h3>它怎么工作</h3>
       <p>每个项目会被拆成语言、领域、话题与关键词等特征。你的每次评价都是一条训练样本，模型用逻辑回归给特征打分，再把「个人匹配」与「今日热度」按 <b>44 / 56</b> 混合排序。</p>
-      <p>模型在本地训练，数据只写进 <code>gitpulse.db</code>。清空后可以从零重新学习。</p>
+      <p>模型在本地训练，数据只写进 <code>filter-bubble.db</code>。清空后可以从零重新学习。</p>
     </section>
     <div class="drawer-actions">
       <button class="danger-btn" id="resetBtn">清空口味记忆</button>

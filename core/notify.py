@@ -97,10 +97,10 @@ def render(payload: Dict[str, Any], conn: sqlite3.Connection) -> Dict[str, str]:
     date_label = _date_label(str(payload.get("date") or ""))
 
     title_prefix = "为你挑了 %d 个" % len(items) if (payload.get("profile") or {}).get("ready") else "%d 个项目值得看" % len(items)
-    title = ("GitPulse %s｜%s" % (date_label, title_prefix)).replace("\n", " ")[:100]
+    title = ("Filter Bubble %s｜%s" % (date_label, title_prefix)).replace("\n", " ")[:100]
 
     lines = [
-        "**GitPulse 日报 · %s**" % date_label,
+        "**Filter Bubble 日报 · %s**" % date_label,
         "%d 个信号 · 今日 +%s★ · %d 个日榜项目" % (total, format(gained, ","), daily),
         "",
         "---",
@@ -145,7 +145,7 @@ def render(payload: Dict[str, Any], conn: sqlite3.Connection) -> Dict[str, str]:
         lines.append("---")
         lines.append("")
 
-    lines.append("GitPulse · 手机简报 · 每天 08:00")
+    lines.append("Filter Bubble · 手机简报 · 每天 08:00")
     lines.append("流程为通用上手路径，具体命令与限制以项目 README 为准。")
     return {"title": title, "body": "\n".join(lines).strip()}
 

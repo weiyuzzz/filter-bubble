@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install GitPulse as a macOS LaunchAgent.
+# Install Filter Bubble as a macOS LaunchAgent.
 # It starts at login, keeps the local UI alive, and refreshes at 08:00 every day.
 set -euo pipefail
 
@@ -9,7 +9,7 @@ if [ -z "$PY" ]; then
   echo "✗ 找不到 python3，请先安装 Python 3.9+"
   exit 1
 fi
-AGENT="$HOME/Library/LaunchAgents/com.gitpulse.server.plist"
+AGENT="$HOME/Library/LaunchAgents/com.filterbubble.server.plist"
 LOG_DIR="$DIR/data"
 mkdir -p "$LOG_DIR" "$HOME/Library/LaunchAgents"
 
@@ -17,7 +17,7 @@ if lsof -nP -iTCP:8791 -sTCP:LISTEN >/dev/null 2>&1; then
   PID="$(lsof -tiTCP:8791 -sTCP:LISTEN | head -n 1)"
   CMD="$(ps -p "$PID" -o command= 2>/dev/null || true)"
   if [[ "$CMD" == *"app.py serve"* ]]; then
-    echo "检测到手动启动的 GitPulse（PID $PID），交给 LaunchAgent 接管…"
+    echo "检测到手动启动的 Filter Bubble（PID $PID），交给 LaunchAgent 接管…"
     kill "$PID" 2>/dev/null || true
     sleep 1
   else
@@ -32,7 +32,7 @@ cat > "$AGENT" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>com.gitpulse.server</string>
+  <key>Label</key><string>com.filterbubble.server</string>
   <key>ProgramArguments</key>
   <array>
     <string>$PY</string>
@@ -55,9 +55,9 @@ cat > "$AGENT" <<PLIST
 </plist>
 PLIST
 
-launchctl bootout "gui/$(id -u)/com.gitpulse.server" >/dev/null 2>&1 || true
+launchctl bootout "gui/$(id -u)/com.filterbubble.server" >/dev/null 2>&1 || true
 launchctl bootstrap "gui/$(id -u)" "$AGENT"
-launchctl enable "gui/$(id -u)/com.gitpulse.server" 2>/dev/null || true
+launchctl enable "gui/$(id -u)/com.filterbubble.server" 2>/dev/null || true
 
 echo "✓ 已安装 LaunchAgent：$AGENT"
 echo "  UI：      http://127.0.0.1:8791"

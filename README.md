@@ -1,4 +1,4 @@
-# GitPulse · 今日 GitHub 信号
+# Filter Bubble · 今日 GitHub 信号
 
 一个**完全本地运行**的 GitHub 每日热榜，重点覆盖四件事：
 
@@ -7,20 +7,20 @@
 3. 你可以关注喜欢的发布者。他们之后的新 release / 新仓库会进入独立的「关注」视图，不混进每日热榜。
 4. 每个项目都有「项目速读」：适合谁、怎么用、解决什么问题、典型场景。
 
-无需登录，无需 API Key，无第三方 Python 依赖。数据与口味模型都只写在本机的 `data/gitpulse.db`。
+无需登录，无需 API Key，无第三方 Python 依赖。数据与口味模型都只写在本机的 `data/filter-bubble.db`。
 
-![GitPulse 桌面端](docs/desktop.png)
+![Filter Bubble 桌面端](docs/desktop.png)
 
 <p align="center"><img src="docs/mobile.png" width="360" alt="移动端"></p>
 
-> 截图中的关注与评价是演示数据；交付时已清空，打开后从空状态开始。
+> 截图中的关注与评价仅作界面展示，实际数据以本机为准。
 
 ---
 
 ## 快速开始
 
 ```bash
-cd gitpulse
+cd filter-bubble
 python3 app.py refresh     # 首次生成今日日报（约 1–2 分钟）
 ./run.sh                   # 启动界面
 ```
@@ -135,7 +135,7 @@ P(喜欢) = sigmoid(bias + Σ weight[feature])
 配置方式：
 
 ```bash
-cd gitpulse
+cd filter-bubble
 cp .env.example .env
 # 编辑 .env，把 SERVERCHAN_SENDKEY 换成 sct.ftqq.com 获取的 SCT 开头 SendKey
 ./run.sh
@@ -210,7 +210,7 @@ Harness 日程适合“到点提醒/触发”，LaunchAgent 适合“关掉会�
 ### 方式 C：cron（macOS / Linux）
 
 ```cron
-0 8 * * * cd /path/to/gitpulse && /usr/bin/python3 app.py refresh >> data/cron.log 2>&1
+0 8 * * * cd /path/to/filter-bubble && /usr/bin/python3 app.py refresh >> data/cron.log 2>&1
 ```
 
 这种方式只生成数据；要看界面仍需运行 `./run.sh`。
@@ -225,7 +225,7 @@ Harness 日程适合“到点提醒/触发”，LaunchAgent 适合“关掉会�
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `GITPULSE_PORT` | `8791` | 本地端口 |
+| `GITPULSE_PORT` | `8791` | 本地端口（环境变量前缀保留 `GITPULSE_` 以兼容旧配置） |
 | `GITPULSE_HOST` | `127.0.0.1` | 只监听本机 |
 | `SERVERCHAN_SENDKEY` | 空 | Server酱 Turbo SendKey（`SCT...`），也可写在 `.env` |
 | `GITPULSE_PUSH_ITEMS` | `3` | 微信简报包含几个项目（1–5） |
@@ -286,7 +286,7 @@ python3 app.py serve     # 启动 UI + 每日调度
 ## 目录
 
 ```
-gitpulse/
+filter-bubble/
 ├── app.py                  # HTTP 服务、API、CLI、调度
 ├── core/
 │   ├── github.py           # Trending 解析 + Search + API 补全
@@ -299,7 +299,7 @@ gitpulse/
 │   └── config.py           # 环境变量配置
 ├── web/                    # 原生前端
 ├── scripts/                # LaunchAgent 安装/卸载、每日更新脚本
-├── data/gitpulse.db        # 日报、反馈、权重（本地）
+├── data/filter-bubble.db        # 日报、反馈、权重（本地）
 └── run.sh
 ```
 
@@ -322,5 +322,5 @@ gitpulse/
 ## 隐私
 
 - 服务只监听 `127.0.0.1`，不对外暴露。
-- 日报、反馈、权重全部在 `data/gitpulse.db`。
+- 日报、反馈、权重全部在 `data/filter-bubble.db`。
 - 只有「英文项目简介 / README 摘要」会发给 MyMemory 做翻译；关闭 `GITPULSE_TRANSLATE` 后，除 GitHub 之外的网络请求为零。

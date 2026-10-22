@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""GitPulse — a local daily GitHub intelligence digest with a taste model.
+"""Filter Bubble — a local daily GitHub intelligence digest with a taste model.
 
     python3 app.py serve      # start the UI at http://127.0.0.1:8791
     python3 app.py refresh    # build today's digest once (for cron/launchd)
@@ -102,7 +102,7 @@ def _status_payload() -> Dict[str, Any]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "GitPulse/1.0"
+    server_version = "FilterBubble/1.0"
     protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt, *args):  # quieter server logs
@@ -318,10 +318,10 @@ def serve() -> None:
         print("[startup] no digest for today — generating in the background")
         digest.refresh_async()
     stop = threading.Event()
-    threading.Thread(target=_scheduler, args=(stop,), daemon=True, name="gitpulse-scheduler").start()
+    threading.Thread(target=_scheduler, args=(stop,), daemon=True, name="filter-bubble-scheduler").start()
     httpd = Server((config.HOST, config.PORT), Handler)
     url = "http://%s:%d" % (config.HOST, config.PORT)
-    print("\n  GitPulse  %s\n  daily refresh %s (%s)\n" % (url, config.REFRESH_TIME, config.TIMEZONE))
+    print("\n  Filter Bubble  %s\n  daily refresh %s (%s)\n" % (url, config.REFRESH_TIME, config.TIMEZONE))
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
