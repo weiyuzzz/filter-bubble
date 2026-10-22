@@ -651,6 +651,26 @@
     const failed = status.last_refresh_failed_at;
     $("#retryRow").hidden = !failed;
     if (failed) $("#retryText").textContent = `${timeAgo(failed)}失败 · 联网后补跑`;
+    const push = status.push || {};
+    const pushStatus = $("#pushStatus");
+    const pushBtn = $("#pushNow");
+    if (!push.configured) {
+      pushStatus.textContent = "未配置 SendKey";
+      pushBtn.disabled = true;
+      pushBtn.textContent = "配置后自动推送";
+    } else if (push.date && push.date === status.latest_date && push.status === "sent") {
+      pushStatus.textContent = `已发送 · ${timeAgo(push.updated_at)}`;
+      pushBtn.disabled = false;
+      pushBtn.textContent = "重新发送";
+    } else if (push.date && push.date === status.latest_date && push.status === "failed") {
+      pushStatus.textContent = "发送失败";
+      pushBtn.disabled = false;
+      pushBtn.textContent = "重试发送";
+    } else {
+      pushStatus.textContent = "等待日报";
+      pushBtn.disabled = true;
+      pushBtn.textContent = "日报生成后自动推送";
+    }
   }
 
   /* ---------------- interactions ---------------- */
@@ -701,6 +721,32 @@
       state.busy.delete(repo);
       renderTabs();
       renderCards();
+    }
+  }
+
+  async function sendPush() {
+    const btn = $("#pushNow");
+    if (btn.disabled) return;
+    const current = (state.status && state.status.push) || {};
+    btn.disabled = true;
+    const old = btn.textContent;
+    btn.textContent = "发送中…";
+    try {
+      const { data } = await api("/api/push", {
+        method: "POST",
+        body: JSON.stringify({ force: current.status === "sent" }),
+      });
+      const result = data.result || {};
+      state.status = { ...(state.status || {}), push: data.push };
+      if (state.status.schedule) updateSchedule(state.status);
+      if (result.ok && !result.skipped) toast("已发送到微信 · 手机简报");
+      else if (result.skipped) toast(result.reason || "无需重复发送");
+      else toast(result.reason || result.detail || "发送失败", "error");
+    } catch (err) {
+      toast(err.message, "error");
+    } finally {
+      btn.textContent = old;
+      if (state.status) updateSchedule(state.status);
     }
   }
 
@@ -858,6 +904,7 @@
     const description = item.summary_zh || item.description || "这个项目还没有填写简介。";
     const english = item.summary_zh && item.description ? item.description : "";
     const scenario = (b.scenarios || []).map((x) => `<span class="brief-chip">${esc(x)}</span>`).join("");
+    const flow = (b.flow || []).map((x) => `<li>${esc(x)}</li>`).join("");
     const badge = item.badge ? `<span class="badge ${badgeClass(item.badge)}">${esc(item.badge)}</span>` : "";
     const today = Number(item.stars_today || 0);
     $("#briefBody").innerHTML = `
@@ -886,6 +933,7 @@
         </div>
       </div>
       ${scenario ? `<div class="brief-scenarios"><h4>典型场景</h4><div class="brief-chips">${scenario}</div></div>` : ""}
+      ${flow ? `<div class="brief-flow"><h4>上手流程</h4><ol>${flow}</ol></div>` : ""}
       <div class="brief-foot">
         <div class="brief-meta">
           <span>上手门槛 <b>${esc(b.difficulty || "看 README")}</b></span>
@@ -977,6 +1025,7 @@
       }
     });
     $("#followRefresh").addEventListener("click", () => loadFollows(true));
+    $("#pushNow").addEventListener("click", sendPush);
 
     $("#briefClose").addEventListener("click", closeBrief);
     $("#briefBackdrop").addEventListener("click", closeBrief);

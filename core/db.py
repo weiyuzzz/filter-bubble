@@ -85,6 +85,18 @@ CREATE TABLE IF NOT EXISTS follow_events (
 CREATE INDEX IF NOT EXISTS idx_follow_events_created
     ON follow_events(created_at DESC);
 
+CREATE TABLE IF NOT EXISTS push_log (
+    date TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    status TEXT NOT NULL,
+    title TEXT,
+    content_hash TEXT,
+    detail TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (date, channel)
+);
+
 CREATE TABLE IF NOT EXISTS readmes (
     full_name TEXT PRIMARY KEY,
     excerpt TEXT NOT NULL,

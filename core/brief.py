@@ -200,6 +200,94 @@ def _pick_difficulty(item: Dict[str, Any], category: str) -> str:
     return "按 README 上手"
 
 
+def _what(item: Dict[str, Any], category: str) -> str:
+    text = (item.get("summary_zh") or item.get("description") or "").strip()
+    if text:
+        return text[:180].rstrip()
+    return "一个面向%s的开源项目，具体能力以 README 为准。" % (category or "技术团队")
+
+
+def _flow_for(item: Dict[str, Any], category: str) -> List[str]:
+    topics = _topic_set(item)
+    language = (item.get("language") or "").strip()
+    if topics & RESOURCE_TOPICS or category == "学习 / 资源":
+        return [
+            "打开项目 README / 清单，先看目录和适用方向。",
+            "按自己的目标筛选 2–3 个条目，不要从头到尾硬啃。",
+            "顺着条目里的链接阅读或练习，并记录可复用的部分。",
+            "把真正有用的内容加入自己的笔记 / 收藏。",
+        ]
+    if topics & {"agent-skills", "ai-agents"}:
+        return [
+            "按 README 把技能或配置安装到支持的 Agent 客户端。",
+            "在客户端里启用该技能，准备好任务需要的文件或目标。",
+            "在具体任务中调用它，先跑一个小样本检查输出。",
+            "把稳定的用法写进团队提示词或工作流。",
+        ]
+    if "mcp" in topics:
+        return [
+            "按 README 安装并启动 MCP server。",
+            "在支持 MCP 的客户端里填写 server 配置。",
+            "让 Agent 调用一个只读工具，确认连接和权限正常。",
+            "再逐步放开写入/高风险操作。",
+        ]
+    if topics & HOST_TOPICS:
+        return [
+            "准备 Docker / 目标机器和持久化目录。",
+            "按 README 配置环境变量、端口和密钥。",
+            "启动容器或服务，检查日志和健康状态。",
+            "接入自己的数据或客户端，并设置备份/更新策略。",
+        ]
+    if topics & CLI_TOPICS:
+        return [
+            "按 README 安装依赖或下载可执行文件。",
+            "配置必要的 token / API Key / 数据目录。",
+            "先运行 --help 或最小示例，确认环境正常。",
+            "把命令接进脚本、CI 或日常终端流程。",
+        ]
+    if topics & EDITOR_TOPICS:
+        return [
+            "在编辑器插件市场安装，或按 README 手动加载。",
+            "打开插件设置，配置密钥、模型或语言服务。",
+            "在一个小文件/小项目里试一次核心功能。",
+            "确认快捷键和团队配置后，再推广到主项目。",
+        ]
+    if topics & BROWSER_TOPICS:
+        return [
+            "按 README 安装依赖并启动本地服务。",
+            "在浏览器打开地址，先完成一次最小配置。",
+            "导入自己的数据或连接目标服务。",
+            "需要长期使用时，再配置部署、域名和备份。",
+        ]
+    if topics & SDK_TOPICS:
+        return [
+            "按 README 安装 SDK / 引入依赖。",
+            "获取 API Key 或配置服务端地址。",
+            "运行官方最小示例，确认请求和返回结构。",
+            "封装进自己的业务代码，并加上错误处理。",
+        ]
+    if category == "安全 / 隐私":
+        return [
+            "明确扫描/审计的目标和授权范围。",
+            "按 README 安装并配置扫描参数。",
+            "先跑只读检查，阅读报告并标注高风险项。",
+            "修复后复测，把检查接进发布流程。",
+        ]
+    if language:
+        return [
+            "准备 %s 运行环境，按 README 安装依赖。" % language,
+            "配置项目需要的密钥、数据或服务地址。",
+            "运行最小示例，确认输出符合预期。",
+            "再接入自己的数据/流程，并补充日志和错误处理。",
+        ]
+    return [
+        "阅读 README 的安装、配置和示例部分。",
+        "准备运行环境与必要凭证。",
+        "先跑官方最小示例，确认能正常启动。",
+        "再接入自己的数据或工作流，并观察输出。",
+    ]
+
+
 def build(item: Dict[str, Any], categories: List[str]) -> Dict[str, Any]:
     category = categories[0] if categories else ""
     guide = GUIDES.get(category, DEFAULT_GUIDE)
@@ -223,9 +311,11 @@ def build(item: Dict[str, Any], categories: List[str]) -> Dict[str, Any]:
             scenarios.append(scenario)
 
     return {
+        "what": _what(item, category),
         "audience": audience,
         "problem": problem,
         "usage": _pick_usage(item, category),
+        "flow": _flow_for(item, category),
         "scenarios": scenarios[:3],
         "difficulty": _pick_difficulty(item, category),
         "category": category or "技术项目",

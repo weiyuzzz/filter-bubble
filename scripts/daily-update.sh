@@ -12,6 +12,9 @@ BASE="http://127.0.0.1:$PORT"
 
 DONE="$(sqlite3 data/gitpulse.db "SELECT value FROM meta WHERE key='last_generated_date'" 2>/dev/null || true)"
 if [ "$DONE" = "$TODAY" ]; then
+  # Retry a failed WeChat brief without regenerating the digest; already-sent
+  # messages are skipped by the push log.
+  python3 app.py push >/dev/null 2>&1 || true
   echo "UP-TO-DATE: $TODAY"
   exit 0
 fi
@@ -30,6 +33,7 @@ if curl -sf --max-time 3 "$BASE/api/health" >/dev/null 2>&1; then
     DONE="$(sqlite3 data/gitpulse.db "SELECT value FROM meta WHERE key='last_generated_date'" 2>/dev/null || true)"
     RUNNING="$(curl -s --max-time 3 "$BASE/api/status" 2>/dev/null | grep -c '"running": true' || true)"
     if [ "$DONE" = "$TODAY" ] && [ "$RUNNING" = "0" ]; then
+      python3 app.py push >/dev/null 2>&1 || true
       echo "UPDATED: $TODAY"
       exit 0
     fi
@@ -41,6 +45,7 @@ fi
 
 # Service is not running: build directly. The next LaunchAgent run will serve it.
 if python3 app.py refresh; then
+  python3 app.py push >/dev/null 2>&1 || true
   echo "UPDATED: $TODAY"
   exit 0
 fi

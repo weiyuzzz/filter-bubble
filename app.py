@@ -5,6 +5,7 @@
     python3 app.py refresh    # build today's digest once (for cron/launchd)
     python3 app.py rerank     # re-sort today's digest using current feedback
     python3 app.py reset      # forget all feedback and the taste model
+    python3 app.py push       # send today's Server酱 WeChat brief
 """
 from __future__ import annotations
 
@@ -19,7 +20,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, Optional, Tuple
 
-from core import config, db, digest, follows, prefs
+from core import config, db, digest, follows, notify, prefs
 
 MIME = {
     ".html": "text/html; charset=utf-8",
@@ -69,6 +70,7 @@ def _status_payload() -> Dict[str, Any]:
         exists = _today_exists(conn)
         last = db.get_meta(conn, "last_generated_date")
         last_failed = db.get_meta(conn, "last_refresh_failed_at") or None
+        push = notify.status(conn)
         row = conn.execute("SELECT date, generated_at FROM digests ORDER BY date DESC LIMIT 1").fetchone()
     finally:
         conn.close()
@@ -87,6 +89,7 @@ def _status_payload() -> Dict[str, Any]:
         "today_ready": exists,
         "last_generated_date": last,
         "last_refresh_failed_at": last_failed,
+        "push": push,
         "latest_date": row["date"] if row else None,
         "latest_generated_at": row["generated_at"] if row else None,
         "schedule": {
@@ -154,6 +157,12 @@ class Handler(BaseHTTPRequestHandler):
                 return _json(self, 200, prefs.profile(conn))
             finally:
                 conn.close()
+        if path == "/api/push":
+            conn = db.connect()
+            try:
+                return _json(self, 200, notify.status(conn))
+            finally:
+                conn.close()
         if path == "/api/follows":
             conn = db.connect()
             try:
@@ -194,6 +203,12 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/follows/refresh":
                 follows.refresh(conn, force=True, max_seconds=30)
                 return _json(self, 200, follows.summary(conn))
+            if path == "/api/push":
+                payload = digest.latest(conn)
+                if not payload:
+                    return _json(self, 409, {"error": "digest not ready"})
+                result = notify.send_daily(payload, conn=conn, force=bool(body.get("force")))
+                return _json(self, 200, {"result": result, "push": notify.status(conn)})
             if path == "/api/rerank":
                 payload = digest.rerank(conn)
                 return _json(self, 200, payload)
@@ -333,6 +348,25 @@ def main() -> None:
         try:
             payload = digest.rerank(conn)
             print("✓ reranked %d items" % len(payload["items"]))
+        finally:
+            conn.close()
+    elif cmd == "push":
+        conn = db.connect()
+        try:
+            payload = digest.latest(conn)
+            if not payload:
+                print("✗ 还没有日报")
+                sys.exit(1)
+            if "--dry-run" in sys.argv:
+                rendered = notify.render(payload, conn)
+                print("TITLE:", rendered["title"])
+                print()
+                print(rendered["body"])
+                print()
+                print("(dry-run: 未发送，也未消耗 Server酱额度)")
+            else:
+                result = notify.send_daily(payload, conn=conn, force="--force" in sys.argv)
+                print(result)
         finally:
             conn.close()
     elif cmd == "reset":

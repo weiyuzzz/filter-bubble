@@ -7,7 +7,7 @@ import threading
 import time
 from typing import Any, Callable, Dict, List, Optional
 
-from . import config, db, follows, github, prefs, rank
+from . import config, db, follows, github, notify, prefs, rank
 from .translate import Translator
 
 try:
@@ -278,6 +278,14 @@ def generate(progress: Optional[Callable[[str], None]] = None) -> Dict[str, Any]
             follows.refresh(conn, max_seconds=15)
         except Exception as exc:  # noqa: BLE001
             print("[digest] follow refresh failed:", exc)
+        if config.PUSH_ENABLED:
+            said("推送微信简报")
+            try:
+                result = notify.send_daily(payload, conn=conn)
+                if not result.get("ok"):
+                    print("[push] failed:", result.get("reason") or result.get("detail"))
+            except Exception as exc:  # noqa: BLE001
+                print("[push] error:", exc)
         return payload
     finally:
         conn.close()

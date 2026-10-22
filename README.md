@@ -112,13 +112,52 @@ P(喜欢) = sigmoid(bias + Σ weight[feature])
 - **怎么用**：CLI、Docker 自托管、编辑器插件、SDK/API、阅读型资源等，根据 topics 判断；
 - **解决什么问题**：这个方向最常见的痛点；
 - **典型场景**：结合 topics 生成的可落地场景；
+- **完整使用流程**：从安装、配置、运行到接入的 4 步路径；
 - **上手门槛**：需要命令行、Docker、某语言运行环境，或只需阅读。
 
 内容是**基于项目简介、语言与 topics 的自动归纳**，界面会明确提示“具体命令与限制以 README 为准”，不假装比 README 更懂项目。
 
 ![项目速读](docs/brief.png)
 
-### 6. 界面
+### 6. 微信简报（Server酱）
+
+日报生成成功后，会自动把一份**手机简报**推送到微信。设计目标不是把 30 个项目全部塞进手机，而是只挑 3 个项目，每个讲清楚：
+
+- 是什么
+- 解决什么问题
+- 适合谁
+- 完整使用流程（4 步）
+- 典型场景
+- GitHub 链接
+
+每个项目单独一段，使用 Server酱 Turbo 的 Markdown 正文。手机端不展示完整 30 个项目，完整榜单仍在电脑端。
+
+配置方式：
+
+```bash
+cd gitpulse
+cp .env.example .env
+# 编辑 .env，把 SERVERCHAN_SENDKEY 换成 sct.ftqq.com 获取的 SCT 开头 SendKey
+./run.sh
+```
+
+先预览、不消耗额度：
+
+```bash
+python3 app.py push --dry-run
+```
+
+确认后发送：
+
+```bash
+python3 app.py push
+```
+
+`serverchan` 的 `push_log` 表会记录每天是否已发送；同一天不会重复推送。生成日报、`scripts/daily-update.sh` 都会自动尝试推送并重试失败记录。
+
+**注意**：请使用 Server酱 **Turbo** 的 `SCT...` SendKey（微信通道），不要用 Server酱³ 的 `sctp...` key（那是独立 App 通道）。免费额度每天 5 条，正常每天 1 条足够；调试请用 `--dry-run`。
+
+### 7. 界面
 
 - 编辑感深色版面 + 荧光绿信号色；桌面双栏，移动端单栏；
 - 顶部总览：收录数、今日新增 star、最快增速、平均口味匹配；
@@ -188,6 +227,8 @@ Harness 日程适合“到点提醒/触发”，LaunchAgent 适合“关掉会�
 | --- | --- | --- |
 | `GITPULSE_PORT` | `8791` | 本地端口 |
 | `GITPULSE_HOST` | `127.0.0.1` | 只监听本机 |
+| `SERVERCHAN_SENDKEY` | 空 | Server酱 Turbo SendKey（`SCT...`），也可写在 `.env` |
+| `GITPULSE_PUSH_ITEMS` | `3` | 微信简报包含几个项目（1–5） |
 | `GITPULSE_REFRESH_TIME` | `08:00` | 每日刷新时间 |
 | `GITPULSE_TIMEZONE` | `Asia/Shanghai` | 时区 |
 | `GITPULSE_MAX_ITEMS` | `30` | 日报条数 |
@@ -225,6 +266,8 @@ GITPULSE_PORT=9000 GITPULSE_REFRESH_TIME=09:00 ./run.sh
 | GET | `/api/follows?refresh=1` | 强制刷新关注动态 |
 | POST | `/api/follow` | `{owner}`，关注/取消关注 |
 | POST | `/api/follows/refresh` | 刷新全部关注 |
+| GET | `/api/push` | 微信简报配置/发送状态 |
+| POST | `/api/push` | `{force}`，发送今日微信简报 |
 | GET | `/api/prefs` | 当前偏好画像 |
 | GET | `/api/health` | 健康检查 |
 
@@ -251,6 +294,7 @@ gitpulse/
 │   ├── prefs.py            # 特征、逻辑回归、偏好画像
 │   ├── digest.py           # 生成流水线、持久化、重排
 │   ├── translate.py        # MyMemory 翻译 + 额度 + 缓存
+│   ├── notify.py           # Server酱微信简报渲染与发送
 │   ├── db.py               # SQLite schema 与访问
 │   └── config.py           # 环境变量配置
 ├── web/                    # 原生前端
@@ -269,6 +313,8 @@ gitpulse/
 - 部分网络环境无法加载 GitHub 头像；前端会自动回退到基于用户名生成的渐变首字母头像。
 - 关注动态依赖 GitHub 公开 Atom feed / Release feed；组织账号没有公开 activity 时，可能只能看到新仓库，不能看到 release。
 - 关注动态默认保留近 14 天、每位发布者最多展示 5 条，避免刷屏。
+- 微信简报只发 3 个项目（可配置 1–5），不是完整 30 个；完整内容仍在电脑端。
+- Server酱免费额度每天 5 条，发送失败也会计数；调试请用 `python3 app.py push --dry-run`。
 - 后续可做：按 topic 静音、周报、邮件/系统通知、GitHub Star 同步、LLM 生成更自然的中文摘要、历史趋势 sparkline、多人配置。
 
 ---

@@ -6,3 +6,5 @@ data/*.db-shm
 data/*.db-wal
 data/*.log
 .DS_Store
+
+.env
