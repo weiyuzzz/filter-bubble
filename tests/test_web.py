@@ -98,6 +98,23 @@ class TestScriptContracts(unittest.TestCase):
             self.assertIn('id="%s"' % element_id, js,
                           "设置表单字段 %s 应由 radar.js 渲染" % element_id)
 
+    def test_papers_page_is_first_level_navigation(self):
+        """学术论文是与热点雷达平级的一级页面，不再是雷达里的标签。"""
+        html = _read("papers.html")
+        for element_id in ("papersDisciplines", "papersResult", "papersNotice",
+                           "papersSources", "papersUpdated"):
+            self.assertIn('id="%s"' % element_id, html, "论文页缺少 %s" % element_id)
+        js = _read("papers.js")
+        for endpoint in ("/api/radar/papers", "/api/radar/papers/status",
+                         "/api/radar/papers/collect", "/api/radar/papers/retry"):
+            self.assertIn(endpoint, js, "论文页应调用 %s" % endpoint)
+        # 每个页面侧栏都要有入口
+        for page in ("index.html", "radar.html", "status.html", "settings.html", "papers.html"):
+            self.assertIn('href="/papers.html"', _read(page), "%s 缺少学术论文入口" % page)
+        # 雷达页不再承载论文视图
+        self.assertNotIn('data-view="papers"', _read("radar.html"))
+        self.assertNotIn("loadPapers", _read("radar.js"))
+
     def test_global_settings_page_has_llm_controls(self):
         html = _read("settings.html")
         for element_id in ("settingsBody", "themeToggle", "navToggle"):

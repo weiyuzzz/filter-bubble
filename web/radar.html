@@ -47,6 +47,10 @@
         <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/><path d="M12 12l6-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
         <span class="nav-text">全球热点雷达</span>
       </a>
+      <a class="nav-item" href="/papers.html">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M6 3.5h8l4 4V20a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M14 3.5V8h4M8.5 12h7M8.5 15.5h7M8.5 8.5h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>
+        <span class="nav-text">学术论文</span>
+      </a>
       <a class="nav-item" href="/settings.html">
         <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.7"/><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6 7 7m10 10 1.4 1.4m0-12.8L17 7M7 17l-1.4 1.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
         <span class="nav-text">全局设置</span>
@@ -110,7 +114,6 @@
           <button class="radar-tab is-active" data-view="daily" role="tab" aria-selected="true">每日热点</button>
           <button class="radar-tab" data-view="investigate" role="tab" aria-selected="false">事件调查</button>
           <button class="radar-tab" data-view="tech" role="tab" aria-selected="false">科技突破核验</button>
-          <button class="radar-tab" data-view="papers" role="tab" aria-selected="false">学术论文</button>
           <button class="radar-tab" data-view="sources" role="tab" aria-selected="false">数据源管理</button>
           <button class="radar-tab" data-view="history" role="tab" aria-selected="false">历史记录</button>
           <button class="radar-tab" data-view="settings" role="tab" aria-selected="false">监控设置</button>
@@ -137,20 +140,6 @@
 
         <section class="radar-view" id="view-tech" role="tabpanel" hidden>
           <div id="techResult"><p class="pending">正在载入…</p></div>
-        </section>
-
-        <section class="radar-view" id="view-papers" role="tabpanel" hidden>
-          <div class="papers-toolbar">
-            <div class="papers-filters" id="papersDisciplines" role="tablist" aria-label="学科筛选"></div>
-            <div class="papers-actions">
-              <span class="updated-label" id="papersUpdated"></span>
-              <button class="ghost-btn" id="papersCollectBtn" type="button">采集论文</button>
-              <button class="ghost-btn" id="papersRefreshBtn" type="button">刷新列表</button>
-            </div>
-          </div>
-          <div id="papersNotice"></div>
-          <div id="papersResult"><p class="pending">正在载入论文…</p></div>
-          <div id="papersSources"></div>
         </section>
 
         <section class="radar-view" id="view-sources" role="tabpanel" hidden>
