@@ -247,7 +247,7 @@
 
         <p class="desc">${esc(description)}</p>
         ${english ? `<p class="desc-en"><span class="en-tag">EN</span>${esc(english)}</p>` : ""}
-        ${readme ? `<div class="readme"><b>README</b><span>${esc(readme)}</span></div>` : ""}
+        ${readme ? `<details class="card-more"><summary>README 摘要</summary><div class="readme"><b>README</b><span>${esc(readme)}</span></div></details>` : ""}
 
         <div class="tags">${tags.join("")}</div>
 

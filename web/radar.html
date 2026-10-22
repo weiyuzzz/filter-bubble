@@ -3,98 +3,154 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0a0b0c">
+<meta name="theme-color" content="#f6f7f9">
 <title>全球热点雷达 · Filter Bubble</title>
 <meta name="description" content="监控中文互联网与国际公开信息源，发现热点、追溯起源、拆解事实主张并交叉核验。">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%237cc4ff'/%3E%3Ccircle cx='32' cy='32' r='17' fill='none' stroke='%230a0b0c' stroke-width='4'/%3E%3Ccircle cx='32' cy='32' r='6' fill='%230a0b0c'/%3E%3Cpath d='M32 32 47 17' stroke='%230a0b0c' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%233452d9'/%3E%3Ccircle cx='32' cy='32' r='17' fill='none' stroke='%23fff' stroke-width='4'/%3E%3Ccircle cx='32' cy='32' r='6' fill='%23fff'/%3E%3Cpath d='M32 32 47 17' stroke='%23fff' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/styles.css">
-<link rel="stylesheet" href="/radar.css">
+<script>
+  (function () {
+    try {
+      var qp = new URLSearchParams(location.search).get('theme');
+      var mode = (['light','dark','auto'].indexOf(qp) >= 0) ? qp : (localStorage.getItem('fb.theme') || 'light');
+      var dark = mode === 'dark' || (mode === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme-mode', mode);
+      var nav = localStorage.getItem('fb.nav') || 'expanded';
+      document.documentElement.setAttribute('data-nav', window.innerWidth <= 860 ? 'closed' : nav);
+    } catch (e) {}
+  })();
+</script>
 </head>
 <body>
-<div class="ambient" aria-hidden="true"></div>
-<div class="grain" aria-hidden="true"></div>
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <a class="brand" href="/" aria-label="Filter Bubble 首页">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none"><path d="M4 18h6l3-8 5 15 3-10 2 3h5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <span class="brand-word">Filter <span>Bubble</span></span>
+      </a>
+      <button class="sidebar-toggle" id="sidebarToggle" aria-label="收起或展开导航" aria-expanded="true" aria-controls="sidebar">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+      </button>
+    </div>
 
-<header class="topbar">
-  <a class="brand" href="/" aria-label="Filter Bubble 首页">
-    <span class="brand-mark" aria-hidden="true">
-      <svg viewBox="0 0 32 32" fill="none"><path d="M4 18h6l3-8 5 15 3-10 2 3h5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    </span>
-    <span class="brand-word">Filter <span>Bubble</span></span>
-  </a>
+    <nav class="sidebar-nav" aria-label="业务模块">
+      <span class="nav-label">业务模块</span>
+      <a class="nav-item" href="/">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 18h5l3-9 4 13 3-7h3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="nav-text">GitHub 技术雷达</span>
+      </a>
+      <a class="nav-item is-active" href="/radar.html" aria-current="page">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/><path d="M12 12l6-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
+        <span class="nav-text">全球热点雷达</span>
+      </a>
+      <a class="nav-item" href="/status.html">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 14h4l2-6 3 12 2-8h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="nav-text">系统状态</span>
+      </a>
+    </nav>
 
-  <nav class="module-switch" aria-label="模块切换">
-    <a class="module-link" href="/">GitHub 热点</a>
-    <a class="module-link is-active" href="/radar.html" aria-current="page">全球热点雷达</a>
-  </nav>
+    <div class="sidebar-foot">
+      免费公开数据源采集 · 本地规则核验<br>不调用付费 API
+    </div>
+  </aside>
 
-  <div class="topbar-meta">
-    <span class="live-pill"><i class="live-dot" id="radarDot"></i><span id="radarState">就绪</span></span>
-    <span class="topbar-divider" aria-hidden="true"></span>
-    <button class="icon-btn" id="collectBtn" title="立即采集并生成日报">
-      <svg class="icon" viewBox="0 0 24 24" fill="none"><path d="M20 11a8 8 0 1 0-.7 4.3M20 5v6h-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <span>采集</span>
-    </button>
-    <button class="taste-btn" id="pushBtn">
-      <span class="taste-orb" aria-hidden="true"></span>
-      <span>推送日报</span>
-    </button>
+  <div class="app-main">
+    <header class="topbar">
+      <button class="icon-btn nav-toggle" id="navToggle" type="button" aria-label="打开导航" aria-controls="sidebar" aria-expanded="false">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <div class="crumb">
+        <strong>全球热点雷达</strong>
+        <span class="crumb-sep">/</span>
+        <span>每日热点</span>
+      </div>
+      <span class="topbar-spacer"></span>
+      <div class="topbar-actions">
+        <span class="live-pill"><i class="live-dot" id="radarDot"></i><span id="radarState">就绪</span></span>
+        <span class="topbar-divider" aria-hidden="true"></span>
+        <button class="icon-btn" id="collectBtn" title="立即采集并生成日报">
+          <svg class="icon" viewBox="0 0 24 24" fill="none"><path d="M20 11a8 8 0 1 0-.7 4.3M20 5v6h-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>采集</span>
+        </button>
+        <button class="taste-btn" id="pushBtn" type="button">
+          <span class="taste-orb" aria-hidden="true"></span>
+          <span>推送日报</span>
+        </button>
+        <button class="icon-btn" id="themeToggle" type="button" aria-label="切换主题" title="切换主题">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="4.2" stroke="currentColor" stroke-width="1.6"/><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6l1.4 1.4m10 10 1.4 1.4m0-12.8-1.4 1.4m-10 10-1.4 1.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="content">
+      <div class="shell">
+        <section class="radar-head">
+          <div class="radar-title">
+            <h1>全球热点雷达</h1>
+            <p>免费公开数据源 · 热点发现 · 起源追溯 · 多方核验</p>
+          </div>
+          <div class="radar-board" id="radarBoard">
+            <div class="metric"><span class="metric-k">事件</span><b class="metric-v" id="mEvents">—</b></div>
+            <div class="metric"><span class="metric-k">材料</span><b class="metric-v" id="mItems">—</b></div>
+            <div class="metric"><span class="metric-k">在线源</span><b class="metric-v" id="mSources">—</b></div>
+            <div class="metric"><span class="metric-k">失败源</span><b class="metric-v" id="mFailed">—</b></div>
+          </div>
+        </section>
+
+        <nav class="radar-tabs" id="radarTabs" role="tablist" aria-label="雷达子页面">
+          <button class="radar-tab is-active" data-view="daily" role="tab" aria-selected="true">每日热点</button>
+          <button class="radar-tab" data-view="investigate" role="tab" aria-selected="false">事件调查</button>
+          <button class="radar-tab" data-view="tech" role="tab" aria-selected="false">科技突破核验</button>
+          <button class="radar-tab" data-view="sources" role="tab" aria-selected="false">数据源管理</button>
+          <button class="radar-tab" data-view="history" role="tab" aria-selected="false">历史记录</button>
+          <button class="radar-tab" data-view="settings" role="tab" aria-selected="false">监控设置</button>
+        </nav>
+
+        <section class="radar-view" id="view-daily" role="tabpanel">
+          <div class="radar-grid" id="dailyGrid">
+            <div class="skel-card"></div>
+            <div class="skel-card"></div>
+            <div class="skel-card"></div>
+          </div>
+        </section>
+
+        <section class="radar-view" id="view-investigate" role="tabpanel" hidden>
+          <form class="radar-search" id="investigateForm">
+            <label class="field" style="flex:1">
+              <input id="investigateInput" type="text" placeholder="输入事件、人物、公司、产品或原始链接…" autocomplete="off" aria-label="调查关键词">
+            </label>
+            <button class="primary-btn" type="submit">开始调查</button>
+          </form>
+          <p class="hint">调查只使用已采集的公开材料，并逐条标注来源与证据缺口；不会补写缺失的事实。</p>
+          <div id="investigateResult"><div class="empty-state"><div class="empty-mark">⌕</div><h3>还没有开始调查</h3><p>从「每日热点」点击「深入调查」，或在上方输入关键词。</p></div></div>
+        </section>
+
+        <section class="radar-view" id="view-tech" role="tabpanel" hidden>
+          <div id="techResult"><p class="pending">正在载入…</p></div>
+        </section>
+
+        <section class="radar-view" id="view-sources" role="tabpanel" hidden>
+          <div id="sourcesResult"><p class="pending">正在载入…</p></div>
+        </section>
+
+        <section class="radar-view" id="view-history" role="tabpanel" hidden>
+          <div id="historyResult"><p class="pending">正在载入…</p></div>
+        </section>
+
+        <section class="radar-view" id="view-settings" role="tabpanel" hidden>
+          <div id="settingsResult"><p class="pending">正在载入…</p></div>
+        </section>
+      </div>
+    </main>
   </div>
-</header>
+</div>
 
-<main class="shell radar-shell">
-  <section class="radar-head">
-    <div class="radar-title">
-      <h1>全球热点雷达</h1>
-      <p>免费公开数据源 · 热点发现 · 起源追溯 · 多方核验</p>
-    </div>
-    <div class="radar-board" id="radarBoard">
-      <div class="metric"><span class="metric-k">事件</span><b class="metric-v" id="mEvents">—</b></div>
-      <div class="metric"><span class="metric-k">材料</span><b class="metric-v" id="mItems">—</b></div>
-      <div class="metric"><span class="metric-k">在线源</span><b class="metric-v" id="mSources">—</b></div>
-      <div class="metric"><span class="metric-k">失败源</span><b class="metric-v" id="mFailed">—</b></div>
-    </div>
-  </section>
-
-  <nav class="radar-tabs" id="radarTabs" role="tablist" aria-label="雷达子页面">
-    <button class="radar-tab is-active" data-view="daily" role="tab" aria-selected="true">每日热点</button>
-    <button class="radar-tab" data-view="investigate" role="tab" aria-selected="false">事件调查</button>
-    <button class="radar-tab" data-view="tech" role="tab" aria-selected="false">科技突破核验</button>
-    <button class="radar-tab" data-view="sources" role="tab" aria-selected="false">数据源管理</button>
-    <button class="radar-tab" data-view="history" role="tab" aria-selected="false">历史记录</button>
-    <button class="radar-tab" data-view="settings" role="tab" aria-selected="false">监控设置</button>
-  </nav>
-
-  <section class="radar-view" id="view-daily" role="tabpanel">
-    <div class="radar-grid" id="dailyGrid"><p class="empty">正在载入…</p></div>
-  </section>
-
-  <section class="radar-view" id="view-investigate" role="tabpanel" hidden>
-    <form class="radar-search" id="investigateForm">
-      <input id="investigateInput" type="text" placeholder="输入事件、人物、公司、产品或原始链接…" autocomplete="off">
-      <button class="primary-btn" type="submit">开始调查</button>
-    </form>
-    <p class="hint">调查只使用已采集的公开材料，并逐条标注来源与证据缺口；不会补写缺失的事实。</p>
-    <div id="investigateResult"><p class="empty">从「每日热点」点击「深入调查」，或在上方输入关键词。</p></div>
-  </section>
-
-  <section class="radar-view" id="view-tech" role="tabpanel" hidden>
-    <div id="techResult"><p class="empty">正在载入…</p></div>
-  </section>
-
-  <section class="radar-view" id="view-sources" role="tabpanel" hidden>
-    <div id="sourcesResult"><p class="empty">正在载入…</p></div>
-  </section>
-
-  <section class="radar-view" id="view-history" role="tabpanel" hidden>
-    <div id="historyResult"><p class="empty">正在载入…</p></div>
-  </section>
-
-  <section class="radar-view" id="view-settings" role="tabpanel" hidden>
-    <div id="settingsResult"><p class="empty">正在载入…</p></div>
-  </section>
-</main>
-
-<div class="toasts" id="toasts"></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<script src="/shell.js"></script>
 <script src="/radar.js"></script>
 </body>
 </html>

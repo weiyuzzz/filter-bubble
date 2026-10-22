@@ -3,163 +3,251 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0a0b0c">
-<title>Filter Bubble · 今日 GitHub 信号</title>
+<meta name="theme-color" content="#f6f7f9">
+<title>GitHub 技术雷达 · Filter Bubble</title>
 <meta name="description" content="每天为你筛出 GitHub 上最热、增长最猛与新崛起的项目，并随着你的评价越来越懂你。">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23c7f75c'/%3E%3Cpath d='M12 35h10l5-14 9 27 6-18 4 5h8' fill='none' stroke='%230a0b0c' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%233452d9'/%3E%3Cpath d='M12 36h9l5-14 9 27 6-18 4 5h7' fill='none' stroke='%23fff' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/styles.css">
+<script>
+  // 首屏前应用主题，避免闪烁
+  (function () {
+    try {
+      var qp = new URLSearchParams(location.search).get('theme');
+      var mode = (['light','dark','auto'].indexOf(qp) >= 0) ? qp : (localStorage.getItem('fb.theme') || 'light');
+      var dark = mode === 'dark' || (mode === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme-mode', mode);
+      var nav = localStorage.getItem('fb.nav') || 'expanded';
+      document.documentElement.setAttribute('data-nav', window.innerWidth <= 860 ? 'closed' : nav);
+      var view = localStorage.getItem('fb.view');
+      if (view) document.addEventListener('DOMContentLoaded', function () {
+        var list = document.getElementById('cardList');
+        if (list && view === 'list') list.classList.add('is-list');
+      });
+    } catch (e) {}
+  })();
+</script>
 </head>
 <body>
-<div class="ambient" aria-hidden="true"></div>
-<div class="grain" aria-hidden="true"></div>
-
-<header class="topbar">
-  <a class="brand" href="/" aria-label="Filter Bubble 首页">
-    <span class="brand-mark" aria-hidden="true">
-      <svg viewBox="0 0 32 32" fill="none"><path d="M4 18h6l3-8 5 15 3-10 2 3h5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    </span>
-    <span class="brand-word">Filter <span>Bubble</span></span>
-  </a>
-  <nav class="module-switch" aria-label="模块切换">
-    <a class="module-link is-active" href="/" aria-current="page">GitHub 热点</a>
-    <a class="module-link" href="/radar.html">全球热点雷达</a>
-  </nav>
-  <div class="topbar-meta">
-    <span class="live-pill"><i class="live-dot"></i><span id="topDate">每日情报</span></span>
-    <span class="topbar-divider" aria-hidden="true"></span>
-    <button class="icon-btn" id="refreshBtn" title="重新抓取今日数据" aria-label="重新抓取今日数据">
-      <svg class="icon" viewBox="0 0 24 24" fill="none"><path d="M20 11a8 8 0 1 0-.7 4.3M20 5v6h-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <span>刷新</span>
-    </button>
-    <button class="taste-btn" id="tasteBtn">
-      <span class="taste-orb" aria-hidden="true"></span>
-      <span>我的口味</span>
-      <span class="count-pill" id="tasteCount">0</span>
-    </button>
-  </div>
-</header>
-<div class="scanline" id="scanline" aria-hidden="true"></div>
-
-<main class="shell">
-  <section class="hero">
-    <div class="hero-copy">
-      <p class="eyebrow"><span class="eyebrow-line"></span><span id="eyebrow">DAILY GITHUB INTELLIGENCE</span></p>
-      <h1>今天，GitHub<br><span class="accent">在热什么</span><span class="q">？</span></h1>
-      <p class="lede" id="lede">从趋势榜与新生项目里，筛出真正值得打开的那些。你每点一次 👍，它就更懂你一点。</p>
-      <div class="hero-actions">
-        <a class="primary-btn" href="#feed">
-          查看今日榜单
-          <svg viewBox="0 0 24 24" fill="none"><path d="M5 12h14m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </a>
-        <button class="link-btn" id="howBtn"><span class="link-dot"></span>偏好如何学习？</button>
-      </div>
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <a class="brand" href="/" aria-label="Filter Bubble 首页">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none"><path d="M4 18h6l3-8 5 15 3-10 2 3h5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <span class="brand-word">Filter <span>Bubble</span></span>
+      </a>
+      <button class="sidebar-toggle" id="sidebarToggle" aria-label="收起或展开导航" aria-expanded="true" aria-controls="sidebar">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+      </button>
     </div>
 
-    <div class="board">
-      <div class="board-head">
-        <span class="mono-label">TODAY'S SIGNAL</span>
-        <span class="mono" id="boardDate">—</span>
-      </div>
-      <div class="board-grid">
-        <div class="metric">
-          <span class="metric-label">收录项目</span>
-          <strong id="mTotal">—</strong>
-          <small>projects</small>
-        </div>
-        <div class="metric">
-          <span class="metric-label">今日新增</span>
-          <strong id="mStars">—</strong>
-          <small>stars today</small>
-        </div>
-        <div class="metric">
-          <span class="metric-label">最快增速</span>
-          <strong id="mFast">—</strong>
-          <small id="mFastRepo">stars</small>
-        </div>
-        <div class="metric">
-          <span class="metric-label">口味匹配</span>
-          <strong id="mMatch">—</strong>
-          <small id="mMatchLabel">待训练</small>
-        </div>
-      </div>
-      <div class="board-foot">
-        <span class="board-status"><i class="status-light" id="statusLight"></i><span id="boardStatus">模型待训练 · 点 👍 教我你的口味</span></span>
-        <span class="mono" id="boardUpdated">—</span>
-      </div>
+    <nav class="sidebar-nav" aria-label="业务模块">
+      <span class="nav-label">业务模块</span>
+      <a class="nav-item is-active" href="/" aria-current="page">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 18h5l3-9 4 13 3-7h3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="nav-text">GitHub 技术雷达</span>
+      </a>
+      <a class="nav-item" href="/radar.html">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/><path d="M12 12l6-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
+        <span class="nav-text">全球热点雷达</span>
+      </a>
+      <a class="nav-item" href="/status.html">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 14h4l2-6 3 12 2-8h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="nav-text">系统状态</span>
+      </a>
+    </nav>
+
+    <nav class="sidebar-nav" aria-label="本页导航">
+      <span class="nav-label">本页导航</span>
+      <a class="nav-item" href="#feed">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
+        <span class="nav-text">今日榜单</span>
+      </a>
+      <a class="nav-item" href="#rail-taste">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 20s-7-4.4-7-9a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 4.6-7 9-7 9Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span>
+        <span class="nav-text">口味画像</span>
+      </a>
+      <a class="nav-item" href="#rail-follows">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="9" r="3" stroke="currentColor" stroke-width="1.6"/><path d="M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M16 8h4m-2-2v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+        <span class="nav-text">关注动态</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-foot">
+      本地运行 · 偏好只写在本机 SQLite<br>不登录、不上传
     </div>
-  </section>
+  </aside>
 
-  <div class="layout">
-    <section class="feed" id="feed">
-      <div class="feed-head">
-        <nav class="tabs" id="tabs" role="tablist" aria-label="榜单筛选">
-          <button class="tab is-active" data-tab="recommend" role="tab" aria-selected="true">为你推荐 <span class="tab-count" data-count="recommend">0</span></button>
-          <button class="tab" data-tab="surge" role="tab" aria-selected="false">热度猛增 <span class="tab-count" data-count="surge">0</span></button>
-          <button class="tab" data-tab="fresh" role="tab" aria-selected="false">新星崛起 <span class="tab-count" data-count="fresh">0</span></button>
-          <button class="tab" data-tab="sustained" role="tab" aria-selected="false">持续走热 <span class="tab-count" data-count="sustained">0</span></button>
-          <button class="tab" data-tab="following" role="tab" aria-selected="false">关注 <span class="tab-count" data-count="following">0</span></button>
-          <button class="tab" data-tab="saved" role="tab" aria-selected="false">已收藏 <span class="tab-count" data-count="saved">0</span></button>
-        </nav>
-        <div class="feed-tools">
-          <span class="result-count" id="resultCount"></span>
+  <div class="app-main">
+    <header class="topbar">
+      <button class="icon-btn nav-toggle" id="navToggle" type="button" aria-label="打开导航" aria-controls="sidebar" aria-expanded="false">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <div class="crumb">
+        <strong>GitHub 技术雷达</strong>
+        <span class="crumb-sep">/</span>
+        <span>今日榜单</span>
+      </div>
+      <span class="topbar-spacer"></span>
+      <div class="topbar-actions">
+        <span class="live-pill"><i class="live-dot"></i><span id="topDate">每日情报</span></span>
+        <span class="topbar-divider" aria-hidden="true"></span>
+        <button class="icon-btn" id="refreshBtn" title="重新抓取今日数据" aria-label="重新抓取今日数据">
+          <svg class="icon" viewBox="0 0 24 24" fill="none"><path d="M20 11a8 8 0 1 0-.7 4.3M20 5v6h-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>刷新</span>
+        </button>
+        <button class="taste-btn" id="tasteBtn">
+          <span class="taste-orb" aria-hidden="true"></span>
+          <span>我的口味</span>
+          <span class="count-pill" id="tasteCount">0</span>
+        </button>
+        <button class="icon-btn" id="themeToggle" type="button" aria-label="切换主题" title="切换主题">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="4.2" stroke="currentColor" stroke-width="1.6"/><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6l1.4 1.4m10 10 1.4 1.4m0-12.8-1.4 1.4m-10 10-1.4 1.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="content">
+      <div class="shell">
+        <section class="hero">
+          <div class="hero-copy">
+            <p class="eyebrow"><span class="eyebrow-line"></span><span id="eyebrow">DAILY GITHUB INTELLIGENCE</span></p>
+            <h1>今天，GitHub 在热什么？</h1>
+            <p class="lede" id="lede">从趋势榜与新生项目里，筛出真正值得打开的那些。你每点一次 👍，它就更懂你一点。</p>
+            <div class="hero-actions">
+              <a class="primary-btn" href="#feed">
+                查看今日榜单
+                <svg viewBox="0 0 24 24" fill="none"><path d="M5 12h14m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </a>
+              <button class="link-btn" id="howBtn"><span class="link-dot"></span>偏好如何学习？</button>
+            </div>
+          </div>
+
+          <div class="board">
+            <div class="board-head">
+              <span class="mono-label">TODAY'S SIGNAL</span>
+              <span class="mono" id="boardDate">—</span>
+            </div>
+            <div class="board-grid">
+              <div class="metric">
+                <span class="metric-label">收录项目</span>
+                <strong id="mTotal">—</strong>
+                <small>projects</small>
+              </div>
+              <div class="metric">
+                <span class="metric-label">今日新增</span>
+                <strong id="mStars">—</strong>
+                <small>stars today</small>
+              </div>
+              <div class="metric">
+                <span class="metric-label">最快增速</span>
+                <strong id="mFast">—</strong>
+                <small id="mFastRepo">stars</small>
+              </div>
+              <div class="metric">
+                <span class="metric-label">口味匹配</span>
+                <strong id="mMatch">—</strong>
+                <small id="mMatchLabel">待训练</small>
+              </div>
+            </div>
+            <div class="board-foot">
+              <span class="board-status"><i class="status-light" id="statusLight"></i><span id="boardStatus">模型待训练 · 点 👍 教我你的口味</span></span>
+              <span class="mono" id="boardUpdated">—</span>
+            </div>
+          </div>
+        </section>
+
+        <div class="layout">
+          <section class="feed" id="feed">
+            <div class="feed-head">
+              <nav class="tabs" id="tabs" role="tablist" aria-label="榜单筛选">
+                <button class="tab is-active" data-tab="recommend" role="tab" aria-selected="true">为你推荐 <span class="tab-count" data-count="recommend">0</span></button>
+                <button class="tab" data-tab="surge" role="tab" aria-selected="false">热度猛增 <span class="tab-count" data-count="surge">0</span></button>
+                <button class="tab" data-tab="fresh" role="tab" aria-selected="false">新星崛起 <span class="tab-count" data-count="fresh">0</span></button>
+                <button class="tab" data-tab="sustained" role="tab" aria-selected="false">持续走热 <span class="tab-count" data-count="sustained">0</span></button>
+                <button class="tab" data-tab="following" role="tab" aria-selected="false">关注 <span class="tab-count" data-count="following">0</span></button>
+                <button class="tab" data-tab="saved" role="tab" aria-selected="false">已收藏 <span class="tab-count" data-count="saved">0</span></button>
+              </nav>
+              <div class="feed-tools">
+                <span class="result-count" id="resultCount"></span>
+              </div>
+            </div>
+
+            <div class="onboard" id="onboard">
+              <div class="onboard-spark" aria-hidden="true">✦</div>
+              <div class="onboard-copy">
+                <strong>先把口味模型喂饱</strong>
+                <p>给 <b>3 个项目</b> 👍 / 👎，我就开始按你的偏好重排。已评价 <b id="onboardCount">0</b>/3。</p>
+              </div>
+              <div class="onboard-dots" id="onboardDots" aria-hidden="true"><i class="on"></i><i></i><i></i></div>
+            </div>
+
+            <div class="cards" id="cardList" aria-live="polite">
+              <div class="skel-card"></div>
+              <div class="skel-card"></div>
+              <div class="skel-card"></div>
+            </div>
+
+            <div class="empty hidden" id="empty">
+              <div class="empty-mark">◎</div>
+              <h3 id="emptyTitle">还没有收藏</h3>
+              <p id="emptyText">在卡片右上角点收藏，把想回看的项目留在这里。</p>
+              <button class="ghost-btn" data-goto="recommend">回到推荐</button>
+            </div>
+          </section>
+
+          <aside class="rail">
+            <section class="rail-card taste-card" id="rail-taste">
+              <header class="rail-head"><span>你的口味画像</span><button class="mini-link" id="openTaste">详情</button></header>
+              <div id="railTaste"></div>
+            </section>
+
+            <section class="rail-card follow-card" id="rail-follows">
+              <header class="rail-head"><span>已关注发布者</span><button class="mini-link" id="followRefresh" title="刷新关注动态">刷新</button></header>
+              <div id="railFollows"></div>
+            </section>
+
+            <section class="rail-card schedule-card">
+              <header class="rail-head"><span>自动更新</span><span class="chip-live"><i></i>每日</span></header>
+              <div class="schedule-time" id="scheduleTime">08:00</div>
+              <p class="rail-text">在本地生成，无需登录。每天打开页面，就是一份新日报。</p>
+              <div class="schedule-row"><span>下次更新</span><span id="nextRun">—</span></div>
+              <div class="schedule-row"><span>数据来源</span><span>Trending + Search</span></div>
+              <div class="schedule-row"><span>最后生成</span><span id="lastGenerated">—</span></div>
+              <div class="schedule-row"><span>微信简报</span><span id="pushStatus">未配置</span></div>
+              <div class="schedule-row" id="retryRow" hidden><span>网络重试</span><span id="retryText">等待网络恢复</span></div>
+              <button class="push-btn" id="pushNow" type="button" disabled>配置后自动推送</button>
+            </section>
+
+            <section class="rail-card quote-card">
+              <p>“热度是入口，<br>偏好才是筛选器。”</p>
+              <span>— Filter Bubble</span>
+            </section>
+          </aside>
         </div>
+
+        <footer class="footer">
+          <div class="footer-brand"><span class="brand-mark small" aria-hidden="true">✦</span><span>Filter Bubble</span></div>
+          <p>数据来自 GitHub Trending 与 Search API · 偏好只保存在你本机的 SQLite 里</p>
+          <span class="mono">LOCAL / PRIVATE / DAILY</span>
+        </footer>
       </div>
-
-      <div class="onboard" id="onboard">
-        <div class="onboard-spark" aria-hidden="true">✦</div>
-        <div class="onboard-copy">
-          <strong>先把口味模型喂饱</strong>
-          <p>给 <b>3 个项目</b> 👍 / 👎，我就开始按你的偏好重排。已评价 <b id="onboardCount">0</b>/3。</p>
-        </div>
-        <div class="onboard-dots" id="onboardDots" aria-hidden="true"><i class="on"></i><i></i><i></i></div>
-      </div>
-
-      <div class="cards" id="cardList" aria-live="polite"></div>
-
-      <div class="empty hidden" id="empty">
-        <div class="empty-mark">◎</div>
-        <h3 id="emptyTitle">还没有收藏</h3>
-        <p id="emptyText">在卡片右上角点收藏，把想回看的项目留在这里。</p>
-        <button class="ghost-btn" data-goto="recommend">回到推荐</button>
-      </div>
-    </section>
-
-    <aside class="rail">
-      <section class="rail-card taste-card">
-        <header class="rail-head"><span>你的口味画像</span><button class="mini-link" id="openTaste">详情</button></header>
-        <div id="railTaste"></div>
-      </section>
-
-      <section class="rail-card follow-card">
-        <header class="rail-head"><span>已关注发布者</span><button class="mini-link" id="followRefresh" title="刷新关注动态">刷新</button></header>
-        <div id="railFollows"></div>
-      </section>
-
-      <section class="rail-card schedule-card">
-        <header class="rail-head"><span>自动更新</span><span class="chip-live"><i></i>每日</span></header>
-        <div class="schedule-time" id="scheduleTime">08:00</div>
-        <p class="rail-text">在本地生成，无需登录。每天打开页面，就是一份新日报。</p>
-        <div class="schedule-row"><span>下次更新</span><span id="nextRun">—</span></div>
-        <div class="schedule-row"><span>数据来源</span><span>Trending + Search</span></div>
-        <div class="schedule-row"><span>最后生成</span><span id="lastGenerated">—</span></div>
-        <div class="schedule-row"><span>微信简报</span><span id="pushStatus">未配置</span></div>
-        <div class="schedule-row" id="retryRow" hidden><span>网络重试</span><span id="retryText">等待网络恢复</span></div>
-        <button class="push-btn" id="pushNow" type="button" disabled>配置后自动推送</button>
-      </section>
-
-      <section class="rail-card quote-card">
-        <p>“热度是入口，<br>偏好才是筛选器。”</p>
-        <span>— Filter Bubble</span>
-      </section>
-    </aside>
+    </main>
   </div>
+</div>
 
-  <footer class="footer">
-    <div class="footer-brand"><span class="brand-mark small">✦</span><span>Filter Bubble</span></div>
-    <p>数据来自 GitHub Trending 与 Search API · 偏好只保存在你本机的 SQLite 里</p>
-    <span class="mono">LOCAL / PRIVATE / DAILY</span>
-  </footer>
-</main>
+<button class="to-top" id="toTop" aria-label="回到顶部">
+  <svg viewBox="0 0 24 24" fill="none"><path d="M12 19V5m-6 6 6-6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+</button>
+<div class="brief-backdrop" id="briefBackdrop" hidden></div>
+<section class="brief-modal" id="briefModal" role="dialog" aria-modal="true" aria-labelledby="briefTitle" hidden>
+  <button class="brief-close" id="briefClose" aria-label="关闭项目速读">
+    <svg viewBox="0 0 24 24" fill="none"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+  </button>
+  <div class="brief-body" id="briefBody"></div>
+</section>
 
 <div class="drawer-backdrop" id="drawerBackdrop" hidden></div>
 <aside class="drawer" id="drawer" aria-hidden="true" aria-label="口味画像">
@@ -194,18 +282,8 @@
   </div>
 </aside>
 
-<button class="to-top" id="toTop" aria-label="回到顶部">
-  <svg viewBox="0 0 24 24" fill="none"><path d="M12 19V5m-6 6 6-6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-</button>
-<div class="brief-backdrop" id="briefBackdrop" hidden></div>
-<section class="brief-modal" id="briefModal" role="dialog" aria-modal="true" aria-labelledby="briefTitle" hidden>
-  <button class="brief-close" id="briefClose" aria-label="关闭项目速读">
-    <svg viewBox="0 0 24 24" fill="none"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-  </button>
-  <div class="brief-body" id="briefBody"></div>
-</section>
-
 <div class="toast-stack" id="toasts" aria-live="polite"></div>
+<script src="/shell.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
