@@ -78,9 +78,6 @@ class TestScriptContracts(unittest.TestCase):
         "saveSettings", "setDailyTime", "setTopEvents", "setMinHeat", "setTopics",
         "setKeywords", "setExclude", "setPushEnabled", "setPushItems", "setAlertThreshold",
         "wVelocity", "wCross", "wEngage", "wVerify", "wInterest", "resetSources",
-        # 大模型配置面板由 radar.js 动态渲染
-        "setLlmEnabled", "setLlmProvider", "setLlmBaseUrl", "setLlmModel", "setLlmKey",
-        "testLlm", "clearLlmKey", "llmTestResult",
     }
 
     def test_index_has_every_id_app_js_uses(self):
@@ -97,10 +94,26 @@ class TestScriptContracts(unittest.TestCase):
 
     def test_dynamic_settings_ids_are_rendered_by_radar_js(self):
         js = _read("radar.js")
-        for element_id in ("saveSettings", "setDailyTime", "setPushEnabled", "setTopics",
-                           "setLlmEnabled", "setLlmModel", "setLlmKey", "testLlm"):
+        for element_id in ("saveSettings", "setDailyTime", "setPushEnabled", "setTopics"):
             self.assertIn('id="%s"' % element_id, js,
                           "设置表单字段 %s 应由 radar.js 渲染" % element_id)
+
+    def test_global_settings_page_has_llm_controls(self):
+        html = _read("settings.html")
+        for element_id in ("settingsBody", "themeToggle", "navToggle"):
+            self.assertIn('id="%s"' % element_id, html, "全局设置页缺少 %s" % element_id)
+        js = _read("settings.js")
+        for element_id in ("setEnabled", "setProvider", "setBaseUrl", "setModel",
+                           "setApiKey", "testBtn", "saveBtn", "errorLog"):
+            self.assertIn('id="%s"' % element_id, js,
+                          "全局设置页应渲染 %s" % element_id)
+
+    def test_global_settings_uses_global_ai_endpoints(self):
+        js = _read("settings.js")
+        for endpoint in ("/api/ai/settings", "/api/ai/test", "/api/ai/errors"):
+            self.assertIn(endpoint, js, "全局设置页应调用 %s" % endpoint)
+        # 雷达页不再自己渲染大模型面板，只指向全局设置
+        self.assertNotIn("setLlmModel", _read("radar.js"))
 
     def test_status_js_only_reads_known_endpoints(self):
         text = _read("status.js")

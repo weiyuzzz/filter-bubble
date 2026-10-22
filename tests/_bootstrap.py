@@ -22,6 +22,8 @@ if "GITPULSE_DB" not in os.environ:
     # 测试绝不能被真实配置/密钥影响，也不能写坏仓库里的 social_radar.json
     os.environ.setdefault("RADAR_CONFIG", str(tmp / "social_radar.json"))
     os.environ.setdefault("RADAR_SECRETS", str(tmp / "radar_secrets.json"))
+    os.environ.setdefault("AI_CONFIG", str(tmp / "app_settings.json"))
+    os.environ.setdefault("AI_SECRETS", str(tmp / "ai_secrets.json"))
 
 TEST_DB = Path(os.environ["GITPULSE_DB"])
 TEST_SECRETS = Path(os.environ.get("RADAR_SECRETS", str(TEST_DB.parent / "radar_secrets.json")))

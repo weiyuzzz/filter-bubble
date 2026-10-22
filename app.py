@@ -134,6 +134,64 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    # ---------- 全局 AI 设置（与具体业务模块无关） ----------
+    def _ai(self, path: str, parsed, body: Optional[Dict[str, Any]]):
+        try:
+            from core import ai_api
+        except Exception as exc:  # noqa: BLE001
+            print("[ai] unavailable:", exc)
+            return _json(self, 503, {"error": "ai module unavailable: %s" % exc})
+        try:
+            if body is None:
+                query = {k: v[0] for k, v in urllib.parse.parse_qs(parsed.query).items()}
+                status, payload = ai_api.handle_get(path, query)
+            else:
+                status, payload = ai_api.handle_post(path, body)
+        except Exception as exc:  # noqa: BLE001
+            print("[ai] handler error:", exc)
+            status, payload = 500, {"error": str(exc)}
+        return _json(self, status, payload)
+
+    # ---------- 单个项目的 AI 解读（按需生成） ----------
+    def _ai_brief(self, body: Dict[str, Any]):
+        repo = str(body.get("repo") or "").strip()
+        if not repo:
+            return _json(self, 400, {"error": "repo required"})
+        conn = db.connect()
+        try:
+            payload = digest.latest(conn)
+            item = None
+            if payload:
+                item = next((i for i in payload.get("items", []) if i.get("full_name") == repo), None)
+            if not item:
+                return _json(self, 404, {"error": "该仓库不在今天的日报里"})
+            try:
+                from core import ai_brief, ai_client, ai_settings
+
+                settings = ai_settings.load()
+                ok, reason, _ = ai_client.resolve(settings)
+                if not ok:
+                    return _json(self, 409, {"error": reason})
+                result = ai_brief.generate_one(item, settings)
+                if not result:
+                    return _json(self, 502, {
+                        "error": ai_client.STATS.get("last_error") or "模型没有返回可用内容",
+                        "log": ai_client.read_errors(limit=5),
+                    })
+                # 回写当天日报，刷新页面后仍然能看到这次生成的解读
+                item["brief"] = item.get("brief")
+                conn.execute(
+                    "INSERT OR REPLACE INTO digests(date, payload, generated_at) VALUES(?,?,?)",
+                    (payload["date"], json.dumps(payload, ensure_ascii=False), payload["generated_at"]),
+                )
+                conn.commit()
+                return _json(self, 200, {"repo": repo, "brief": item.get("brief"), "ai": result})
+            except Exception as exc:  # noqa: BLE001
+                print("[ai] brief error:", exc)
+                return _json(self, 500, {"error": str(exc)})
+        finally:
+            conn.close()
+
     # ---------- radar (independent module; failures never touch the GitHub flow) ----------
     def _radar(self, path: str, parsed, body: Optional[Dict[str, Any]]):
         try:
@@ -156,6 +214,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+        if path == "/api/ai" or path.startswith("/api/ai/"):
+            return self._ai(path, parsed, None)
         if path == "/api/radar" or path.startswith("/api/radar/"):
             return self._radar(path, parsed, None)
         if path == "/api/health":
@@ -204,6 +264,10 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         body = _read_body(self)
+        if path == "/api/brief":
+            return self._ai_brief(body)
+        if path.startswith("/api/ai/"):
+            return self._ai(path, parsed, body)
         if path.startswith("/api/radar/"):
             return self._radar(path, parsed, body)
         conn = db.connect()

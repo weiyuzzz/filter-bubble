@@ -133,14 +133,12 @@ def handle_post(path: str, body: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
             return _ok({"result": result, "push": push.status(conn, cfg, latest["date"])})
         if path == "/api/radar/settings":
             saved = _save_settings(body)
-            llm_saved = save_llm_settings(body)
-            for key, value in llm_saved.items():
-                saved["llm_" + key] = value
             fresh = radar_config.cached()
             return _ok({"saved": saved, "settings": _public_settings(fresh),
                         "path": str(radar_config.CONFIG_PATH),
                         "llm_status": llm.status(fresh)})
         if path == "/api/radar/llm/test":
+            # 大模型已改为全局配置；这里保留是为了兼容旧前端调用
             fresh = radar_config.cached()
             result = llm.test_connection(fresh)
             return _ok({"result": result, "llm_status": llm.status(fresh)})

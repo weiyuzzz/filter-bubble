@@ -254,9 +254,9 @@ python -m unittest discover -s tests -v
 
 #### 在 Web 界面里配置（推荐）
 
-打开 **全球热点雷达 → 监控设置 → 大模型（可选）**：
+大模型是全局配置，入口在左侧导航 **全局设置**（GitHub 项目解读与雷达摘要共用）：
 
-![大模型配置](llm-settings.png)
+![全局设置](llm-settings.png)
 
 1. 「接入大模型生成摘要」选 **启用**
 2. 「接口类型」选 **OpenAI 兼容 / OpenRouter**（本地模型选 Ollama）
@@ -269,7 +269,7 @@ python -m unittest discover -s tests -v
 
 #### 密钥是怎么存的
 
-- 只写入 `data/radar_secrets.json`（已在 `.gitignore` 里），**不会**写进 `social_radar.json`
+- 只写入 `data/ai_secrets.json`（已在 `.gitignore` 里），**不会**写进 `app_settings.json`
 - 任何接口都只返回「是否已配置」和掩码（如 `sk-o…7890`），不回传明文
 - 环境变量 `RADAR_LLM_API_KEY` 优先于文件，方便用 `.env` 或系统环境管理
 - 监控设置里可以一键「清除密钥」

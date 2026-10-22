@@ -121,13 +121,10 @@ def _prompt(event: Dict[str, Any], items: List[Dict[str, Any]]) -> List[Dict[str
 def _parse_llm(raw: Optional[str]) -> Optional[Dict[str, Any]]:
     if not raw:
         return None
-    text = raw.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```[a-zA-Z]*\n?", "", text)
-        text = re.sub(r"\n?```$", "", text)
-    try:
-        data = json.loads(text)
-    except ValueError:
+    from ..ai_client import extract_json
+
+    data = extract_json(raw)
+    if data is None:
         return None
     if not isinstance(data, dict):
         return None

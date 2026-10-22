@@ -934,6 +934,7 @@
       </div>
       ${scenario ? `<div class="brief-scenarios"><h4>典型场景</h4><div class="brief-chips">${scenario}</div></div>` : ""}
       ${flow ? `<div class="brief-flow"><h4>上手流程</h4><ol>${flow}</ol></div>` : ""}
+      ${b.limits ? `<div class="brief-block"><div class="brief-label">局限与注意</div><p>${esc(b.limits)}</p></div>` : ""}
       <div class="brief-foot">
         <div class="brief-meta">
           <span>上手门槛 <b>${esc(b.difficulty || "看 README")}</b></span>
@@ -942,7 +943,12 @@
         </div>
         <a class="brief-open" href="${esc(item.url)}" target="_blank" rel="noreferrer">打开 GitHub ${ICONS.open}</a>
       </div>
-      <p class="brief-note">${esc(b.note || "根据项目简介、语言与 topics 自动归纳，具体命令与限制以 README 为准。")}</p>`;
+      <div class="brief-foot">
+        ${b.ai
+          ? `<span class="chip ok">AI 解读 · ${esc(b.ai_model || "")}</span>`
+          : `<button class="ghost-btn" type="button" data-ai-brief="${esc(item.full_name)}">用 AI 重新解读</button>`}
+        <span class="brief-note">${esc(b.note || "根据项目简介、语言与 topics 自动归纳，具体命令与限制以 README 为准。")}</span>
+      </div>`;
     state.briefRepo = repo;
     const modal = $("#briefModal");
     const backdrop = $("#briefBackdrop");
@@ -966,6 +972,26 @@
       modal.hidden = true;
       $("#briefBackdrop").hidden = true;
     }, 300);
+  }
+
+  async function generateAiBrief(repo, button) {
+    if (button) { button.disabled = true; button.textContent = "AI 生成中…"; }
+    try {
+      const response = await fetch("/api/brief", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repo }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      const item = state.digest && state.digest.items.find((i) => i.full_name === repo);
+      if (item) item.brief = data.brief;
+      openBrief(repo);
+      toast("AI 解读已生成");
+    } catch (error) {
+      toast("AI 解读失败：" + error.message, true);
+      if (button) { button.disabled = false; button.textContent = "用 AI 重新解读"; }
+    }
   }
 
   function bind() {
@@ -1029,6 +1055,12 @@
 
     $("#briefClose").addEventListener("click", closeBrief);
     $("#briefBackdrop").addEventListener("click", closeBrief);
+    $("#briefBody").addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-ai-brief]");
+      if (!btn) return;
+      event.preventDefault();
+      generateAiBrief(btn.dataset.aiBrief, btn);
+    });
 
     $("#refreshBtn").addEventListener("click", refresh);
     const toTop = $("#toTop");

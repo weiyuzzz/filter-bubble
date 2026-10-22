@@ -801,7 +801,7 @@ textarea { min-height: 68px; resize: vertical; line-height: 1.6; }
 }
 @keyframes fb-spin { to { transform: rotate(360deg); } }
 
-.problem {
+.problem:not(.brief-block) {
   padding: var(--fb-sp-3) var(--fb-sp-4);
   border-radius: var(--fb-r-md);
   background: var(--fb-warn-soft);
@@ -1423,7 +1423,16 @@ textarea { min-height: 68px; resize: vertical; line-height: 1.6; }
   margin-top: var(--fb-sp-3);
   flex-wrap: wrap;
 }
-.brief-open { margin-left: auto; }
+.brief-open {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fb-fs-sm);
+}
+.brief-open svg { width: 14px; height: 14px; }
+.brief-meta { display: flex; flex-wrap: wrap; gap: var(--fb-sp-3); font-size: var(--fb-fs-xs); color: var(--fb-text-3); }
+.brief-meta b { color: var(--fb-text-2); font-weight: 600; }
 
 /* 通知 */
 .toasts, .toast-stack {

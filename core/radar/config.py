@@ -157,6 +157,15 @@ def load() -> Dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 - a broken config must not stop the app
         print("[radar] config load failed (%s): %s" % (CONFIG_PATH, exc))
 
+    # 大模型是全局能力：以 app_settings.json 为准（旧配置里的 llm 会被合并进去）
+    try:
+        from .. import ai_settings
+        global_llm = ai_settings.load().get("llm") or {}
+        if global_llm:
+            cfg["llm"] = {**(cfg.get("llm") or {}), **global_llm}
+    except Exception as exc:  # noqa: BLE001
+        print("[radar] global ai settings unavailable:", exc)
+
     for env_key, (dotted, caster) in _ENV_OVERRIDES.items():
         raw = os.environ.get(env_key)
         if raw is None or raw == "":

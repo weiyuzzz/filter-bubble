@@ -1,4 +1,4 @@
-"""Pipeline tests: clustering, story layer, value filtering, backoff, summarisation.
+﻿"""Pipeline tests: clustering, story layer, value filtering, backoff, summarisation.
 
 All offline: adapters are replaced with fakes, the LLM is replaced with a local stub.
 """
@@ -367,7 +367,7 @@ class TestLlmSettingsAndSecrets(unittest.TestCase):
             "enabled": True, "provider": "openai_compatible",
             "base_url": "https://openrouter.ai/api/v1", "model": "openai/gpt-4o-mini"}})
         self.assertFalse(ok)
-        self.assertIn("API key", reason)
+        self.assertIn("API Key", reason)
 
     def test_llm_allows_localhost_without_key(self):
         ok, _reason, resolved = llm.resolve({"llm": {
@@ -386,7 +386,7 @@ class TestLlmSettingsAndSecrets(unittest.TestCase):
             "enabled": True, "provider": "openai_compatible",
             "base_url": "https://openrouter.ai/api/v1", "model": "openai/gpt-4o-mini"}})
         self.assertFalse(result["ok"])
-        self.assertIn("API key", result["reason"])
+        self.assertIn("API Key", result["reason"])
 
     def test_test_connection_fails_cleanly_when_endpoint_is_down(self):
         """用本机一个不存在的端口验证失败路径，全程不访问外网。"""

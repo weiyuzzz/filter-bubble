@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f6f7f9">
+<title>全局设置 · Filter Bubble</title>
+<meta name="description" content="配置大模型（OpenRouter / Ollama）、测试连接、查看错误日志与 AI 解读设置。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%233452d9'/%3E%3Ccircle cx='32' cy='32' r='14' fill='none' stroke='%23fff' stroke-width='4'/%3E%3Cpath d='M32 12v8M32 44v8M12 32h8M44 32h8' stroke='%23fff' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/styles.css">
+<script>
+  (function () {
+    try {
+      var qp = new URLSearchParams(location.search).get('theme');
+      var mode = (['light','dark','auto'].indexOf(qp) >= 0) ? qp : (localStorage.getItem('fb.theme') || 'light');
+      var dark = mode === 'dark' || (mode === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme-mode', mode);
+      var nav = localStorage.getItem('fb.nav') || 'expanded';
+      document.documentElement.setAttribute('data-nav', window.innerWidth <= 860 ? 'closed' : nav);
+    } catch (e) {}
+  })();
+</script>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <a class="brand" href="/" aria-label="Filter Bubble 首页">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none"><path d="M4 18h6l3-8 5 15 3-10 2 3h5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <span class="brand-word">Filter <span>Bubble</span></span>
+      </a>
+      <button class="sidebar-toggle" id="sidebarToggle" aria-label="收起或展开导航" aria-expanded="true" aria-controls="sidebar">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <nav class="sidebar-nav" aria-label="业务模块">
+      <span class="nav-label">业务模块</span>
+      <a class="nav-item" href="/">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 18h5l3-9 4 13 3-7h3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="nav-text">GitHub 技术雷达</span>
+      </a>
+      <a class="nav-item" href="/radar.html">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/><path d="M12 12l6-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
+        <span class="nav-text">全球热点雷达</span>
+      </a>
+      <a class="nav-item is-active" href="/settings.html" aria-current="page">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.7"/><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6 7 7m10 10 1.4 1.4m0-12.8L17 7M7 17l-1.4 1.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+        <span class="nav-text">全局设置</span>
+      </a>
+      <a class="nav-item" href="/status.html">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 14h4l2-6 3 12 2-8h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="nav-text">系统状态</span>
+      </a>
+    </nav>
+    <div class="sidebar-foot">全局配置对所有模块生效<br>密钥只保存在本机</div>
+  </aside>
+
+  <div class="app-main">
+    <header class="topbar">
+      <button class="icon-btn nav-toggle" id="navToggle" type="button" aria-label="打开导航" aria-controls="sidebar" aria-expanded="false">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <div class="crumb">
+        <strong>全局设置</strong>
+        <span class="crumb-sep">/</span>
+        <span>大模型与 AI 解读</span>
+      </div>
+      <span class="topbar-spacer"></span>
+      <div class="topbar-actions">
+        <span class="live-pill"><i class="live-dot" id="aiDot"></i><span id="aiState">检查中…</span></span>
+        <button class="icon-btn" id="reloadBtn" type="button">
+          <svg class="icon" viewBox="0 0 24 24" fill="none"><path d="M20 11a8 8 0 1 0-.7 4.3M20 5v6h-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>重新读取</span>
+        </button>
+        <button class="icon-btn" id="themeToggle" type="button" aria-label="切换主题" title="切换主题">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="4.2" stroke="currentColor" stroke-width="1.6"/><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6l1.4 1.4m10 10 1.4 1.4m0-12.8-1.4 1.4m-10 10-1.4 1.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="content">
+      <div class="shell">
+        <header class="page-head">
+          <div>
+            <h1 class="page-title">全局设置</h1>
+            <p class="page-desc">这里配置的大模型是两个模块共用的：GitHub 项目的「AI 解读」和热点雷达的摘要都会用它。未配置或调用失败时自动回退到本地规则。</p>
+          </div>
+        </header>
+
+        <div id="settingsBody"><div class="panel"><p class="pending">正在读取设置…</p></div></div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<script src="/shell.js"></script>
+<script src="/settings.js"></script>
+</body>
+</html>

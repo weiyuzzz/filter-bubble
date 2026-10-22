@@ -241,6 +241,17 @@ def generate(progress: Optional[Callable[[str], None]] = None) -> Dict[str, Any]
         )
         items = _final_items(ranked)
 
+        # AI 解读：全局模型可用时为前 N 个项目生成「适合谁 / 怎么用 / 场景 / 流程」
+        try:
+            from . import ai_brief, ai_settings
+            settings = ai_settings.load()
+            ai_stats = ai_brief.enrich(items, settings, progress=said)
+            if ai_stats.get("generated") or ai_stats.get("cached"):
+                said("AI 解读：新生成 %d 个，命中缓存 %d 个"
+                     % (ai_stats.get("generated", 0), ai_stats.get("cached", 0)))
+        except Exception as exc:  # noqa: BLE001 - AI 失败不能影响日报
+            print("[ai] brief enrichment skipped:", exc)
+
         for idx, item in enumerate(items, 1):
             item["rank"] = idx
 
@@ -368,6 +379,12 @@ def rerank(conn) -> Dict[str, Any]:
     ))
     for idx, item in enumerate(items, 1):
         item["rank"] = idx
+    # rerank 只读缓存，不产生新的模型调用
+    try:
+        from . import ai_brief
+        ai_brief.cached_only(items)
+    except Exception as exc:  # noqa: BLE001
+        print("[ai] cached briefs skipped:", exc)
     payload["items"] = items
     payload["profile"] = profile
     payload["stats"] = rank.stats(items, profile)

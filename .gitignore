@@ -6,6 +6,7 @@ data/*.db-shm
 data/*.db-wal
 data/*.log
 data/radar_secrets.json
+data/ai_secrets.json
 .DS_Store
 
 .env
