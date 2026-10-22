@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from .. import db
 from . import config as radar_config
-from . import investigate, push, report, service, sources, store
+from . import investigate, llm, push, report, secrets, service, sources, store
 
 _TTL = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
@@ -133,8 +133,17 @@ def handle_post(path: str, body: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
             return _ok({"result": result, "push": push.status(conn, cfg, latest["date"])})
         if path == "/api/radar/settings":
             saved = _save_settings(body)
-            return _ok({"saved": saved, "settings": _public_settings(radar_config.cached()),
-                        "path": str(radar_config.CONFIG_PATH)})
+            llm_saved = save_llm_settings(body)
+            for key, value in llm_saved.items():
+                saved["llm_" + key] = value
+            fresh = radar_config.cached()
+            return _ok({"saved": saved, "settings": _public_settings(fresh),
+                        "path": str(radar_config.CONFIG_PATH),
+                        "llm_status": llm.status(fresh)})
+        if path == "/api/radar/llm/test":
+            fresh = radar_config.cached()
+            result = llm.test_connection(fresh)
+            return _ok({"result": result, "llm_status": llm.status(fresh)})
         return _err(404, "not found")
     except Exception as exc:  # noqa: BLE001
         print("[radar] api POST error:", exc)
@@ -146,6 +155,9 @@ def handle_post(path: str, body: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
 def _public_settings(cfg: Dict[str, Any]) -> Dict[str, Any]:
     """Surface only what the UI may edit, plus read-only source metadata."""
     limits = cfg.get("limits") or {}
+    llm_cfg = cfg.get("llm") or {}
+    env_name = str(llm_cfg.get("api_key_env") or secrets.ENV_NAME)
+    llm_ok, llm_reason, _ = llm.resolve(cfg)
     return {
         "schedule": cfg.get("schedule") or {},
         "report": cfg.get("report") or {},
@@ -157,6 +169,19 @@ def _public_settings(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "enabled": cfg.get("enabled", True),
         "timezone": cfg.get("timezone"),
         "source_toggles": {s["source_id"]: bool(s["enabled"]) for s in sources.all_specs(cfg)},
+        "llm": {
+            "enabled": bool(llm_cfg.get("enabled")),
+            "provider": llm_cfg.get("provider") or "openai_compatible",
+            "base_url": llm_cfg.get("base_url") or "",
+            "model": llm_cfg.get("model") or "",
+            "api_key_env": env_name,
+            "providers": list(llm.PROVIDERS),
+            "available": llm_ok,
+            "unavailable_reason": llm_reason,
+            "key": secrets.public_state(env_name),
+            "stats": {k: llm.STATS.get(k) for k in ("calls", "failures", "prompt_tokens",
+                                                    "completion_tokens", "last_error")},
+        },
     }
 
 
@@ -255,6 +280,62 @@ def _save_settings(body: Dict[str, Any]) -> Dict[str, Any]:
     if saved:
         radar_config.CONFIG_PATH.write_text(
             json.dumps(file_data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return saved
+
+
+def save_llm_settings(body: Dict[str, Any]) -> Dict[str, Any]:
+    """保存大模型开关与端点配置；密钥单独落到本地 secrets 文件，绝不回传。
+
+    前端提交 ``{"llm": {enabled, provider, base_url, model}, "api_key": "..."}``；
+    ``api_key`` 为空表示「保持原样」，``clear_api_key: true`` 才清除。
+    """
+    incoming = body.get("llm")
+    if not isinstance(incoming, dict):
+        incoming = {}
+
+    file_data: Dict[str, Any] = {}
+    if radar_config.CONFIG_PATH.exists():
+        try:
+            file_data = json.loads(radar_config.CONFIG_PATH.read_text(encoding="utf-8-sig") or "{}")
+        except (ValueError, OSError):
+            file_data = {}
+    if not isinstance(file_data, dict):
+        file_data = {}
+
+    block = file_data.setdefault("llm", {})
+    saved: Dict[str, Any] = {}
+
+    if "enabled" in incoming:
+        block["enabled"] = bool(incoming["enabled"])
+        saved["enabled"] = block["enabled"]
+
+    if "provider" in incoming:
+        provider = str(incoming["provider"] or "").strip()
+        if provider in llm.PROVIDERS:
+            block["provider"] = provider
+            saved["provider"] = provider
+
+    if "base_url" in incoming:
+        base_url = str(incoming["base_url"] or "").strip()[:300]
+        if not base_url or re.match(r"^https?://", base_url):
+            block["base_url"] = base_url
+            saved["base_url"] = base_url
+
+    if "model" in incoming:
+        model = str(incoming["model"] or "").strip()[:120]
+        block["model"] = model
+        saved["model"] = model
+
+    if saved:
+        radar_config.CONFIG_PATH.write_text(
+            json.dumps(file_data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    if body.get("clear_api_key"):
+        if secrets.set_api_key(None):
+            saved["api_key"] = "cleared"
+    elif str(body.get("api_key") or "").strip():
+        if secrets.set_api_key(str(body["api_key"])):
+            saved["api_key"] = "saved"
     return saved
 
 

@@ -252,7 +252,29 @@ python -m unittest discover -s tests -v
 「据今日头条：…；据微博：…」，关键数字只保留带单位的（`7.0级`、`400公里`、`75%`），
 不再输出「2 个平台，3 条相关报道」这种模板句。
 
-启用大模型只需在 `social_radar.json` 里配置：
+#### 在 Web 界面里配置（推荐）
+
+打开 **全球热点雷达 → 监控设置 → 大模型（可选）**：
+
+![大模型配置](llm-settings.png)
+
+1. 「接入大模型生成摘要」选 **启用**
+2. 「接口类型」选 **OpenAI 兼容 / OpenRouter**（本地模型选 Ollama）
+3. 「接口地址」填 `https://openrouter.ai/api/v1`（Ollama 填 `http://127.0.0.1:11434`）
+4. 「模型名」填 OpenRouter 上的模型，例如 `openai/gpt-4o-mini`
+5. 在 **API Key** 里粘贴 `sk-or-...`，点 **保存设置**
+6. 点 **测试连接**，会真的发一次请求并显示：是否返回、耗时、模型回显、返回内容片段
+
+「测试连接」只做连通性验证（要求模型回一个 JSON），**不会**影响已生成的日报。
+
+#### 密钥是怎么存的
+
+- 只写入 `data/radar_secrets.json`（已在 `.gitignore` 里），**不会**写进 `social_radar.json`
+- 任何接口都只返回「是否已配置」和掩码（如 `sk-o…7890`），不回传明文
+- 环境变量 `RADAR_LLM_API_KEY` 优先于文件，方便用 `.env` 或系统环境管理
+- 监控设置里可以一键「清除密钥」
+
+#### 也可以直接改配置文件
 
 ```json
 "llm": {
@@ -263,24 +285,13 @@ python -m unittest discover -s tests -v
 }
 ```
 
-或任意 OpenAI 兼容端点：
-
-```json
-"llm": {
-  "enabled": true,
-  "provider": "openai_compatible",
-  "base_url": "http://127.0.0.1:1234/v1",
-  "model": "local-model",
-  "api_key_env": "RADAR_LLM_API_KEY"
-}
-```
-
-- 密钥只从环境变量读取，不进代码、日志、前端
+- 密钥只从环境变量或本地 secrets 文件读取，不进代码、日志、前端
 - 结果按 `(事件, 模型, 内容哈希)` 缓存到 `radar_summaries`，同一事件不会重复调用
 - 模型超时、报错、返回非法 JSON → **自动回退到抽取式摘要**，日报不受影响
 - 调用次数与 token 数可以在 `/api/radar/status` 的 `summary_backend` 里看到
 
-已验证的路径：模型可用（mock 端点）、缓存命中、模型不可用回退、未启用。
+已验证的路径：模型可用（mock 端点）、缓存命中、模型不可用回退、未启用、
+Web 端保存/读取/掩码/清除密钥、测试连接的四种结果（可用 / 离线 / 未启用 / 无 key）。
 真实模型的摘要质量需要你接入自己的模型后自行评估。
 
 ---

@@ -108,7 +108,7 @@
     "max_attempts": 2,
     "max_events": 12,
     "temperature": 0.2,
-    "note": "默认关闭。填好 base_url / model 并设置 enabled=true 即启用；本地 Ollama 用 provider=ollama、base_url=http://127.0.0.1:11434。未配置时自动回退到本地抽取式摘要"
+    "note": "可在网页「监控设置 → 大模型」里配置；API Key 只存本地 data/radar_secrets.json。未配置时自动回退到本地抽取式摘要"
   },
 
   "sources": {}

@@ -12,7 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _bootstrap  # noqa: F401,E402
 
 from core import db  # noqa: E402
-from core.radar import cluster, config as rcfg, llm, report, service, sources, store, summarize  # noqa: E402
+from core.radar import (  # noqa: E402
+    cluster, config as rcfg, llm, report, secrets, service, sources, store, summarize,
+)
 
 
 def _item(source_id="s1", platform="平台A", title="标题", url=None, source_type="news",
@@ -324,6 +326,120 @@ class TestStoryLifecycle(unittest.TestCase):
         finally:
             conn.close()
         self.assertIsNone(row["story_id"])
+
+
+class TestLlmSettingsAndSecrets(unittest.TestCase):
+    """大模型开关、密钥存储与连接测试。全部离线。"""
+
+    def setUp(self):
+        import os
+        self._env_backup = os.environ.pop("RADAR_LLM_API_KEY", None)
+        secrets.set_api_key(None)
+
+    def tearDown(self):
+        import os
+        os.environ.pop("RADAR_LLM_API_KEY", None)
+        secrets.set_api_key(None)
+        if self._env_backup is not None:
+            os.environ["RADAR_LLM_API_KEY"] = self._env_backup
+
+    def test_key_roundtrip_and_mask(self):
+        self.assertFalse(secrets.public_state()["configured"])
+        self.assertTrue(secrets.set_api_key("sk-or-v1-abcdefgh12345678"))
+        state = secrets.public_state()
+        self.assertTrue(state["configured"])
+        self.assertNotIn("abcdefgh", state["masked"])
+        self.assertTrue(state["masked"].endswith("5678"))
+        self.assertEqual(secrets.get_api_key()[0], "sk-or-v1-abcdefgh12345678")
+        secrets.set_api_key(None)
+        self.assertFalse(secrets.public_state()["configured"])
+
+    def test_env_var_takes_precedence(self):
+        import os
+        secrets.set_api_key("file-key-value")
+        os.environ["RADAR_LLM_API_KEY"] = "env-key-value"
+        key, source = secrets.get_api_key()
+        self.assertEqual(key, "env-key-value")
+        self.assertTrue(source.startswith("env:"))
+
+    def test_llm_requires_key_for_remote_endpoint(self):
+        ok, reason, _ = llm.resolve({"llm": {
+            "enabled": True, "provider": "openai_compatible",
+            "base_url": "https://openrouter.ai/api/v1", "model": "openai/gpt-4o-mini"}})
+        self.assertFalse(ok)
+        self.assertIn("API key", reason)
+
+    def test_llm_allows_localhost_without_key(self):
+        ok, _reason, resolved = llm.resolve({"llm": {
+            "enabled": True, "provider": "openai_compatible",
+            "base_url": "http://127.0.0.1:1234/v1", "model": "local"}})
+        self.assertTrue(ok)
+        self.assertEqual(resolved["model"], "local")
+
+    def test_resolve_blocks_when_disabled(self):
+        ok, reason, _ = llm.resolve({"llm": {"enabled": False, "model": "x"}})
+        self.assertFalse(ok)
+        self.assertIn("未启用", reason)
+
+    def test_test_connection_reports_reason_without_key(self):
+        result = llm.test_connection({"llm": {
+            "enabled": True, "provider": "openai_compatible",
+            "base_url": "https://openrouter.ai/api/v1", "model": "openai/gpt-4o-mini"}})
+        self.assertFalse(result["ok"])
+        self.assertIn("API key", result["reason"])
+
+    def test_test_connection_fails_cleanly_when_endpoint_is_down(self):
+        """用本机一个不存在的端口验证失败路径，全程不访问外网。"""
+        result = llm.test_connection({"llm": {
+            "enabled": True, "provider": "openai_compatible",
+            "base_url": "http://127.0.0.1:9/v1", "model": "does-not-exist",
+            "timeout_seconds": 2, "max_attempts": 1}})
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["reason"])
+
+    def test_test_connection_reports_reason_when_disabled(self):
+        result = llm.test_connection({"llm": {"enabled": False}})
+        self.assertFalse(result["ok"])
+        self.assertIn("未启用", result["reason"])
+
+    def test_public_settings_never_expose_the_key(self):
+        from core.radar import api as radar_api
+        secrets.set_api_key("sk-or-secret-should-not-leak")
+        cfg = _cfg(llm={"enabled": True, "provider": "openai_compatible",
+                        "base_url": "https://openrouter.ai/api/v1",
+                        "model": "openai/gpt-4o-mini"})
+        public = radar_api._public_settings(cfg)
+        blob = str(public)
+        self.assertNotIn("sk-or-secret-should-not-leak", blob)
+        self.assertTrue(public["llm"]["key"]["configured"])
+        self.assertTrue(public["llm"]["key"]["masked"])
+
+    def test_save_llm_settings_persists_without_key_in_config(self):
+        from core.radar import api as radar_api
+        saved = radar_api.save_llm_settings({
+            "llm": {"enabled": True, "provider": "openai_compatible",
+                    "base_url": "https://openrouter.ai/api/v1",
+                    "model": "openai/gpt-4o-mini"},
+            "api_key": "sk-or-file-only",
+        })
+        self.assertTrue(saved.get("enabled"))
+        self.assertEqual(saved.get("model"), "openai/gpt-4o-mini")
+        self.assertEqual(saved.get("api_key"), "saved")
+        raw = rcfg.CONFIG_PATH.read_text(encoding="utf-8")
+        self.assertNotIn("sk-or-file-only", raw, "配置文件里不能出现密钥")
+        self.assertEqual(secrets.get_api_key()[0], "sk-or-file-only")
+
+    def test_clear_key_removes_it(self):
+        from core.radar import api as radar_api
+        secrets.set_api_key("sk-or-to-be-cleared")
+        radar_api.save_llm_settings({"clear_api_key": True})
+        self.assertFalse(secrets.public_state()["configured"])
+
+    def test_empty_api_key_does_not_overwrite(self):
+        from core.radar import api as radar_api
+        secrets.set_api_key("sk-or-keep-me")
+        radar_api.save_llm_settings({"api_key": "   "})
+        self.assertEqual(secrets.get_api_key()[0], "sk-or-keep-me")
 
 
 class TestReportStats(unittest.TestCase):

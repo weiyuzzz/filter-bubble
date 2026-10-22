@@ -20,6 +20,8 @@ import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
+from . import secrets
+
 PROVIDERS = ("openai_compatible", "ollama")
 
 # 进程内的轻量成本统计，供 /api/radar/status 展示（不落库）
@@ -29,9 +31,11 @@ STATS: Dict[str, Any] = {"calls": 0, "failures": 0, "prompt_tokens": 0,
 
 def resolve(cfg: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
     """返回 (是否可用, 不可用原因, 规范化配置)。"""
+    from . import secrets
+
     llm = (cfg.get("llm") or {})
     if not llm.get("enabled"):
-        return False, "未启用（social_radar.json → llm.enabled）", llm
+        return False, "未启用（监控设置里打开「接入大模型」）", llm
     provider = str(llm.get("provider") or "openai_compatible")
     if provider not in PROVIDERS:
         return False, "不支持的 provider：%s" % provider, llm
@@ -43,12 +47,13 @@ def resolve(cfg: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
         default_port = 11434 if provider == "ollama" else 1234
         base_url = "http://127.0.0.1:%d" % default_port
     base_url = base_url.rstrip("/")
+    env_name = str(llm.get("api_key_env") or secrets.ENV_NAME)
     if provider == "openai_compatible":
-        env_name = str(llm.get("api_key_env") or "RADAR_LLM_API_KEY")
-        api_key = (os.environ.get(env_name) or "").strip()
+        api_key, _source = secrets.get_api_key(env_name)
         if not api_key and not base_url.startswith(("http://127.0.0.1", "http://localhost")):
-            return False, "缺少 API key（环境变量 %s）" % env_name, llm
-    return True, "", {**llm, "provider": provider, "model": model, "base_url": base_url}
+            return False, "缺少 API key（在监控设置里填写，或设置环境变量 %s）" % env_name, llm
+    return True, "", {**llm, "provider": provider, "model": model, "base_url": base_url,
+                      "api_key_env": env_name}
 
 
 def _post(url: str, payload: Dict[str, Any], headers: Dict[str, str],
@@ -96,11 +101,14 @@ def chat(messages: List[Dict[str, str]], cfg: Dict[str, Any],
         payload = {"model": llm["model"], "messages": messages, "temperature": temperature}
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
-        env_name = str(llm.get("api_key_env") or "RADAR_LLM_API_KEY")
         headers = {"Content-Type": "application/json"}
-        key = (os.environ.get(env_name) or "").strip()
-        if key:
-            headers["Authorization"] = "Bearer " + key
+        api_key, _source = secrets.get_api_key(llm.get("api_key_env") or secrets.ENV_NAME)
+        if api_key:
+            headers["Authorization"] = "Bearer " + api_key
+        if "openrouter.ai" in base:
+            # OpenRouter 建议带上来源标识，便于它做限流与统计
+            headers["HTTP-Referer"] = "http://127.0.0.1:%s" % os.environ.get("GITPULSE_PORT", "8791")
+            headers["X-Title"] = "Filter Bubble"
 
     last_error = ""
     for attempt in range(attempts):
@@ -145,4 +153,45 @@ def status(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "last_error": STATS["last_error"],
         "last_latency_ms": STATS["last_latency_ms"],
         "checked_at": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
+        "key": secrets.public_state(str((llm or {}).get("api_key_env") or secrets.ENV_NAME)),
+    }
+
+
+TEST_MESSAGES = [
+    {"role": "system", "content": "你是一个连通性测试端点。只回复 JSON。"},
+    {"role": "user", "content": '请只输出 JSON：{"ok": true, "echo": "pong"}'},
+]
+
+
+def test_connection(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """发一次最小请求，验证模型能不能返回内容。不抛异常。"""
+    ok, reason, llm = resolve(cfg)
+    if not ok:
+        return {"ok": False, "reason": reason, "provider": llm.get("provider", ""),
+                "model": llm.get("model", ""), "latency_ms": 0}
+
+    started = time.time()
+    raw = chat(TEST_MESSAGES, cfg, json_mode=True)
+    latency = int((time.time() - started) * 1000)
+    if not raw:
+        return {"ok": False, "reason": STATS.get("last_error") or "模型没有返回内容",
+                "provider": llm["provider"], "model": llm["model"], "latency_ms": latency}
+
+    sample = raw.strip().replace("\n", " ")[:200]
+    parsed = None
+    try:
+        parsed = json.loads(sample)
+    except ValueError:
+        parsed = None
+    looks_ok = bool(parsed and parsed.get("ok") is True) or "pong" in sample.lower()
+    return {
+        "ok": True,
+        "responded": True,
+        "protocol_ok": looks_ok,
+        "provider": llm["provider"],
+        "model": llm["model"],
+        "base_url": llm["base_url"],
+        "latency_ms": latency,
+        "sample": sample,
+        "note": "" if looks_ok else "模型有返回，但没有按要求的 JSON 格式回复（仍可用于摘要，只是结构化程度较低）",
     }

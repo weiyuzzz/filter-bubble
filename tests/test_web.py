@@ -78,6 +78,9 @@ class TestScriptContracts(unittest.TestCase):
         "saveSettings", "setDailyTime", "setTopEvents", "setMinHeat", "setTopics",
         "setKeywords", "setExclude", "setPushEnabled", "setPushItems", "setAlertThreshold",
         "wVelocity", "wCross", "wEngage", "wVerify", "wInterest", "resetSources",
+        # 大模型配置面板由 radar.js 动态渲染
+        "setLlmEnabled", "setLlmProvider", "setLlmBaseUrl", "setLlmModel", "setLlmKey",
+        "testLlm", "clearLlmKey", "llmTestResult",
     }
 
     def test_index_has_every_id_app_js_uses(self):
@@ -94,7 +97,8 @@ class TestScriptContracts(unittest.TestCase):
 
     def test_dynamic_settings_ids_are_rendered_by_radar_js(self):
         js = _read("radar.js")
-        for element_id in ("saveSettings", "setDailyTime", "setPushEnabled", "setTopics"):
+        for element_id in ("saveSettings", "setDailyTime", "setPushEnabled", "setTopics",
+                           "setLlmEnabled", "setLlmModel", "setLlmKey", "testLlm"):
             self.assertIn('id="%s"' % element_id, js,
                           "设置表单字段 %s 应由 radar.js 渲染" % element_id)
 

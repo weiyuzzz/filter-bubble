@@ -520,6 +520,7 @@
       const push = s.push || {};
       const weights = s.scoring || {};
       const toggles = s.source_toggles || {};
+      const llm = s.llm || {};
       box.innerHTML = `
         <div class="section-title">监控设置 <small>保存后写入 ${esc(data.path)}</small></div>
         <div class="panel">
@@ -561,6 +562,45 @@
           <p class="hint">推送复用 Server酱 Turbo 通道：优先使用 RADAR_SERVERCHAN_SENDKEY，未配置时回退到 SERVERCHAN_SENDKEY，不会改动 GitHub 简报的推送。</p>
         </div>
         <div class="panel">
+          <h3>大模型（可选）</h3>
+          <div class="field-row">
+            <div class="field"><label>接入大模型生成摘要</label>
+              <select id="setLlmEnabled">
+                <option value="1" ${llm.enabled ? "selected" : ""}>启用</option>
+                <option value="0" ${llm.enabled ? "" : "selected"}>关闭（用本地抽取式）</option>
+              </select>
+            </div>
+            <div class="field"><label>接口类型</label>
+              <select id="setLlmProvider">
+                <option value="openai_compatible" ${llm.provider === "openai_compatible" ? "selected" : ""}>OpenAI 兼容 / OpenRouter</option>
+                <option value="ollama" ${llm.provider === "ollama" ? "selected" : ""}>本地 Ollama</option>
+              </select>
+            </div>
+            <div class="field"><label>接口地址</label>
+              <input id="setLlmBaseUrl" type="text" placeholder="https://openrouter.ai/api/v1" value="${esc(llm.base_url || "")}">
+            </div>
+            <div class="field"><label>模型名</label>
+              <input id="setLlmModel" type="text" placeholder="例如 openai/gpt-4o-mini" value="${esc(llm.model || "")}">
+            </div>
+          </div>
+          <div class="field-row" style="margin-top:12px">
+            <div class="field"><label>API Key ${llm.key && llm.key.configured ? `（已配置 ${esc(llm.key.masked)}，来源 ${esc(llm.key.source)}）` : "（未配置）"}</label>
+              <input id="setLlmKey" type="password" autocomplete="off" placeholder="${llm.key && llm.key.configured ? "留空表示不修改" : "粘贴 OpenRouter 的 sk-or-... key"}">
+            </div>
+          </div>
+          <div class="ev-meta" style="margin-top:10px">
+            ${llm.available ? chip("模型可用", "ok") : chip("模型不可用：" + (llm.unavailable_reason || ""), "warn")}
+            ${llm.stats && llm.stats.calls ? chip(`已调用 ${llm.stats.calls} 次`) : ""}
+            ${llm.stats && llm.stats.failures ? chip(`失败 ${llm.stats.failures} 次`, "warn") : ""}
+          </div>
+          <p class="hint">密钥只保存在本机 <code>data/radar_secrets.json</code>，不会写进配置文件，也不会回传到页面。未配置或调用失败时自动回退到本地抽取式摘要。</p>
+          <div class="ev-actions">
+            <button class="ghost-btn" id="testLlm" type="button">测试连接</button>
+            ${llm.key && llm.key.configured ? `<button class="ghost-btn" id="clearLlmKey" type="button">清除密钥</button>` : ""}
+          </div>
+          <div id="llmTestResult" style="margin-top:10px"></div>
+        </div>
+        <div class="panel">
           <h3>数据源开关</h3>
           <div class="toggle-grid">
             ${Object.entries(toggles).map(([key, on]) => `<label class="source-toggle"><input type="checkbox" data-source="${esc(key)}" ${on ? "checked" : ""}> ${esc(key)}</label>`).join("")}
@@ -568,6 +608,10 @@
         </div>
         <div class="ev-actions"><button class="primary-btn" id="saveSettings">保存设置</button></div>`;
       $("#saveSettings").addEventListener("click", saveSettings);
+      const testBtn = $("#testLlm");
+      if (testBtn) testBtn.addEventListener("click", testLlm);
+      const clearBtn = $("#clearLlmKey");
+      if (clearBtn) clearBtn.addEventListener("click", clearLlmKey);
     } catch (error) {
       box.innerHTML = `<p class="empty">读取失败：${esc(error.message)}</p>`;
     }
@@ -592,16 +636,69 @@
         interest: num("#wInterest"),
       },
       sources: {},
+      llm: {
+        enabled: $("#setLlmEnabled").value === "1",
+        provider: $("#setLlmProvider").value,
+        base_url: $("#setLlmBaseUrl").value.trim(),
+        model: $("#setLlmModel").value.trim(),
+      },
+      api_key: $("#setLlmKey") ? $("#setLlmKey").value.trim() : "",
     };
     $$("input[data-source]").forEach((input) => {
       body.sources[input.dataset.source] = input.checked;
     });
     try {
       const data = await api("/api/radar/settings", { method: "POST", body: JSON.stringify(body) });
-      toast("设置已保存：" + Object.keys(data.saved || {}).join("、"));
+      const savedKeys = Object.keys(data.saved || {});
+      toast(savedKeys.length ? "设置已保存：" + savedKeys.join("、") : "没有需要保存的改动");
+      loadSettings();
       loadStatus();
     } catch (error) {
       toast("保存失败：" + error.message, true);
+    }
+  }
+
+  async function testLlm() {
+    const box = $("#llmTestResult");
+    if (box) box.innerHTML = `<p class="pending">正在请求模型…</p>`;
+    try {
+      const data = await api("/api/radar/llm/test", { method: "POST", body: "{}" });
+      const result = (data && data.result) || {};
+      if (box) {
+        if (result.ok) {
+          box.innerHTML = `<div class="claim">
+            <div class="claim-head">
+              <p class="claim-text">模型返回正常</p>
+              ${chip(result.latency_ms + "ms", "ok")}
+            </div>
+            <div class="claim-rationale">
+              模型：${esc(result.model || "")} · 接口：${esc(result.base_url || "")}
+            </div>
+            ${result.sample ? `<div class="readme" style="margin-top:8px"><b>返回</b><span>${esc(result.sample)}</span></div>` : ""}
+            ${result.note ? `<p class="hint">${esc(result.note)}</p>` : ""}
+          </div>`;
+          toast("模型可用：" + (result.model || ""));
+        } else {
+          box.innerHTML = `<div class="error-state" style="padding:12px 0">
+            <p>测试失败：${esc(result.reason || "未知原因")}</p>
+          </div>`;
+          toast("模型不可用", true);
+        }
+      }
+      loadSettings();
+    } catch (error) {
+      if (box) box.innerHTML = `<p class="empty">测试失败：${esc(error.message)}</p>`;
+      toast("测试失败：" + error.message, true);
+    }
+  }
+
+  async function clearLlmKey() {
+    try {
+      await api("/api/radar/settings", { method: "POST", body: JSON.stringify({ clear_api_key: true }) });
+      toast("已清除本地密钥");
+      loadSettings();
+    } catch (error) {
+      toast("清除失败：" + error.message, true);
     }
   }
 
