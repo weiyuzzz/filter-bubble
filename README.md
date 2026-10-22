@@ -1,0 +1,224 @@
+# GitPulse · 今日 GitHub 信号
+
+一个**完全本地运行**的 GitHub 每日热榜，重点是两件事：
+
+1. 不只复述 Trending 排名，而是把「今天很热」「涨得很快」「刚冒出来」三种信号分开，再给出热度分、中文简介与 README 速读。
+2. 它会学习你的口味。每个项目都可以点 **👍 喜欢 / 👎 不喜欢**，模型立即重排今日榜单，并把这些反馈沉淀成一份可解释的偏好画像。
+
+无需登录，无需 API Key，无第三方 Python 依赖。数据与口味模型都只写在本机的 `data/gitpulse.db`。
+
+![GitPulse 桌面端](docs/desktop.png)
+
+<p align="center"><img src="docs/mobile.png" width="360" alt="移动端"></p>
+
+---
+
+## 快速开始
+
+```bash
+cd gitpulse
+python3 app.py refresh     # 首次生成今日日报（约 1–2 分钟）
+./run.sh                   # 启动界面
+```
+
+打开 <http://127.0.0.1:8791>。
+
+也可以直接 `./run.sh`：如果今天还没有日报，它会在后台生成，页面会自动轮询进度。
+
+**环境要求**：Python 3.9+（macOS 自带的 3.9 即可），macOS / Linux。前端是原生 HTML/CSS/JS，不需要 Node、npm 或构建步骤。
+
+---
+
+## 产品思路
+
+### 1. 三路数据，而不是一张榜
+
+| 信号 | 来源 | 作用 |
+| --- | --- | --- |
+| 日榜 | `github.com/trending?since=daily` | 今天最多人看的项目、`stars today` |
+| 周榜 | `github.com/trending?since=weekly` | 持续走热、不是一日游的项目 |
+| 新星 | GitHub Search，近 7 / 30 天创建、按 star 排序 | 突然冒出来的新项目 |
+
+合并去重后，用 GitHub API 补齐 topics、创建时间、License 等信息；再按热度选出 30 个进入日报。
+
+### 2. 热度怎么算
+
+`heat` 是 0–100 的相对分，不是 GitHub 官方数据：
+
+```
+heat = 52% × 增速分位
+     + 23% × 项目体量分位（log stars）
+     + 15% × 新鲜度（按创建时间衰减）
+     + 10% × 日榜排名
+     + 4   基础分
+```
+
+`surge`（用于「热度猛增」标签）额外考虑：
+
+- 今日 star 相对项目总量的占比（小项目一天涨 10% 比大项目涨 1% 更值得注意）；
+- 增速在当日候选集中的分位；
+- 周榜续航会体现在热度与「持续走热」徽章上。
+
+「日榜第一 / 日榜前三 / 增速冠军 / 新星崛起 / 持续走热 / 上升中」是不同维度的徽章，避免只看一个总榜。
+
+> 每日会把 stars 写入 `snapshots` 表，为后续的加速度判断留下真实历史；GitHub 本身只提供 `stars today`，没有历史曲线。
+
+### 3. 口味模型
+
+每个项目被拆成可读特征：
+
+- `lang:python` — 语言
+- `cat:ai` — 领域（AI / 开发工具 / Web / 基础设施 / 数据 / 安全 / 创意 / 系统……）
+- `topic:llm` — GitHub topics
+- `kw:agent` — 经过白名单过滤的高信号关键词
+- `age:new` / `size:huge` / `heat:surge` — 阶段特征
+
+反馈（`+1 / -1 / 撤销`）追加到 `feedback` 表。每次反馈后，用**逻辑回归**从零重放所有有效样本：
+
+```
+P(喜欢) = sigmoid(bias + Σ weight[feature])
+```
+
+- 学习率 0.5、L2 正则、14 轮，小样本也能快速收敛；
+- 少于 3 次评价时保持冷启动，只按热度排序；
+- 激活后最终排序为 **56% 热度 + 44% 个人匹配**；
+- 没有正向匹配的项目会进入「探索位」，避免信息茧房；
+- 一次 👎 不会立刻被判定为「永久讨厌」；画像里只展示至少出现过 2 次的负向特征，防止过拟合。
+
+所有特征、权重、证据数都在「我的口味」抽屉里可见。点「清空口味记忆」会删除反馈与权重，榜单立即回到热度排序。
+
+### 4. 界面
+
+- 编辑感深色版面 + 荧光绿信号色；桌面双栏，移动端单栏；
+- 顶部总览：收录数、今日新增 star、最快增速、平均口味匹配；
+- 五类视图：为你推荐 / 热度猛增 / 新星崛起 / 持续走热 / 已收藏；
+- 卡片内：热度环、中文简介、英文原文、README 速读、topics、今日/本周增量、匹配理由；
+- 反馈后即时重排（FLIP 位移动画），并弹出模型学习提示；
+- 口味抽屉展示领域/语言/topic/关键词权重，以及会主动避开的特征。
+
+---
+
+## 每日自动化
+
+### 方式 A：LaunchAgent（推荐，macOS）
+
+```bash
+./scripts/install-daily.sh
+```
+
+安装后：
+
+- 登录时自动启动本地服务；
+- 服务常驻，每天 **08:30（Asia/Shanghai）** 自动刷新；
+- 即使 08:30 时电脑休眠，唤醒后也会补跑当天日报；
+- 日志：`data/launchd.err.log`。
+
+卸载：
+
+```bash
+./scripts/uninstall-daily.sh
+```
+
+### 方式 B：cron（macOS / Linux）
+
+```cron
+30 8 * * * cd /path/to/gitpulse && /usr/bin/python3 app.py refresh >> data/cron.log 2>&1
+```
+
+这种方式只生成数据；要看界面仍需运行 `./run.sh`。
+
+> 服务内部也有调度线程：只要进程活着，每天到点会检查并生成当日日报。因此单纯运行 `./run.sh` 也能实现每日更新。
+
+---
+
+## 配置
+
+通过环境变量覆盖：
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `GITPULSE_PORT` | `8791` | 本地端口 |
+| `GITPULSE_HOST` | `127.0.0.1` | 只监听本机 |
+| `GITPULSE_REFRESH_TIME` | `08:30` | 每日刷新时间 |
+| `GITPULSE_TIMEZONE` | `Asia/Shanghai` | 时区 |
+| `GITPULSE_MAX_ITEMS` | `30` | 日报条数 |
+| `GITPULSE_TRANSLATE` | `1` | 设为 `0` 关闭中文翻译 |
+| `GITHUB_TOKEN` | 空 | 可选，提升 GitHub API 限额（60/h → 5000/h） |
+
+```bash
+GITPULSE_PORT=9000 GITPULSE_REFRESH_TIME=09:00 ./run.sh
+```
+
+### 关于翻译
+
+中文简介使用 [MyMemory](https://mymemory.translated.net/) 公共接口，不需要 Key，每天约 5000 字符的匿名额度。翻译结果会永久缓存在 `translations` 表，因此同一项目第二天不会重复消耗额度。
+
+额度用尽或服务不可达时，卡片自动回退到英文原文——不会报错，也不会阻塞日报生成。介意隐私可设置 `GITPULSE_TRANSLATE=0`。
+
+### 关于 GitHub API 限额
+
+未登录时 GitHub REST API 为 60 次/小时。一次完整生成通常消耗 30 次左右；项目详情缓存 24 小时、README 缓存 7 天，所以后续刷新基本不消耗详情额度。若你频繁手动刷新，建议配置 `GITHUB_TOKEN`。
+
+---
+
+## API
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/digest` | 今日日报（未生成时返回 202） |
+| GET | `/api/status` | 生成状态、下次运行时间 |
+| POST | `/api/refresh` | 触发后台重新抓取 |
+| POST | `/api/feedback` | `{repo, signal: 1 / -1 / 0}` |
+| POST | `/api/bookmark` | `{repo}`，切换收藏 |
+| POST | `/api/rerank` | 按当前模型重排 |
+| POST | `/api/reset` | 清空口味记忆 |
+| GET | `/api/prefs` | 当前偏好画像 |
+| GET | `/api/health` | 健康检查 |
+
+命令行：
+
+```bash
+python3 app.py refresh   # 生成一次
+python3 app.py rerank    # 按最新模型重排
+python3 app.py reset     # 清空反馈
+python3 app.py serve     # 启动 UI + 每日调度
+```
+
+---
+
+## 目录
+
+```
+gitpulse/
+├── app.py                  # HTTP 服务、API、CLI、调度
+├── core/
+│   ├── github.py           # Trending 解析 + Search + API 补全
+│   ├── rank.py             # 热度 / 猛增 / 多样性排序
+│   ├── prefs.py            # 特征、逻辑回归、偏好画像
+│   ├── digest.py           # 生成流水线、持久化、重排
+│   ├── translate.py        # MyMemory 翻译 + 额度 + 缓存
+│   ├── db.py               # SQLite schema 与访问
+│   └── config.py           # 环境变量配置
+├── web/                    # 原生前端
+├── scripts/                # LaunchAgent 安装/卸载
+├── data/gitpulse.db        # 日报、反馈、权重（本地）
+└── run.sh
+```
+
+---
+
+## 已知边界与下一步
+
+- 热度是相对分，不是 GitHub 官方指标；不同日期之间的分数不保证绝对可比。
+- 免费翻译在专业术语上偶有生硬；英文原文始终保留。
+- GitHub 页面结构变化可能影响 Trending 解析；解析失败时会保留上一份日报并在界面提示。
+- 部分网络环境无法加载 GitHub 头像；前端会自动回退到基于用户名生成的渐变首字母头像。
+- 后续可做：按 topic 静音、周报、邮件/系统通知、GitHub Star 同步、LLM 生成更自然的中文摘要、历史趋势 sparkline、多人配置。
+
+---
+
+## 隐私
+
+- 服务只监听 `127.0.0.1`，不对外暴露。
+- 日报、反馈、权重全部在 `data/gitpulse.db`。
+- 只有「英文项目简介 / README 摘要」会发给 MyMemory 做翻译；关闭 `GITPULSE_TRANSLATE` 后，除 GitHub 之外的网络请求为零。

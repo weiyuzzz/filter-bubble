@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0b0c">
+<title>GitPulse · 今日 GitHub 信号</title>
+<meta name="description" content="每天为你筛出 GitHub 上最热、增长最猛与新崛起的项目，并随着你的评价越来越懂你。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23c7f75c'/%3E%3Cpath d='M12 35h10l5-14 9 27 6-18 4 5h8' fill='none' stroke='%230a0b0c' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="ambient" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+
+<header class="topbar">
+  <a class="brand" href="/" aria-label="GitPulse 首页">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 32 32" fill="none"><path d="M4 18h6l3-8 5 15 3-10 2 3h5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </span>
+    <span class="brand-word">Git<span>Pulse</span></span>
+  </a>
+  <div class="topbar-meta">
+    <span class="live-pill"><i class="live-dot"></i><span id="topDate">每日情报</span></span>
+    <span class="topbar-divider" aria-hidden="true"></span>
+    <button class="icon-btn" id="refreshBtn" title="重新抓取今日数据" aria-label="重新抓取今日数据">
+      <svg class="icon" viewBox="0 0 24 24" fill="none"><path d="M20 11a8 8 0 1 0-.7 4.3M20 5v6h-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>刷新</span>
+    </button>
+    <button class="taste-btn" id="tasteBtn">
+      <span class="taste-orb" aria-hidden="true"></span>
+      <span>我的口味</span>
+      <span class="count-pill" id="tasteCount">0</span>
+    </button>
+  </div>
+</header>
+<div class="scanline" id="scanline" aria-hidden="true"></div>
+
+<main class="shell">
+  <section class="hero">
+    <div class="hero-copy">
+      <p class="eyebrow"><span class="eyebrow-line"></span><span id="eyebrow">DAILY GITHUB INTELLIGENCE</span></p>
+      <h1>今天，GitHub<br><span class="accent">在热什么</span><span class="q">？</span></h1>
+      <p class="lede" id="lede">从趋势榜与新生项目里，筛出真正值得打开的那些。你每点一次 👍，它就更懂你一点。</p>
+      <div class="hero-actions">
+        <a class="primary-btn" href="#feed">
+          查看今日榜单
+          <svg viewBox="0 0 24 24" fill="none"><path d="M5 12h14m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <button class="link-btn" id="howBtn"><span class="link-dot"></span>偏好如何学习？</button>
+      </div>
+    </div>
+
+    <div class="board">
+      <div class="board-head">
+        <span class="mono-label">TODAY'S SIGNAL</span>
+        <span class="mono" id="boardDate">—</span>
+      </div>
+      <div class="board-grid">
+        <div class="metric">
+          <span class="metric-label">收录项目</span>
+          <strong id="mTotal">—</strong>
+          <small>projects</small>
+        </div>
+        <div class="metric">
+          <span class="metric-label">今日新增</span>
+          <strong id="mStars">—</strong>
+          <small>stars today</small>
+        </div>
+        <div class="metric">
+          <span class="metric-label">最快增速</span>
+          <strong id="mFast">—</strong>
+          <small id="mFastRepo">stars</small>
+        </div>
+        <div class="metric">
+          <span class="metric-label">口味匹配</span>
+          <strong id="mMatch">—</strong>
+          <small id="mMatchLabel">待训练</small>
+        </div>
+      </div>
+      <div class="board-foot">
+        <span class="board-status"><i class="status-light" id="statusLight"></i><span id="boardStatus">模型待训练 · 点 👍 教我你的口味</span></span>
+        <span class="mono" id="boardUpdated">—</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="layout">
+    <section class="feed" id="feed">
+      <div class="feed-head">
+        <nav class="tabs" id="tabs" role="tablist" aria-label="榜单筛选">
+          <button class="tab is-active" data-tab="recommend" role="tab" aria-selected="true">为你推荐 <span class="tab-count" data-count="recommend">0</span></button>
+          <button class="tab" data-tab="surge" role="tab" aria-selected="false">热度猛增 <span class="tab-count" data-count="surge">0</span></button>
+          <button class="tab" data-tab="fresh" role="tab" aria-selected="false">新星崛起 <span class="tab-count" data-count="fresh">0</span></button>
+          <button class="tab" data-tab="sustained" role="tab" aria-selected="false">持续走热 <span class="tab-count" data-count="sustained">0</span></button>
+          <button class="tab" data-tab="saved" role="tab" aria-selected="false">已收藏 <span class="tab-count" data-count="saved">0</span></button>
+        </nav>
+        <div class="feed-tools">
+          <span class="result-count" id="resultCount"></span>
+        </div>
+      </div>
+
+      <div class="onboard" id="onboard">
+        <div class="onboard-spark" aria-hidden="true">✦</div>
+        <div class="onboard-copy">
+          <strong>先把口味模型喂饱</strong>
+          <p>给 <b>3 个项目</b> 👍 / 👎，我就开始按你的偏好重排。已评价 <b id="onboardCount">0</b>/3。</p>
+        </div>
+        <div class="onboard-dots" id="onboardDots" aria-hidden="true"><i class="on"></i><i></i><i></i></div>
+      </div>
+
+      <div class="cards" id="cardList" aria-live="polite"></div>
+
+      <div class="empty hidden" id="empty">
+        <div class="empty-mark">◎</div>
+        <h3 id="emptyTitle">还没有收藏</h3>
+        <p id="emptyText">在卡片右上角点收藏，把想回看的项目留在这里。</p>
+        <button class="ghost-btn" data-goto="recommend">回到推荐</button>
+      </div>
+    </section>
+
+    <aside class="rail">
+      <section class="rail-card taste-card">
+        <header class="rail-head"><span>你的口味画像</span><button class="mini-link" id="openTaste">详情</button></header>
+        <div id="railTaste"></div>
+      </section>
+
+      <section class="rail-card schedule-card">
+        <header class="rail-head"><span>自动更新</span><span class="chip-live"><i></i>每日</span></header>
+        <div class="schedule-time" id="scheduleTime">08:30</div>
+        <p class="rail-text">在本地生成，无需登录。每天打开页面，就是一份新日报。</p>
+        <div class="schedule-row"><span>下次更新</span><span id="nextRun">—</span></div>
+        <div class="schedule-row"><span>数据来源</span><span>Trending + Search</span></div>
+        <div class="schedule-row"><span>最后生成</span><span id="lastGenerated">—</span></div>
+      </section>
+
+      <section class="rail-card quote-card">
+        <p>“热度是入口，<br>偏好才是筛选器。”</p>
+        <span>— GitPulse</span>
+      </section>
+    </aside>
+  </div>
+
+  <footer class="footer">
+    <div class="footer-brand"><span class="brand-mark small">✦</span><span>GitPulse</span></div>
+    <p>数据来自 GitHub Trending 与 Search API · 偏好只保存在你本机的 SQLite 里</p>
+    <span class="mono">LOCAL / PRIVATE / DAILY</span>
+  </footer>
+</main>
+
+<div class="drawer-backdrop" id="drawerBackdrop" hidden></div>
+<aside class="drawer" id="drawer" aria-hidden="true" aria-label="口味画像">
+  <header class="drawer-head">
+    <div>
+      <span class="mono-label">TASTE MODEL</span>
+      <h2>你的口味画像</h2>
+    </div>
+    <button class="icon-btn round" id="closeDrawer" aria-label="关闭">
+      <svg class="icon" viewBox="0 0 24 24" fill="none"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    </button>
+  </header>
+  <div class="drawer-body">
+    <section class="model-status" id="modelStatus"></section>
+    <section class="taste-section" id="positiveSection">
+      <h3>模型学到的偏好 <span class="hint">权重越高越明显</span></h3>
+      <div id="tasteGroups"></div>
+    </section>
+    <section class="taste-section" id="avoidSection">
+      <h3>会主动避开</h3>
+      <div class="avoid-list" id="avoidList"></div>
+    </section>
+    <section class="taste-section how">
+      <h3>它怎么工作</h3>
+      <p>每个项目会被拆成语言、领域、话题与关键词等特征。你的每次评价都是一条训练样本，模型用逻辑回归给特征打分，再把「个人匹配」与「今日热度」按 <b>44 / 56</b> 混合排序。</p>
+      <p>模型在本地训练，数据只写进 <code>gitpulse.db</code>。清空后可以从零重新学习。</p>
+    </section>
+    <div class="drawer-actions">
+      <button class="danger-btn" id="resetBtn">清空口味记忆</button>
+      <span class="drawer-note" id="resetHint">此操作不可撤销</span>
+    </div>
+  </div>
+</aside>
+
+<button class="to-top" id="toTop" aria-label="回到顶部">
+  <svg viewBox="0 0 24 24" fill="none"><path d="M12 19V5m-6 6 6-6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+</button>
+<div class="toast-stack" id="toasts" aria-live="polite"></div>
+<script src="/app.js"></script>
+</body>
+</html>
