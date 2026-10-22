@@ -25,8 +25,8 @@ DEFAULTS: Dict[str, Any] = {
         "max_retries": 3,
     },
     "limits": {
-        "max_candidates": 400,
-        "max_events": 150,
+        "max_candidates": 600,
+        "max_events": 220,
         "max_report_events": 12,
         "source_timeout_seconds": 12,
         "source_retries": 1,
@@ -49,6 +49,12 @@ DEFAULTS: Dict[str, Any] = {
         "degrade_interval_minutes": 60,
         # 连续失败达到该次数后自动停用，直到手动重置
         "pause_after": 6,
+    },
+    # 第三方聚合源：抖音/知乎/贴吧等无直连公开接口的平台走这个 API
+    "newsnow": {
+        "api_url": "https://newsnow.busiyi.world/api/s",
+        # 校验返回链接的域名；不匹配的条目直接丢弃（防第三方数据被篡改）
+        "verify_domain": True,
     },
     "filters": {
         # 全局噪音词：命中即丢弃（娱乐段子、抽奖、标题党）

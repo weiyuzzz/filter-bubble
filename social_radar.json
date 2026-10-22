@@ -10,8 +10,8 @@
   },
 
   "limits": {
-    "max_candidates": 400,
-    "max_events": 150,
+    "max_candidates": 600,
+    "max_events": 220,
     "max_report_events": 12,
     "source_timeout_seconds": 12,
     "source_retries": 1,
@@ -31,6 +31,12 @@
     "degrade_after": 3,
     "degrade_interval_minutes": 60,
     "pause_after": 6
+  },
+
+  "newsnow": {
+    "api_url": "https://newsnow.busiyi.world/api/s",
+    "verify_domain": true,
+    "note": "抖音/知乎/贴吧/华尔街见闻/财联社/澎湃/凤凰走这个第三方聚合 API；可在 sources 里单独关闭某个平台，例如 \"sources\": {\"douyin\": {\"enabled\": false}}"
   },
 
   "filters": {

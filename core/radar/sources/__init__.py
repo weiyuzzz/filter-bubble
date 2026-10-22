@@ -12,8 +12,8 @@ import time
 import urllib.parse
 from typing import Any, Callable, Dict, List, Tuple
 
-from .. import store
-from . import hotlists, intl, rss
+from .. import store, urls
+from . import hotlists, intl, newsnow, rss
 
 NON_FREE_NOTE = "无合规免费入口，未接入（不绕过登录/验证码/访问控制）"
 
@@ -101,18 +101,43 @@ SOURCES: List[Dict[str, Any]] = [
      "language": "en", "source_type": "social_post", "enabled": False,
      "notes": "本机 403/超时，默认关闭"},
 
+    # ---- 通过第三方聚合 API 接入（无可直连公开接口的平台） ----
+    {"source_id": "douyin", "platform": "抖音", "name": "抖音热点", "kind": "hotlist",
+     "adapter": "newsnow", "api_id": "douyin", "expected_domain": "douyin.com",
+     "url": "", "language": "zh", "source_type": "social_trend", "enabled": True,
+     "max_items": 30,
+     "notes": "直连需要登录态与签名，改由 newsnow 聚合接入；只作为热点发现，无正文"},
+    {"source_id": "tieba", "platform": "百度贴吧", "name": "贴吧热点", "kind": "hotlist",
+     "adapter": "newsnow", "api_id": "tieba", "expected_domain": "baidu.com",
+     "url": "", "language": "zh", "source_type": "community", "enabled": True,
+     "max_items": 30,
+     "notes": "直连需要登录态，改由 newsnow 聚合接入"},
+    {"source_id": "zhihu_hot", "platform": "知乎", "name": "知乎热榜", "kind": "hotlist",
+     "adapter": "newsnow", "api_id": "zhihu", "expected_domain": "zhihu.com",
+     "url": "", "language": "zh", "source_type": "social_trend", "enabled": True,
+     "max_items": 30,
+     "notes": "匿名直连返回 401，改由 newsnow 聚合接入"},
+
+    # ---- 财经/时政（新增，聚合接入） ----
+    {"source_id": "wallstreetcn", "platform": "华尔街见闻", "name": "华尔街见闻热榜", "kind": "api",
+     "adapter": "newsnow", "api_id": "wallstreetcn-hot", "expected_domain": "wallstreetcn.com",
+     "url": "", "language": "zh", "source_type": "news", "enabled": True, "max_items": 20},
+    {"source_id": "cls_news", "platform": "财联社", "name": "财联社热门", "kind": "api",
+     "adapter": "newsnow", "api_id": "cls-hot", "expected_domain": "cls.cn",
+     "url": "", "language": "zh", "source_type": "news", "enabled": True, "max_items": 20},
+    {"source_id": "thepaper", "platform": "澎湃新闻", "name": "澎湃新闻", "kind": "api",
+     "adapter": "newsnow", "api_id": "thepaper", "expected_domain": "thepaper.cn",
+     "url": "", "language": "zh", "source_type": "news", "enabled": True, "max_items": 25},
+    {"source_id": "ifeng", "platform": "凤凰网", "name": "凤凰网", "kind": "api",
+     "adapter": "newsnow", "api_id": "ifeng", "expected_domain": "ifeng.com",
+     "url": "", "language": "zh", "source_type": "news", "enabled": True, "max_items": 20},
+
     # ---- 无合规免费入口：显式标记，绝不抓取 ----
     {"source_id": "x_twitter", "platform": "X", "name": "X / Twitter", "kind": "unavailable",
      "adapter": "unavailable", "url": "", "language": "en", "source_type": "social_post",
      "enabled": False, "notes": NON_FREE_NOTE},
-    {"source_id": "douyin", "platform": "抖音", "name": "抖音热点", "kind": "unavailable",
-     "adapter": "unavailable", "url": "", "language": "zh", "source_type": "social_trend",
-     "enabled": False, "notes": NON_FREE_NOTE},
     {"source_id": "xiaohongshu", "platform": "小红书", "name": "小红书公开内容", "kind": "unavailable",
      "adapter": "unavailable", "url": "", "language": "zh", "source_type": "social_post",
-     "enabled": False, "notes": NON_FREE_NOTE},
-    {"source_id": "tieba", "platform": "百度贴吧", "name": "贴吧热点", "kind": "unavailable",
-     "adapter": "unavailable", "url": "", "language": "zh", "source_type": "community",
      "enabled": False, "notes": NON_FREE_NOTE},
     {"source_id": "instagram", "platform": "Instagram", "name": "Instagram", "kind": "unavailable",
      "adapter": "unavailable", "url": "", "language": "en", "source_type": "social_post",
@@ -127,6 +152,7 @@ SOURCES: List[Dict[str, Any]] = [
 
 ADAPTERS: Dict[str, Callable[..., List[Dict[str, Any]]]] = {
     "rss": rss.fetch,
+    "newsnow": newsnow.fetch,
     **hotlists.ADAPTERS,
     **intl.ADAPTERS,
 }
@@ -156,7 +182,8 @@ def make_item(spec: Dict[str, Any], title: str, url: str = "", published_at: str
         "platform": spec.get("platform", ""),
         "title": title[:300],
         "url": url[:1000],
-        "url_hash": _hash(url),
+        # 用标准化后的 URL 做去重键：微博等平台的 band_rank/utm 参数每轮都变
+        "url_hash": _hash(urls.normalize(url, spec["source_id"])),
         "author_name": (author_name or "")[:120],
         "published_at": published_at or "",
         "collected_at": now,
@@ -170,32 +197,38 @@ def make_item(spec: Dict[str, Any], title: str, url: str = "", published_at: str
     }
 
 
-def active_specs(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Config may enable/disable/override any source without touching this file."""
+_OVERRIDABLE = ("url", "enabled", "max_items", "query", "timespan", "headers", "notes",
+                "language", "api_id", "expected_domain", "verify_domain", "timeout")
+
+
+def _merged(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """静态清单 + 用户覆盖 + newsnow 全局设置（api_url / 域名校验开关）。"""
     overrides = (cfg.get("sources") or {})
-    specs: List[Dict[str, Any]] = []
+    newsnow_cfg = (cfg.get("newsnow") or {})
+    api_url = str(newsnow_cfg.get("api_url") or "").strip()
+    verify = bool(newsnow_cfg.get("verify_domain", True))
+
+    merged_all: List[Dict[str, Any]] = []
     for spec in SOURCES:
         merged = dict(spec)
+        if merged.get("adapter") == "newsnow":
+            merged["verify_domain"] = verify
+            if api_url:
+                merged["api_url"] = api_url
         override = overrides.get(spec["source_id"]) or {}
         if isinstance(override, dict):
-            merged.update({k: v for k, v in override.items() if k in (
-                "url", "enabled", "max_items", "query", "timespan", "headers", "notes", "language")})
-        if merged.get("enabled"):
-            specs.append(merged)
-    return specs
+            merged.update({k: v for k, v in override.items() if k in _OVERRIDABLE})
+        merged_all.append(merged)
+    return merged_all
+
+
+def active_specs(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Config may enable/disable/override any source without touching this file."""
+    return [spec for spec in _merged(cfg) if spec.get("enabled")]
 
 
 def all_specs(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
-    overrides = (cfg.get("sources") or {})
-    merged_all = []
-    for spec in SOURCES:
-        merged = dict(spec)
-        override = overrides.get(spec["source_id"]) or {}
-        if isinstance(override, dict):
-            merged.update({k: v for k, v in override.items() if k in (
-                "url", "enabled", "max_items", "query", "timespan", "headers", "notes", "language")})
-        merged_all.append(merged)
-    return merged_all
+    return _merged(cfg)
 
 
 def _run_one(spec: Dict[str, Any]) -> Tuple[Dict[str, Any], List[Dict[str, Any]], str, int]:

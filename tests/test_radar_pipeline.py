@@ -1,9 +1,10 @@
-﻿"""Pipeline tests: clustering, story layer, value filtering, backoff, summarisation.
+"""Pipeline tests: clustering, story layer, value filtering, backoff, summarisation.
 
 All offline: adapters are replaced with fakes, the LLM is replaced with a local stub.
 """
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -13,8 +14,139 @@ import _bootstrap  # noqa: F401,E402
 
 from core import db  # noqa: E402
 from core.radar import (  # noqa: E402
-    cluster, config as rcfg, llm, report, secrets, service, sources, store, summarize,
+    cluster, config as rcfg, llm, report, secrets, service, sources, store, summarize, urls,
 )
+from core.radar.fetch import FetchResult  # noqa: E402
+from core.radar.sources import newsnow  # noqa: E402
+
+
+class TestUrlNormalization(unittest.TestCase):
+    """去重键必须先剥掉动态参数，否则微博这类链接每轮都会算成新条目。"""
+
+    def test_weibo_dynamic_params_are_removed(self):
+        dirty = "https://s.weibo.com/weibo?q=test&t=31&band_rank=6&Refer=top"
+        self.assertEqual(urls.normalize(dirty, "weibo_hot"), "https://s.weibo.com/weibo?q=test")
+
+    def test_rank_change_does_not_change_url(self):
+        a = urls.normalize("https://s.weibo.com/weibo?q=x&band_rank=1", "weibo_hot")
+        b = urls.normalize("https://s.weibo.com/weibo?q=x&band_rank=9", "weibo_hot")
+        self.assertEqual(a, b)
+
+    def test_tracking_params_are_removed(self):
+        dirty = "https://example.com/a?id=7&utm_source=wx&utm_medium=share&spm=1.2.3"
+        self.assertEqual(urls.normalize(dirty), "https://example.com/a?id=7")
+
+    def test_content_params_are_kept(self):
+        url = "https://example.com/post?id=42&q=ai"
+        self.assertEqual(urls.normalize(url), "https://example.com/post?id=42&q=ai")
+
+    def test_fragment_is_dropped(self):
+        self.assertEqual(urls.normalize("https://example.com/a#section"), "https://example.com/a")
+
+    def test_pseudo_urls_are_untouched(self):
+        pseudo = "radar://douyin/abc123"
+        self.assertEqual(urls.normalize(pseudo), pseudo)
+
+    def test_toutiao_impression_id_is_removed(self):
+        """今日头条的 log_pb 每次抓取都带不同的 impr_id，必须剥掉。"""
+        a = ("https://www.toutiao.com/trending/7699338619609399334/?log_pb=%7B%22impr%22%3A1%7D"
+             "&style_id=40132&topic_id=7699338619609399334")
+        b = ("https://www.toutiao.com/trending/7699338619609399334/?log_pb=%7B%22impr%22%3A2%7D"
+             "&style_id=40132&topic_id=7699338619609399334")
+        self.assertEqual(urls.normalize(a, "toutiao_hot"), urls.normalize(b, "toutiao_hot"))
+        self.assertIn("topic_id=", urls.normalize(a, "toutiao_hot"))
+
+    def test_make_item_dedupes_across_rank_changes(self):
+        spec = {"source_id": "weibo_hot", "platform": "微博"}
+        first = sources.make_item(spec, "同一条热搜",
+                                  url="https://s.weibo.com/weibo?q=abc&band_rank=1")
+        second = sources.make_item(spec, "同一条热搜",
+                                   url="https://s.weibo.com/weibo?q=abc&band_rank=8")
+        self.assertEqual(first["url_hash"], second["url_hash"])
+
+
+class TestNewsnowDomainCheck(unittest.TestCase):
+    def test_exact_and_subdomain_pass(self):
+        self.assertTrue(newsnow.domain_ok("https://weibo.com/a", "weibo.com"))
+        self.assertTrue(newsnow.domain_ok("https://m.weibo.com/a", "weibo.com"))
+
+    def test_other_domain_rejected(self):
+        self.assertFalse(newsnow.domain_ok("https://evil.com/a", "weibo.com"))
+
+    def test_http_rejected(self):
+        self.assertFalse(newsnow.domain_ok("http://weibo.com/a", "weibo.com"))
+
+    def test_userinfo_bypass_rejected(self):
+        self.assertFalse(newsnow.domain_ok("https://weibo.com@evil.com/a", "weibo.com"))
+
+    def test_empty_expected_passes(self):
+        self.assertTrue(newsnow.domain_ok("https://anything.example/a", ""))
+
+
+class TestNewsnowAdapter(unittest.TestCase):
+    def _spec(self, **overrides):
+        spec = {"source_id": "douyin", "platform": "抖音", "adapter": "newsnow",
+                "api_id": "douyin", "expected_domain": "douyin.com", "verify_domain": True,
+                "max_items": 10, "source_type": "social_trend", "language": "zh"}
+        spec.update(overrides)
+        return spec
+
+    def _run(self, payload, spec=None):
+        original = newsnow.get
+        newsnow.get = lambda *a, **k: FetchResult(True, 200, json.dumps(payload, ensure_ascii=False))
+        try:
+            return newsnow.fetch(spec or self._spec(), sources.make_item)
+        finally:
+            newsnow.get = original
+
+    def test_items_are_mapped_with_rank(self):
+        payload = {"status": "success", "items": [
+            {"title": "热搜一", "url": "https://www.douyin.com/hot/1"},
+            {"title": "热搜二", "mobileUrl": "https://m.douyin.com/hot/2"},
+        ]}
+        items = self._run(payload)
+        self.assertEqual(len(items), 2)
+        self.assertEqual(items[0]["title"], "热搜一")
+        self.assertEqual(items[0]["engagement"]["rank"], 1)
+        self.assertEqual(items[1]["url"], "https://m.douyin.com/hot/2")
+
+    def test_offsite_links_are_dropped(self):
+        payload = {"status": "cache", "items": [
+            {"title": "正常", "url": "https://www.douyin.com/hot/1"},
+            {"title": "被劫持", "url": "https://evil.example/x"},
+        ]}
+        items = self._run(payload)
+        self.assertEqual([i["title"] for i in items], ["正常"])
+
+    def test_all_offsite_raises(self):
+        payload = {"status": "success", "items": [
+            {"title": "a", "url": "https://evil.example/1"},
+            {"title": "b", "url": "https://evil.example/2"},
+        ]}
+        with self.assertRaises(RuntimeError):
+            self._run(payload)
+
+    def test_bad_status_raises(self):
+        with self.assertRaises(RuntimeError):
+            self._run({"status": "error", "items": []})
+
+    def test_empty_items_raise(self):
+        with self.assertRaises(RuntimeError):
+            self._run({"status": "success", "items": []})
+
+    def test_titles_without_url_still_use_domain_check(self):
+        """只有 mobileUrl 且域名匹配时应保留。"""
+        payload = {"status": "success", "items": [
+            {"title": "只有移动端", "mobileUrl": "https://m.douyin.com/hot/9"},
+        ]}
+        items = self._run(payload)
+        self.assertEqual(len(items), 1)
+        self.assertTrue(items[0]["url"].startswith("https://m.douyin.com/"))
+
+    def test_verify_disabled_accepts_any_link(self):
+        payload = {"status": "success", "items": [{"title": "外部", "url": "https://other.example/1"}]}
+        items = self._run(payload, self._spec(verify_domain=False))
+        self.assertEqual(len(items), 1)
 
 
 def _item(source_id="s1", platform="平台A", title="标题", url=None, source_type="news",
