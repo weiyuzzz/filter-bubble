@@ -4,7 +4,8 @@
   "timezone": "Asia/Shanghai",
 
   "schedule": {
-    "daily_time": "09:00",
+    "daily_time": "08:00",
+    "collect_interval_minutes": 60,
     "retry_after_minutes": 10,
     "max_retries": 3
   },
@@ -44,10 +45,17 @@
       "吃不吃挑战", "返厂了", "抽奖", "转发抽", "表情包", "壁纸",
       "cp向", "磕糖", "二创", "鬼畜", "整活", "梗图"
     ],
+    "rules": [],
+    "rules_note": "关键词语法，每行一条：[组名] / +必须词 / !排除词 / /正则/ => 别名 / @每组上限。示例：[\"科技\", \"+芯片\", \"!抽奖\"]",
     "min_engagement": {
       "bilibili_popular": { "view": 50000 },
       "hackernews": { "points": 40 }
     }
+  },
+
+  "rss": {
+    "feeds": [],
+    "feeds_note": "自定义 RSS 源，加源不用改代码。每项：{id, name, url, platform?, language?, max_items?, enabled?}"
   },
 
   "scoring": {

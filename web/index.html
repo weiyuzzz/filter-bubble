@@ -97,6 +97,7 @@
       <span class="topbar-spacer"></span>
       <div class="topbar-actions">
         <span class="live-pill"><i class="live-dot"></i><span id="topDate">每日情报</span></span>
+        <span class="updated-label" id="topUpdated"></span>
         <span class="topbar-divider" aria-hidden="true"></span>
         <button class="icon-btn" id="refreshBtn" title="重新抓取今日数据" aria-label="重新抓取今日数据">
           <svg class="icon" viewBox="0 0 24 24" fill="none"><path d="M20 11a8 8 0 1 0-.7 4.3M20 5v6h-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -214,9 +215,9 @@
             </section>
 
             <section class="rail-card schedule-card">
-              <header class="rail-head"><span>自动更新</span><span class="chip-live"><i></i>每日</span></header>
+              <header class="rail-head"><span>自动更新</span><span class="chip-live"><i></i>每小时</span></header>
               <div class="schedule-time" id="scheduleTime">08:00</div>
-              <p class="rail-text">在本地生成，无需登录。每天打开页面，就是一份新日报。</p>
+              <p class="rail-text">榜单每小时刷新一次，08:00 推送一次微信简报。带 NEW 的条目看过「项目速读」后就不再标记。</p>
               <div class="schedule-row"><span>下次更新</span><span id="nextRun">—</span></div>
               <div class="schedule-row"><span>数据来源</span><span>Trending + Search</span></div>
               <div class="schedule-row"><span>最后生成</span><span id="lastGenerated">—</span></div>

@@ -50,6 +50,20 @@
     return data;
   }
 
+  // ---------- 已读标记：打开深入调查后 NEW 消失 ----------
+  function markSeen(card) {
+    if (!card) return;
+    const storyId = card.dataset.story;
+    const badge = card.querySelector(".badge-new");
+    if (badge) badge.remove();
+    if (!storyId) return;
+    fetch("/api/seen", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "radar", key: storyId }),
+    }).catch(() => { /* 离线时忽略，下次打开再标一次 */ });
+  }
+
   // ---------- view switching ----------
   function switchView(name) {
     state.view = name;
@@ -88,6 +102,11 @@
     const sources = status.sources || {};
     $("#mSources").textContent = sources.ok != null ? sources.ok : "—";
     $("#mFailed").textContent = sources.error != null ? sources.error : "—";
+    const updated = $("#radarUpdated");
+    if (updated) {
+      const stamp = status.last_collect_at;
+      updated.textContent = stamp ? "采集于 " + fmtTime(stamp) : "";
+    }
     if (status.latest_date && $("#mEvents").textContent === "—") loadDaily();
   }
 
@@ -132,10 +151,18 @@
     const otherAngles = angles.slice(1, 4)
       .map((a) => `<span class="chip">${esc((a.title || "").slice(0, 28))}</span>`)
       .join("");
+    const trend = item.rank_trend || {};
+    const trendChip = {
+      up: chip("↑ 升温", "ok"),
+      down: chip("↓ 降温", "warn"),
+      flat: chip("— 持平"),
+      new: chip("新上榜", "info"),
+    }[trend.state] || "";
     return `
-      <article class="ev-card" data-event="${esc(item.event_id)}">
+      <article class="ev-card" data-event="${esc(item.event_id)}" data-story="${esc(item.story_id)}">
         <div class="ev-top">
           <h3 class="ev-title">${esc(item.headline || item.title)}</h3>
+          ${item.is_new ? `<span class="badge badge-new">NEW</span>` : ""}
           <span class="ev-heat">🔥 ${esc(item.heat)}</span>
         </div>
         ${item.summary ? `<p class="ev-summary">${esc(item.summary)}</p>` : ""}
@@ -145,6 +172,7 @@
           ${chip(item.category || "综合")}
           ${item.tech_flag ? chip("科技专题", "tech") : ""}
           ${item.angle_count > 1 ? chip(item.angle_count + " 个角度", "info") : ""}
+          ${trendChip}
           ${(item.platforms || []).slice(0, 4).map((p) => chip(p)).join("")}
           ${(item.flags || []).map((f) => chip(f, "warn")).join("")}
           ${item.summary_provider && item.summary_provider !== "extractive" ? chip("摘要 " + item.summary_provider, "ok") : ""}
@@ -664,6 +692,7 @@
       if (!button) return;
       const action = button.dataset.action;
       if (action === "investigate") {
+        markSeen(button.closest(".ev-card"));
         switchView("investigate");
         investigate(button.dataset.event, null);
       } else if (action === "open-report") {

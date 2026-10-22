@@ -1,4 +1,4 @@
-﻿"""全局 AI 设置：读写项目根目录的 app_settings.json。
+"""全局 AI 设置：读写项目根目录的 app_settings.json。
 
 设计原则：
 * 一份配置，两个模块共用（GitHub 项目解读、热点摘要、以后新增的功能）；

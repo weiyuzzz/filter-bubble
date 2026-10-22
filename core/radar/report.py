@@ -92,6 +92,7 @@ def highlight_story(conn, story: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[st
 
     angles = (story.get("metrics") or {}).get("angles") or []
     min_heat = float(((cfg.get("investigation") or {}).get("min_heat")) or 70)
+    trend = _rank_trend(conn, items)
     return {
         "story_id": story["id"],
         "event_id": representative.get("id", ""),
@@ -122,8 +123,37 @@ def highlight_story(conn, story: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[st
         "sources": [_item_brief(i) for i in items[:4]],
         "suggest_investigation": bool(story.get("heat", 0) >= min_heat and not representative.get("tech_flag")),
         "investigation_state": representative.get("investigation_state", "none"),
+        "rank_trend": trend,
         "metrics": representative.get("metrics") or {},
     }
+
+
+def _rank_trend(conn, items: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """按材料最近两次位次判断升温/降温。没有位次历史时返回 unknown。"""
+    hashes = [item.get("url_hash") for item in items if item.get("url_hash")]
+    if not hashes:
+        return {"state": "unknown", "delta": None, "rank": None}
+    ranks = store.rank_map(conn, hashes)
+    best = None
+    for entry in ranks.values():
+        if entry.get("rank") is None:
+            continue
+        if best is None or entry["rank"] < best["rank"]:
+            best = entry
+    if not best:
+        return {"state": "unknown", "delta": None, "rank": None}
+
+    delta = best.get("delta")
+    if delta is None:
+        state = "new"
+    elif delta > 0:
+        state = "up"
+    elif delta < 0:
+        state = "down"
+    else:
+        state = "flat"
+    return {"state": state, "delta": delta, "rank": best.get("rank"),
+            "captured_at": best.get("captured_at")}
 
 
 def highlight(conn, event: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -297,9 +327,16 @@ def build(conn, date: str, cfg: Dict[str, Any], collect_summary: Optional[Dict[s
         "collect": collect,
     }
 
+    # NEW 标签：只有用户打开过「深入调查」的故事才不再标记为新
+    from .. import seen as seen_store
+    new_count = seen_store.annotate("radar", highlights, "story_id")
+
     payload = {
         "date": date,
         "generated_at": now,
+        "updated_at": now,
+        "last_collect": collect.get("collected_at") or now,
+        "new_count": new_count,
         "version": 2,
         "module": "radar",
         "stats": {

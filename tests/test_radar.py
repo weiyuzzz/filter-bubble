@@ -283,7 +283,8 @@ class TestConfigSafety(unittest.TestCase):
         cfg = rcfg._merge(rcfg.DEFAULTS, {"scoring": {"velocity": 0.5}})
         self.assertEqual(cfg["scoring"]["velocity"], 0.5)
         self.assertEqual(cfg["scoring"]["cross_platform"], 0.2)
-        self.assertEqual(cfg["schedule"]["daily_time"], "09:00")
+        self.assertEqual(cfg["schedule"]["daily_time"], "08:00")
+        self.assertEqual(cfg["schedule"]["collect_interval_minutes"], 60)
 
     def test_weights_are_documented_defaults(self):
         scoring = rcfg.DEFAULTS["scoring"]

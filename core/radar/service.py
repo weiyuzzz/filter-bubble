@@ -82,6 +82,33 @@ def recent_report_date(conn) -> Optional[str]:
     return latest["date"] if latest else None
 
 
+def collect_only(cfg: Optional[Dict[str, Any]] = None, reason: str = "hourly") -> Dict[str, Any]:
+    """只采集，不生成日报也不推送。用于每小时的常规抓取。"""
+    cfg = cfg or radar_config.cached()
+    if not _begin():
+        return {"started": False, "reason": "already running"}
+    conn = db.connect()
+    try:
+        store.init()
+        _set("collecting")
+        summary = sources.collect(conn, cfg)
+        conn.commit()
+        _set("idle", last_collect_at=summary.get("collected_at"))
+        return {"started": True, "reason": reason, "summary": summary}
+    except Exception as exc:  # noqa: BLE001
+        try:
+            conn.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        _end(error="%s: %s" % (type(exc).__name__, exc))
+        return {"started": True, "reason": reason,
+                "error": "%s: %s" % (type(exc).__name__, exc)}
+    finally:
+        conn.close()
+        if _STATE.get("running"):
+            _end()
+
+
 def collect_and_report(cfg: Optional[Dict[str, Any]] = None, reason: str = "manual") -> Dict[str, Any]:
     """Full pipeline. Safe to call directly (blocking) or from the async wrapper."""
     cfg = cfg or radar_config.cached()
@@ -214,9 +241,15 @@ def status(conn, cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     all_sources = store.sources(conn)
     schedule = cfg.get("schedule") or {}
     push_cfg = cfg.get("push") or {}
+    interval = float(schedule.get("collect_interval_minutes") or 60)
+    last_collect = None
+    try:
+        last_collect = store.last_collect_at(conn)
+    except Exception:  # noqa: BLE001
+        last_collect = None
 
     next_run = None
-    daily_time = str(schedule.get("daily_time") or "09:00")
+    daily_time = str(schedule.get("daily_time") or "08:00")
     try:
         hh, mm = [int(x) for x in daily_time.split(":")]
         target = dt.datetime.now(tz()).replace(hour=hh, minute=mm, second=0, microsecond=0)
@@ -233,7 +266,9 @@ def status(conn, cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         "today_ready": (latest or {}).get("date") == date,
         "latest_date": (latest or {}).get("date"),
         "latest_generated_at": (latest or {}).get("generated_at"),
-        "schedule": {"time": daily_time, "timezone": cfg.get("timezone"), "next_run": next_run},
+        "schedule": {"time": daily_time, "timezone": cfg.get("timezone"), "next_run": next_run,
+                      "collect_interval_minutes": interval},
+        "last_collect_at": last_collect,
         "push": push.status(conn, cfg, date),
         "push_enabled": bool(push_cfg.get("enabled")),
         "summary_backend": summarize.backend_status(cfg),
@@ -262,8 +297,9 @@ def _minutes_since(iso: str) -> float:
 
 
 def scheduler_loop(stop: threading.Event) -> None:
-    """Independent daily scheduler. Never touches the GitHub digest scheduler."""
+    """两条时间线：每小时采集一次；每天到点生成日报并推送一次。"""
     print("[radar] scheduler started")
+    last_collect: Optional[dt.datetime] = None
     while not stop.wait(30):
         try:
             cfg = radar_config.cached()
@@ -271,6 +307,9 @@ def scheduler_loop(stop: threading.Event) -> None:
                 continue
             schedule = cfg.get("schedule") or {}
             limits = cfg.get("limits") or {}
+            interval = float(schedule.get("collect_interval_minutes") or 60)
+            daily_time = str(schedule.get("daily_time") or "08:00")
+
             conn = db.connect()
             try:
                 latest = store.latest_report(conn, "daily")
@@ -278,27 +317,38 @@ def scheduler_loop(stop: threading.Event) -> None:
             finally:
                 conn.close()
 
-            if (latest or {}).get("date") == today():
-                continue
-
             now = dt.datetime.now(tz())
-            daily_time = str(schedule.get("daily_time") or "09:00")
-            if now.strftime("%H:%M") < daily_time:
+            running = bool(_STATE.get("running"))
+            if running:
                 continue
 
-            last = last_runs[0] if last_runs else None
-            if last and last.get("status") == "running":
-                continue
-            if last and last.get("status") in ("failed", "partial"):
-                retry_after = float(schedule.get("retry_after_minutes") or 10)
-                if _minutes_since(last.get("started_at", "")) < retry_after:
+            # 1) 每日日报 + 推送（一天一次）
+            if (latest or {}).get("date") != today() and now.strftime("%H:%M") >= daily_time:
+                last = last_runs[0] if last_runs else None
+                if last and last.get("status") in ("failed", "partial"):
+                    retry_after = float(schedule.get("retry_after_minutes") or 10)
+                    if _minutes_since(last.get("started_at", "")) < retry_after:
+                        continue
+                min_gap = float(limits.get("min_minutes_between_reports") or 60)
+                if latest and _minutes_since(latest.get("generated_at", "")) < min_gap:
                     continue
-            min_gap = float(limits.get("min_minutes_between_reports") or 60)
-            if latest and _minutes_since(latest.get("generated_at", "")) < min_gap:
+                print("[radar] daily report starting at", now.isoformat(timespec="seconds"))
+                collect_and_report(cfg, reason="schedule")
+                last_collect = now
                 continue
 
-            print("[radar] daily run starting at", now.isoformat(timespec="seconds"))
-            collect_and_report(cfg, reason="schedule")
+            # 2) 每小时采集（不生成日报、不推送）
+            if last_collect is None:
+                last_collect = now  # 启动后先等一个间隔，避免重启即抓
+                continue
+            if (now - last_collect).total_seconds() < interval * 60:
+                continue
+            min_collect = float(limits.get("min_minutes_between_collects") or 20)
+            if last_collect and (now - last_collect).total_seconds() < min_collect * 60:
+                continue
+            print("[radar] hourly collect at", now.isoformat(timespec="seconds"))
+            collect_only(cfg, reason="hourly")
+            last_collect = now
         except Exception as exc:  # noqa: BLE001 - the scheduler thread must never die
             print("[radar] scheduler error:", exc)
 

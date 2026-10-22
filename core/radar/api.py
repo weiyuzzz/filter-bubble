@@ -38,8 +38,16 @@ def handle_get(path: str, query: Dict[str, str]) -> Tuple[int, Dict[str, Any]]:
             latest = store.latest_report(conn, "daily")
             if not latest:
                 return 202, {"pending": True, "status": service.status(conn, cfg)}
+            payload = latest["payload"]
+            # NEW 标签按当前已读状态重算：用户点过「深入调查」后刷新就消失
+            try:
+                from .. import seen as seen_store
+                seen_store.annotate("radar", payload.get("highlights") or [], "story_id")
+            except Exception:  # noqa: BLE001
+                pass
+            payload["last_collect"] = store.last_collect_at(conn)
             return _ok({"date": latest["date"], "generated_at": latest["generated_at"],
-                        "payload": latest["payload"]})
+                        "payload": payload})
         if path == "/api/radar/events":
             date = query.get("date") or service.today()
             events = store.events_for_date(conn, date, limit=200)

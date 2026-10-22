@@ -225,6 +225,7 @@
           <div class="rank-line">
             <span class="rank-num">#${String(item.rank || index + 1).padStart(2, "0")}</span>
             <span class="badge ${badgeClass(item.badge)}">${esc(item.badge || "值得一看")}</span>
+            ${item.is_new ? `<span class="badge badge-new">NEW</span>` : ""}
           </div>
           <div class="heat-wrap" title="热度 ${item.heat}/100">
             <div class="heat" style="--v:${item.heat};--c:${heatColor(item.heat)}"><b>${item.heat}</b></div>
@@ -444,7 +445,12 @@
       $("#mMatch").classList.remove("lime");
       $("#mMatchLabel").textContent = "待训练";
     }
-    $("#boardUpdated").textContent = timeAgo(d.generated_at);
+    $("#boardUpdated").textContent = timeAgo(d.updated_at || d.generated_at);
+    const updatedLabel = $("#topUpdated");
+    if (updatedLabel) {
+      const stamp = d.updated_at || d.generated_at;
+      updatedLabel.textContent = stamp ? "更新于 " + timeAgo(stamp) : "";
+    }
     const samples = (d.profile && d.profile.samples) || 0;
     $("#boardStatus").textContent = ready
       ? `口味模型已激活 · 已学习 ${samples} 次评价`
@@ -974,6 +980,24 @@
     }, 300);
   }
 
+  async function markSeen(repo) {
+    // 打开项目速读即视为已读：NEW 标签消失且刷新后不再出现
+    const item = state.digest && state.digest.items.find((i) => i.full_name === repo);
+    if (item && !item.is_new) return;
+    if (item) item.is_new = false;
+    const node = document.querySelector(`[data-repo="${repo}"] .badge-new`);
+    if (node) node.remove();
+    try {
+      await fetch("/api/seen", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "github", key: repo }),
+      });
+    } catch (error) {
+      /* 离线时忽略：下次打开还会再标一次 */
+    }
+  }
+
   async function generateAiBrief(repo, button) {
     if (button) { button.disabled = true; button.textContent = "AI 生成中…"; }
     try {
@@ -1012,6 +1036,7 @@
       const briefBtn = event.target.closest("[data-brief]");
       if (briefBtn) {
         event.preventDefault();
+        markSeen(briefBtn.dataset.brief);
         return openBrief(briefBtn.dataset.brief);
       }
       if (event.target.closest("[data-follow-refresh]")) {

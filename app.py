@@ -295,6 +295,16 @@ class Handler(BaseHTTPRequestHandler):
                     return _json(self, 409, {"error": "digest not ready"})
                 result = notify.send_daily(payload, conn=conn, force=bool(body.get("force")))
                 return _json(self, 200, {"result": result, "push": notify.status(conn)})
+            if path == "/api/seen":
+                from core import seen as seen_store
+
+                kind = str(body.get("kind") or "").strip()
+                keys = body.get("keys")
+                if not isinstance(keys, list):
+                    keys = [body.get("key")] if body.get("key") else []
+                if kind not in ("github", "radar") or not keys:
+                    return _json(self, 400, {"error": "kind/keys required"})
+                return _json(self, 200, {"marked": seen_store.mark(kind, keys)})
             if path == "/api/rerank":
                 payload = digest.rerank(conn)
                 return _json(self, 200, payload)
@@ -368,17 +378,24 @@ class Server(ThreadingHTTPServer):
 
 
 def _scheduler(stop: threading.Event) -> None:
+    """每小时刷新一次榜单（不推送）；每天到点推送一次。"""
+    interval_minutes = 60
+    last_refresh = None
     while not stop.wait(25):
         try:
             conn = db.connect()
             try:
-                done_today = db.get_meta(conn, "last_generated_date") == digest.local_today().isoformat()
+                generated = db.get_meta(conn, "last_generated_date") or ""
+                pushed = db.get_meta(conn, "last_pushed_date") or ""
                 last_failed = db.get_meta(conn, "last_refresh_failed_at", "") or ""
             finally:
                 conn.close()
+
             now = digest.local_now()
-            if done_today or digest.get_state().get("running"):
+            today = now.date().isoformat()
+            if digest.get_state().get("running"):
                 continue
+
             if last_failed:
                 try:
                     failed_at = dt.datetime.fromisoformat(last_failed)
@@ -386,9 +403,24 @@ def _scheduler(stop: threading.Event) -> None:
                         continue
                 except (ValueError, TypeError):
                     pass
-            if now.strftime("%H:%M") >= config.REFRESH_TIME:
-                print("[schedule] daily refresh starting at", now.isoformat(timespec="seconds"))
-                digest.refresh_async()
+
+            # 1) 到点推送：重新生成一次日报并把简报发出去（一天一次）
+            if pushed != today and now.strftime("%H:%M") >= config.REFRESH_TIME:
+                print("[schedule] daily push run at", now.isoformat(timespec="seconds"))
+                if digest.refresh_async(push=True):
+                    last_refresh = now
+                continue
+
+            # 2) 每小时刷新一次榜单，不推送
+            if last_refresh is None:
+                last_refresh = now if generated == today else now - dt.timedelta(minutes=interval_minutes)
+                if generated == today:
+                    continue
+            if (now - last_refresh).total_seconds() < interval_minutes * 60:
+                continue
+            print("[schedule] hourly refresh at", now.isoformat(timespec="seconds"))
+            if digest.refresh_async(push=False):
+                last_refresh = now
         except Exception as exc:  # noqa: BLE001
             print("[schedule] error:", exc)
 

@@ -12,6 +12,7 @@ import time
 import urllib.parse
 from typing import Any, Callable, Dict, List, Tuple
 
+from ... import keywords
 from .. import store, urls
 from . import hotlists, intl, newsnow, rss
 
@@ -201,15 +202,43 @@ _OVERRIDABLE = ("url", "enabled", "max_items", "query", "timespan", "headers", "
                 "language", "api_id", "expected_domain", "verify_domain", "timeout")
 
 
+def _rss_specs(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """把配置里的自定义 RSS 源展开成 source spec（加源不用改代码）。"""
+    feeds = (cfg.get("rss") or {}).get("feeds") or []
+    specs: List[Dict[str, Any]] = []
+    for feed in feeds:
+        if not isinstance(feed, dict):
+            continue
+        url = str(feed.get("url") or "").strip()
+        name = str(feed.get("name") or feed.get("id") or "").strip()
+        if not url or not name:
+            continue
+        feed_id = str(feed.get("id") or name).strip()
+        specs.append({
+            "source_id": "rss_" + feed_id,
+            "platform": str(feed.get("platform") or name),
+            "name": name,
+            "kind": "rss",
+            "adapter": "rss",
+            "url": url,
+            "language": str(feed.get("language") or "zh"),
+            "source_type": str(feed.get("source_type") or "news"),
+            "enabled": bool(feed.get("enabled", True)),
+            "max_items": int(feed.get("max_items") or 30),
+            "notes": "自定义 RSS 源（配置在 social_radar.json → rss.feeds）",
+        })
+    return specs
+
+
 def _merged(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """静态清单 + 用户覆盖 + newsnow 全局设置（api_url / 域名校验开关）。"""
+    """静态清单 + 自定义 RSS + 用户覆盖 + newsnow 全局设置。"""
     overrides = (cfg.get("sources") or {})
     newsnow_cfg = (cfg.get("newsnow") or {})
     api_url = str(newsnow_cfg.get("api_url") or "").strip()
     verify = bool(newsnow_cfg.get("verify_domain", True))
 
     merged_all: List[Dict[str, Any]] = []
-    for spec in SOURCES:
+    for spec in SOURCES + _rss_specs(cfg):
         merged = dict(spec)
         if merged.get("adapter") == "newsnow":
             merged["verify_domain"] = verify
@@ -253,12 +282,23 @@ def filter_items(spec: Dict[str, Any], items: List[Dict[str, Any]],
     noise += [w.lower() for w in (spec.get("blacklist") or []) if w]
     thresholds = (filters.get("min_engagement") or {}).get(spec["source_id"]) or {}
 
+    # 关键词语法：!排除词 命中即丢；+必须词 只在出现了必须词组时才生效
+    rules = keywords.parse(filters.get("rules") or [])
+    must_groups = [g for g in rules if g["must"]]
+    must_tokens = [t for g in must_groups for t in g["must"]]
+
     kept: List[Dict[str, Any]] = []
     dropped_noise = 0
     dropped_low = 0
     for item in items:
         blob = _haystack(item)
         if any(word in blob for word in noise):
+            dropped_noise += 1
+            continue
+        if rules and keywords.excluded(rules, blob):
+            dropped_noise += 1
+            continue
+        if must_tokens and not any(keywords._hit(token, blob) for token in must_tokens):
             dropped_noise += 1
             continue
         engagement = item.get("engagement") or {}
@@ -344,6 +384,7 @@ def collect(conn, cfg: Dict[str, Any], force: bool = False) -> Dict[str, Any]:
     total_raw = 0
     total_kept = 0
     total_filtered = 0
+    total_ranks = 0
     per_source: List[Dict[str, Any]] = []
 
     with cf.ThreadPoolExecutor(max_workers=6) as pool:
@@ -362,6 +403,7 @@ def collect(conn, cfg: Dict[str, Any], force: bool = False) -> Dict[str, Any]:
                 counts = store.insert_items(conn, kept)
                 total_inserted += counts["inserted"]
                 total_seen += counts["seen"]
+                total_ranks += store.record_ranks(conn, kept, now[:10], now)
                 store.record_source_result(conn, spec["source_id"], True, len(kept), latency, None, now)
                 ok_sources += 1
                 per_source.append({
@@ -383,6 +425,7 @@ def collect(conn, cfg: Dict[str, Any], force: bool = False) -> Dict[str, Any]:
         "items_filtered": total_filtered,
         "items_new": total_inserted,
         "items_seen": total_seen,
+        "ranks_recorded": total_ranks,
         "per_source": per_source,
         "collected_at": now,
     }

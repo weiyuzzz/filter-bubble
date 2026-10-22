@@ -20,7 +20,10 @@ DEFAULTS: Dict[str, Any] = {
     "enabled": True,
     "timezone": "Asia/Shanghai",
     "schedule": {
-        "daily_time": "09:00",
+        # 每天几点生成日报并推送（一天只推一次）
+        "daily_time": "08:00",
+        # 采集频率：每多少分钟抓一次（60 = 每小时）。日报仍然每天只生成一次。
+        "collect_interval_minutes": 60,
         "retry_after_minutes": 10,
         "max_retries": 3,
     },
@@ -62,11 +65,21 @@ DEFAULTS: Dict[str, Any] = {
             "吃不吃挑战", "返厂了", "抽奖", "转发抽", "表情包", "壁纸",
             "cp向", "磕糖", "二创", "鬼畜", "整活", "梗图",
         ],
+        # 关键词语法（每行一条）：[组名] / +必须词 / !排除词 / /正则/ => 别名 / @每组上限
+        # 留空表示不启用；示例见 docs/radar.md
+        "rules": [],
         # 各来源的最低互动门槛（engagement 字段名 -> 最小值）
         "min_engagement": {
             "bilibili_popular": {"view": 50000},
             "hackernews": {"points": 40},
         },
+    },
+
+    # 用户自建 RSS 源：加源不用改代码
+    # {"id": "hn", "name": "Hacker News", "url": "https://...", "platform": "HN",
+    #  "language": "en", "source_type": "news", "max_items": 20, "enabled": true}
+    "rss": {
+        "feeds": [],
     },
     "scoring": {
         "velocity": 0.30,

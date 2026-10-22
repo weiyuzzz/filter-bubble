@@ -150,7 +150,8 @@ def _final_items(ranked: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return items
 
 
-def generate(progress: Optional[Callable[[str], None]] = None) -> Dict[str, Any]:
+def generate(progress: Optional[Callable[[str], None]] = None,
+             push: bool = True) -> Dict[str, Any]:
     said = progress or (lambda _m: None)
     conn = db.connect()
     github.RATE_REMAINING = None
@@ -262,9 +263,15 @@ def generate(progress: Optional[Callable[[str], None]] = None) -> Dict[str, Any]
             "fresh": len({c["full_name"] for c in fresh7 + fresh30}),
             "total_pool": len(candidates),
         }
+        # NEW 标签：只有用户打开过「项目速读」的仓库才不再标记为新
+        from . import seen as seen_store
+        new_count = seen_store.annotate("github", items, "full_name")
+
         payload = {
             "date": today,
             "generated_at": db.now_iso(),
+            "updated_at": db.now_iso(),
+            "new_count": new_count,
             "timezone": config.TIMEZONE,
             "stats": rank.stats(items, profile),
             "profile": profile,
@@ -289,11 +296,14 @@ def generate(progress: Optional[Callable[[str], None]] = None) -> Dict[str, Any]
             follows.refresh(conn, max_seconds=15)
         except Exception as exc:  # noqa: BLE001
             print("[digest] follow refresh failed:", exc)
-        if config.PUSH_ENABLED:
+        if config.PUSH_ENABLED and push:
             said("推送微信简报")
             try:
                 result = notify.send_daily(payload, conn=conn)
-                if not result.get("ok"):
+                if result.get("ok"):
+                    db.set_meta(conn, "last_pushed_date", today)
+                    conn.commit()
+                else:
                     print("[push] failed:", result.get("reason") or result.get("detail"))
             except Exception as exc:  # noqa: BLE001
                 print("[push] error:", exc)
@@ -302,13 +312,13 @@ def generate(progress: Optional[Callable[[str], None]] = None) -> Dict[str, Any]
         conn.close()
 
 
-def _run(progress=None) -> None:
+def _run(progress=None, push: bool = True) -> None:
     with _STATE_LOCK:
         if STATE["running"]:
             return
         STATE.update({"running": True, "stage": "开始", "started_at": db.now_iso(), "last_error": None})
     try:
-        generate(progress=_set_stage)
+        generate(progress=_set_stage, push=push)
         with _STATE_LOCK:
             STATE["finished_at"] = db.now_iso()
             STATE["stage"] = "完成"
@@ -331,14 +341,15 @@ def _run(progress=None) -> None:
             STATE["running"] = False
 
 
-def refresh_async() -> bool:
+def refresh_async(push: bool = True) -> bool:
     global _thread
     with _STATE_LOCK:
         if STATE["running"]:
             return False
         if _thread and _thread.is_alive():
             return False
-    _thread = threading.Thread(target=_run, name="filter-bubble-refresh", daemon=True)
+    _thread = threading.Thread(target=_run, args=(None, push),
+                               name="filter-bubble-refresh", daemon=True)
     _thread.start()
     return True
 
@@ -349,6 +360,12 @@ def latest(conn) -> Optional[Dict[str, Any]]:
         return None
     payload = json.loads(row["payload"])
     payload["_stored_date"] = row["date"]
+    # NEW 标签按当前已读状态重算：用户看过之后刷新页面就应当消失
+    try:
+        from . import seen as seen_store
+        seen_store.annotate("github", payload.get("items") or [], "full_name")
+    except Exception:  # noqa: BLE001
+        pass
     followed = {o.lower() for o in follows.owners(conn)}
     for item in payload.get("items", []):
         owner = (item.get("owner") or item["full_name"].split("/")[0]).lower()

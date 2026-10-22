@@ -5,7 +5,7 @@
 - 入口：<http://127.0.0.1:8791/radar.html>
 - 模块切换：页面顶部「GitHub 热点 / 全球热点雷达」可随时来回切换
 - 独立数据：新增 `radar_*` 表，写入同一个 `data/filter-bubble.db`；不修改、不清空任何旧表
-- 独立调度：`radar-scheduler` 线程，默认每天 09:00（Asia/Shanghai），与 GitHub 的 08:00 无关
+- 独立调度：`radar-scheduler` 线程，**每小时采集**、**每天 08:00 出日报并推送**，与 GitHub 模块互不影响
 - 独立推送：独立 `radar_push_log` 防重，默认**关闭**
 
 ---
@@ -160,17 +160,59 @@ heat = 30% 热度增速 + 20% 跨平台传播 + 20% 互动强度 + 20% 新闻/�
 {
   "enabled": true,
   "timezone": "Asia/Shanghai",
-  "schedule": { "daily_time": "09:00", "retry_after_minutes": 10 },
-  "limits": { "max_candidates": 150, "max_events": 60, "source_timeout_seconds": 12 },
+  "schedule": {
+    "daily_time": "08:00",
+    "collect_interval_minutes": 60,
+    "retry_after_minutes": 10
+  },
+  "limits": { "max_candidates": 600, "max_events": 220, "source_timeout_seconds": 12 },
   "scoring": { "velocity": 0.3, "cross_platform": 0.2, "engagement": 0.2,
                "verification": 0.2, "interest": 0.1 },
   "report": { "top_events": 12 },
   "push": { "enabled": false, "items": 5, "alert_threshold": 82 },
   "interests": { "topics": ["AI 与大模型", "芯片与半导体"], "keywords": [], "exclude": [] },
+  "filters": { "rules": ["[科技]", "+芯片", "!抽奖", "@8"] },
+  "rss": { "feeds": [{ "id": "hn", "name": "Hacker News", "url": "https://hnrss.org/frontpage" }] },
   "investigation": { "min_heat": 70, "tech_auto_check": true },
   "sources": { "weibo_hot": { "enabled": false } }
 }
 ```
+
+### 5.1 时间线
+
+| 动作 | 频率 | 说明 |
+|---|---|---|
+| 采集 | 每 `collect_interval_minutes`（默认 60 分钟） | 只抓取入库，不生成日报、不推送 |
+| 出日报 | 每天 `daily_time`（默认 08:00）一次 | 聚类 → 故事 → 摘要 → 落库 |
+| 推送 | 随日报一起，每天一次 | 同一天不会重复发 |
+
+GitHub 模块同样改成每小时刷新、08:00 推送一次，两个模块的微信简报都在早上 8 点发出。
+
+### 5.2 关键词语法
+
+规则写在 `filters.rules`，一行一条：
+
+| 写法 | 含义 |
+|---|---|
+| `[组名]` | 新开一组 |
+| `+词` | 必须命中（组内多个 `+` 满足任一即可） |
+| `!词` | 命中即排除，优先级最高 |
+| `/正则/` | 正则匹配，可写 `/pattern/ => 别名` |
+| `@数字` | 该组最多保留多少条（0 = 不限）|
+
+解析失败的正则会被忽略并打印警告，不会让整份配置失效。
+
+### 5.3 自定义 RSS 源
+
+`rss.feeds` 里加一项就多一个源，不用改代码：
+
+```json
+{ "id": "hn", "name": "Hacker News", "url": "https://hnrss.org/frontpage",
+  "platform": "HN", "language": "en", "source_type": "news",
+  "max_items": 20, "enabled": true }
+```
+
+只有 `id/name/url` 是必填，其余走默认值。源 ID 会变成 `rss_<id>`，可以像内置源一样在「数据源管理」里单独开关。
 
 环境变量（可选）：
 
@@ -189,7 +231,7 @@ heat = 30% 热度增速 + 20% 跨平台传播 + 20% 互动强度 + 20% 新闻/�
 
 ## 6. 存储
 
-新增 10 张表，全部以 `radar_` 前缀，不与原有表冲突：
+新增 12 张表，全部以 `radar_` 前缀，不与原有表冲突：
 
 | 表 | 用途 |
 |---|---|
@@ -197,12 +239,17 @@ heat = 30% 热度增速 + 20% 跨平台传播 + 20% 互动强度 + 20% 新闻/�
 | `radar_items` | 统一格式的原始材料（含 `url_hash` 去重、`content_hash` 跨源去重） |
 | `radar_events` | 事件、热度/重要度、置信度、时间范围 |
 | `radar_event_snapshots` | 每日快照，用于判断增速与持续发酵 |
+| `radar_rank_history` | 每次采集的榜单位次，用来算「↑ 升温 / ↓ 降温 / 持平」 |
+| `radar_stories` | 故事层（多角度合并后的结果） |
+| `radar_summaries` | 摘要缓存（模型 + 内容哈希） |
 | `radar_claims` | 事实主张与核验状态 |
 | `radar_evidence` | 证据（来源、摘录、时间、是否一手） |
 | `radar_claim_evidence` | 主张与证据的关系（支持/反驳/更正/背景） |
 | `radar_reports` | 日报与调查报告存档 |
 | `radar_push_log` | 推送去重与重试记录 |
 | `radar_runs` | 每次运行的统计与错误 |
+
+另外新增一张跨模块的 `seen_items` 表（`kind, key, seen_at`），记录你在两个模块里点开过什么，用来控制 NEW 标签。
 
 增量采集：`radar_items.url_hash` 唯一，重复内容只更新 `last_seen_at`，不重复入库。
 保留策略：`retention.days`（默认 90 天）只清理原始材料与运行记录，事件与日报永久保留。

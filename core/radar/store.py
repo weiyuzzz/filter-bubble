@@ -182,6 +182,18 @@ CREATE TABLE IF NOT EXISTS radar_runs (
     error TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_radar_runs_started ON radar_runs(started_at DESC);
+
+-- 排名轨迹：每次采集记录每条材料的位次，用于判断"持续发酵 / 快速升温 / 退烧"
+CREATE TABLE IF NOT EXISTS radar_rank_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    url_hash TEXT NOT NULL,
+    rank INTEGER NOT NULL,
+    captured_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_radar_rank_hash ON radar_rank_history(url_hash, captured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_radar_rank_date ON radar_rank_history(date, captured_at DESC);
 """
 
 
@@ -285,6 +297,58 @@ def insert_items(conn: sqlite3.Connection, items: Iterable[Dict[str, Any]]) -> D
         else:
             seen += 1
     return {"inserted": inserted, "seen": seen}
+
+
+def record_ranks(conn: sqlite3.Connection, items: Iterable[Dict[str, Any]], date: str,
+                 captured_at: str) -> int:
+    """记录本轮每条材料在榜单上的位次（没有位次字段的源会跳过）。"""
+    rows = []
+    for item in items:
+        engagement = item.get("engagement") or {}
+        rank = engagement.get("rank") or engagement.get("position")
+        try:
+            rank = int(rank)
+        except (TypeError, ValueError):
+            continue
+        if rank <= 0:
+            continue
+        rows.append((date, item.get("source_id", ""), item.get("url_hash", ""), rank, captured_at))
+    if not rows:
+        return 0
+    conn.executemany(
+        "INSERT INTO radar_rank_history(date, source_id, url_hash, rank, captured_at) "
+        "VALUES(?,?,?,?,?)", rows)
+    return len(rows)
+
+
+def last_collect_at(conn: sqlite3.Connection) -> str:
+    """最近一次采集时间（用于界面显示「上次更新」）。"""
+    row = conn.execute("SELECT MAX(collected_at) AS t FROM radar_items").fetchone()
+    return (row["t"] if row and row["t"] else "") or ""
+
+
+def rank_map(conn: sqlite3.Connection, url_hashes: Iterable[str]) -> Dict[str, Dict[str, Any]]:
+    """返回 {url_hash: {rank, prev_rank, captured_at, delta}}，只取最近两次位次。"""
+    hashes = [h for h in url_hashes if h]
+    out: Dict[str, Dict[str, Any]] = {}
+    # SQLite 变量上限是 999，分批查询
+    for start in range(0, len(hashes), 500):
+        chunk = hashes[start:start + 500]
+        placeholders = ",".join("?" for _ in chunk)
+        rows = conn.execute(
+            "SELECT url_hash, rank, captured_at FROM radar_rank_history "
+            "WHERE url_hash IN (%s) ORDER BY captured_at DESC" % placeholders, chunk).fetchall()
+        for row in rows:
+            key = row["url_hash"]
+            entry = out.setdefault(key, {"rank": None, "prev_rank": None,
+                                         "captured_at": None, "delta": None})
+            if entry["rank"] is None:
+                entry["rank"] = row["rank"]
+                entry["captured_at"] = row["captured_at"]
+            elif entry["prev_rank"] is None:
+                entry["prev_rank"] = row["rank"]
+                entry["delta"] = entry["prev_rank"] - entry["rank"]
+    return out
 
 
 def recent_items(conn: sqlite3.Connection, since_iso: str, limit: int = 2000) -> List[Dict[str, Any]]:
