@@ -60,6 +60,9 @@ scripts\open-tailnet.cmd
 
 # 或者用管理员 PowerShell 直接跑
 powershell -ExecutionPolicy Bypass -File scripts\open-tailnet.ps1
+
+# 只看当前规则，什么都不改（不需要管理员）
+powershell -ExecutionPolicy Bypass -File scripts\open-tailnet.ps1 -Check
 ```
 
 它只放行 `100.64.0.0/10`（Tailscale 网段），局域网和公网仍然访问不到。撤销：
@@ -72,14 +75,34 @@ powershell -ExecutionPolicy Bypass -File scripts\open-tailnet.ps1 -Remove
 
 > macOS / Linux 不需要第 2 步（没有 Windows 防火墙那一层），直接 `--host 0.0.0.0` 即可。
 
-**更省事的做法**：如果 tailnet 开了 HTTPS，可以用 Tailscale 自带的代理，既不用改防火墙，也自带 HTTPS 证书：
+#### 连不上但 ping 得通？先看有没有 Block 规则
+
+典型症状：`tailscale ping` 正常、同一台机器换个端口能访问、但 `IP:8791` 就是**超时**。
+
+原因通常是：Windows 第一次弹「是否允许 Python 访问网络」时点了**取消**，系统就记住并生成了一条
+**入站 Block 规则**（`TCP Query User{...}`，Name=`Python`）。Windows 防火墙里 **Block 的优先级高于 Allow**，
+所以之后再怎么加放行规则都没用，必须先删掉那条 Block。
+
+```powershell
+# 非管理员也能看出问题
+powershell -ExecutionPolicy Bypass -File scripts\open-tailnet.ps1 -Check
+#   Block  Dir=In  Profile=Private  Protocol=6  (Python)
+#   Block  Dir=In  Profile=Private  Protocol=17  (Python)
+
+# 管理员运行会先删 Block 再加放行
+scripts\open-tailnet.cmd
+```
+
+**更省事的做法**：用 Tailscale 自带的代理，既不用改防火墙，也自带 HTTPS 证书：
 
 ```bash
 tailscale serve --bg 8791
 tailscale serve status    # 会给出 https://<机器名>.<tailnet>.ts.net/
 ```
 
+之后在 Mac 上直接打开那个 `https://...ts.net` 地址即可（走 443，绕开 8791 的防火墙规则）。
 首次使用需要在管理台点一次授权链接（`https://login.tailscale.com/f/serve?node=...`）。
+
 
 **安全提示**：本程序没有登录体系，能访问端口的人就能操作它（改配置、触发采集、推送微信）。所以：
 
