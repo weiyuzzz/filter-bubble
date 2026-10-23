@@ -19,7 +19,6 @@ from typing import Any, Dict, List, Optional
 from . import ai_client, ai_settings, db
 
 VERSION = 1
-MAX_BRIEFS_DEFAULT = 12
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS ai_briefs (
@@ -187,8 +186,9 @@ def enrich(items: List[Dict[str, Any]], settings: Optional[Dict[str, Any]] = Non
         stats["skipped"] = len(items)
         return stats
 
-    n = int(limit if limit is not None else ai_cfg.get("briefs_per_run", MAX_BRIEFS_DEFAULT))
-    targets = items[:max(0, n)]
+    # 不再限制「每天生成多少个」：所有展示的项目都要有解读，
+    # 成本由全局 token 限额控制（主接口用尽切备用，两个都用尽才暂停）。
+    targets = items if limit is None else items[:max(0, int(limit))]
     model = llm["model"]
 
     conn = _conn()

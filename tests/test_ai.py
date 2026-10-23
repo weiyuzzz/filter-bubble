@@ -25,17 +25,18 @@ class TestGlobalSettings(unittest.TestCase):
     def test_defaults_are_disabled(self):
         cfg = ai_settings.load()
         self.assertFalse(cfg["llm"]["enabled"])
-        self.assertEqual(cfg["ai"]["briefs_per_run"], 12)
+        self.assertTrue(cfg["ai"]["enable_briefs"])
+        self.assertNotIn("briefs_per_run", cfg["ai"])  # 条数限制已移除
 
     def test_save_and_reload(self):
-        ai_settings.save({"llm": {"enabled": True, "provider": "openai_compatible",
+        ai_settings.save({"llm": {"enabled": True, "provider": "openai",
                                   "base_url": "https://openrouter.ai/api/v1",
                                   "model": "google/gemma-4-26b-a4b-it:free"},
-                          "ai": {"briefs_per_run": 5, "concurrency": 1}})
+                          "ai": {"concurrency": 3}})
         cfg = ai_settings.load()
         self.assertTrue(cfg["llm"]["enabled"])
         self.assertEqual(cfg["llm"]["model"], "google/gemma-4-26b-a4b-it:free")
-        self.assertEqual(cfg["ai"]["briefs_per_run"], 5)
+        self.assertEqual(cfg["ai"]["concurrency"], 3)
 
     def test_saved_file_has_no_secret_fields(self):
         ai_settings.save({"llm": {"enabled": True, "model": "m"}})
@@ -152,10 +153,10 @@ class TestAiBrief(unittest.TestCase):
         self.assertNotIn("ai", items[0]["brief"])
 
     def test_cache_hit_does_not_call_model(self):
-        settings = {"llm": {"enabled": True, "provider": "openai_compatible",
+        settings = {"llm": {"enabled": True, "provider": "openai",
                             "base_url": "http://127.0.0.1:9/v1", "model": "cache-model",
                             "timeout_seconds": 1, "max_attempts": 1},
-                    "ai": {"enable_briefs": True, "briefs_per_run": 5, "concurrency": 1}}
+                    "ai": {"enable_briefs": True, "concurrency": 1}}
         item = {"full_name": "cache/test", "brief": {}}
         conn = ai_brief._conn()
         try:

@@ -130,9 +130,10 @@
     if (stats.ai_done) parts.push(chip(`已完成 AI 概况 ${stats.ai_done} 篇`, "ok"));
     if (stats.ai_failed) parts.push(chip(`AI 失败 ${stats.ai_failed} 篇`, "warn"));
     if (status && status.queue) parts.push(chip(`队列 ${status.queue}`));
-    const budget = (status && status.ai_budget) || {};
-    if (budget.limit) {
-      parts.push(chip(`今日 AI 额度 ${budget.used || 0}/${budget.limit}`));
+    // 论文模块不再单独限额，AI 成本由全局 token 限额控制
+    const ai = (status && status.ai) || {};
+    if (ai.paused) {
+      parts.push(chip(`AI 已暂停到 ${(ai.paused_until || "").slice(0, 16)}`, "warn"));
     }
 
     let banner = "";

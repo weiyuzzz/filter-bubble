@@ -10,24 +10,7 @@ from . import ai_client, ai_secrets, ai_settings, ai_usage
 
 _LLM_KEYS = ("enabled", "provider", "base_url", "model", "api_key_env",
              "timeout_seconds", "max_attempts", "temperature", "max_tokens")
-_AI_KEYS = ("briefs_per_run", "concurrency", "enable_briefs")
-
-# 常用服务商预置：避免"key 填了 DeepSeek、地址还停在 OpenRouter"这类错配
-PRESETS = [
-    {"id": "deepseek", "label": "DeepSeek", "provider": "openai",
-     "base_url": "https://api.deepseek.com", "model": "deepseek-chat",
-     "hint": "官方直连，deepseek-chat 便宜稳定"},
-    {"id": "openai", "label": "OpenAI", "provider": "openai",
-     "base_url": "https://api.openai.com/v1", "model": "gpt-4o-mini"},
-    {"id": "openrouter", "label": "OpenRouter", "provider": "openai",
-     "base_url": "https://openrouter.ai/api/v1", "model": "openai/gpt-4o-mini",
-     "hint": "一个 key 用多家模型，注意模型名要带厂商前缀"},
-    {"id": "anthropic", "label": "Anthropic (Claude)", "provider": "anthropic",
-     "base_url": "https://api.anthropic.com", "model": "claude-sonnet-4-20250514"},
-    {"id": "ollama", "label": "本地 Ollama", "provider": "local",
-     "base_url": "http://127.0.0.1:11434", "model": "qwen2.5:7b"},
-    {"id": "custom", "label": "自定义", "provider": "openai", "base_url": "", "model": ""},
-]
+_AI_KEYS = ("concurrency", "enable_briefs")
 
 
 def _ok(payload: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
@@ -53,9 +36,7 @@ def _public() -> Dict[str, Any]:
             "api_key_env": llm.get("api_key_env") or ai_secrets.ENV_NAME,
             "timeout_seconds": llm.get("timeout_seconds"),
             "providers": list(ai_client.PROVIDERS),
-            "provider_labels": dict(ai_client.PROVIDER_LABELS),
-            "presets": PRESETS,
-            "available": ok,
+            "provider_labels": dict(ai_client.PROVIDER_LABELS),            "available": ok,
             "unavailable_reason": reason,
             "key": ai_secrets.public_state(str(llm.get("api_key_env") or ai_secrets.ENV_NAME)),
             "stats": {k: ai_client.STATS.get(k) for k in
@@ -79,7 +60,6 @@ def _public() -> Dict[str, Any]:
             },
         },
         "ai": {
-            "briefs_per_run": int((cfg.get("ai") or {}).get("briefs_per_run") or 12),
             "concurrency": int((cfg.get("ai") or {}).get("concurrency") or 1),
             "enable_briefs": bool((cfg.get("ai") or {}).get("enable_briefs", True)),
         },
@@ -172,10 +152,8 @@ def _save(body: Dict[str, Any]) -> Dict[str, Any]:
         try:
             if key == "enable_briefs":
                 updates["ai"][key] = _coerce(incoming_ai[key], "bool")
-            elif key == "briefs_per_run":
-                updates["ai"][key] = max(0, min(30, _coerce(incoming_ai[key], "int")))
             elif key == "concurrency":
-                updates["ai"][key] = max(1, min(3, _coerce(incoming_ai[key], "int")))
+                updates["ai"][key] = max(1, min(4, _coerce(incoming_ai[key], "int")))
             saved[key] = updates["ai"][key]
         except (TypeError, ValueError):
             continue
@@ -198,8 +176,10 @@ def _save(body: Dict[str, Any]) -> Dict[str, Any]:
         if fb_updates:
             updates["llm"]["fallback"] = fb_updates
 
-    # token 限额
-    incoming_limits = incoming_llm.get("token_limits")
+    # token 限额（前端可能放在 body 顶层，也可能嵌在 llm 里，两种都接受）
+    incoming_limits = body.get("token_limits")
+    if not isinstance(incoming_limits, dict):
+        incoming_limits = incoming_llm.get("token_limits")
     if isinstance(incoming_limits, dict) and incoming_limits:
         limits: Dict[str, Any] = {}
         for key in ("primary", "fallback"):

@@ -24,6 +24,9 @@ if "GITPULSE_DB" not in os.environ:
     os.environ.setdefault("RADAR_SECRETS", str(tmp / "radar_secrets.json"))
     os.environ.setdefault("AI_CONFIG", str(tmp / "app_settings.json"))
     os.environ.setdefault("AI_SECRETS", str(tmp / "ai_secrets.json"))
+    # 本机 .env 可能把监听地址改成 0.0.0.0；测试固定为默认值，避免受环境影响
+    os.environ.setdefault("GITPULSE_HOST", "127.0.0.1")
+    os.environ.setdefault("GITPULSE_PORT", "8791")
 
 TEST_DB = Path(os.environ["GITPULSE_DB"])
 TEST_SECRETS = Path(os.environ.get("RADAR_SECRETS", str(TEST_DB.parent / "radar_secrets.json")))

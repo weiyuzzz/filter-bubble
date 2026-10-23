@@ -54,8 +54,8 @@ def _cfg_block(cfg: Dict[str, Any]) -> Dict[str, Any]:
                     "openalex": False},
         "openalex_api_key_env": "OPENALEX_API_KEY",
         "crossref_mailto": "",
-        # max_per_day 是每日调用上限，跨进程持久化，重启也不会清零
-        "ai": {"enabled": True, "max_per_run": 24, "max_per_day": 20, "concurrency": 2},
+        # 论文模块不再单独限制 AI 次数，成本由全局 token 限额控制
+        "ai": {"enabled": True, "concurrency": 2},
     }
     merged = dict(defaults)
     merged.update({k: v for k, v in papers.items() if k in defaults})
@@ -226,42 +226,26 @@ def enqueue(papers: List[Dict[str, Any]], limit: int) -> int:
 
 
 def analyze_pending(cfg: Dict[str, Any], limit: Optional[int] = None) -> int:
-    """把待分析论文补进队列，受「每次上限」与「每日额度」双重约束。
+    """把所有待分析论文补进队列。
 
-    每日额度存在数据库里，服务重启或手动多点几次都不会突破上限；
-    额度按「入队」计数（不是按成功），失败重试也算一次，避免反复重试烧额度。
+    不再做「每次 / 每天多少篇」的限制：成本统一由全局 token 限额控制
+    （主接口 token 用尽切备用，两个都用尽才暂停整个 AI）。
     """
     block = _cfg_block(cfg)
     ai_cfg = block.get("ai") or {}
     if not ai_cfg.get("enabled", True):
         return 0
 
-    per_run = int(ai_cfg.get("max_per_run") or 24)
-    per_day = int(ai_cfg.get("max_per_day") or 20)
-    cap = int(limit if limit is not None else per_run)
-
-    today = dt.datetime.now().astimezone().date().isoformat()
     conn = db.connect()
     try:
-        used = store.ai_budget_used(conn, today)
-        remaining = max(0, per_day - used)
-        if remaining <= 0:
-            print("[papers] AI 每日额度已用完（%d/%d），今天不再分析" % (used, per_day))
-            return 0
-        cap = min(cap, remaining)
-        papers = store.pending_papers(conn, cap, paper_ai.PROMPT_VERSION)
-        if not papers:
-            return 0
-        added = enqueue(papers, cap)
-        if added:
-            store.ai_budget_add(conn, today, added)
-        return added
+        papers = store.pending_papers(conn, int(limit or 500), paper_ai.PROMPT_VERSION)
     finally:
         conn.close()
+    return enqueue(papers, len(papers))
 
 
 def retry_one(paper_id: str) -> bool:
-    """手动重试单篇：计入当日额度（手动操作也不掩盖真实开销），但不因额度耗尽而拒绝。"""
+    """手动重试单篇：直接入队，成本由全局 token 限额约束。"""
     conn = db.connect()
     try:
         paper = store.get_paper(conn, paper_id)
@@ -269,8 +253,6 @@ def retry_one(paper_id: str) -> bool:
             return False
         store.save_overview(conn, paper_id, "pending", None, "", paper_ai.PROMPT_VERSION,
                             content_hash_value=store.content_hash(paper))
-        today = dt.datetime.now().astimezone().date().isoformat()
-        store.ai_budget_add(conn, today, 1)
     finally:
         conn.close()
     _QUEUE.put(paper_id)
@@ -310,18 +292,21 @@ def list_papers(discipline: str, limit: int, offset: int = 0) -> Dict[str, Any]:
 def status(cfg: Dict[str, Any]) -> Dict[str, Any]:
     block = _cfg_block(cfg)
     ai_cfg = block.get("ai") or {}
-    today = dt.datetime.now().astimezone().date().isoformat()
     conn = db.connect()
     try:
         store.init()
         runs = store.latest_runs(conn)
         stats = store.stats(conn)
         counts = store.discipline_counts(conn)
-        used = store.ai_budget_used(conn, today)
         last_run = conn.execute("SELECT MAX(finished_at) t FROM paper_source_runs").fetchone()["t"]
     finally:
         conn.close()
-    per_day = int(ai_cfg.get("max_per_day") or 20)
+    # AI 成本由全局 token 限额控制，这里只回报限额本身，方便页面提示
+    try:
+        from .. import ai_client, ai_settings
+        usage = ai_client.status(ai_settings.load()).get("usage") or {}
+    except Exception:  # noqa: BLE001
+        usage = {}
     return {
         "enabled": bool(block.get("enabled", True)),
         "state": get_state(),
@@ -331,11 +316,10 @@ def status(cfg: Dict[str, Any]) -> Dict[str, Any]:
                      "lookback_days": block.get("lookback_days"),
                      "last_run_at": last_run or ""},
         "limits": {"per_discipline_limit": block.get("per_discipline_limit"),
-                   "fetch_per_source": block.get("fetch_per_source"),
-                   "ai_max_per_run": ai_cfg.get("max_per_run"),
-                   "ai_max_per_day": per_day},
-        "ai_budget": {"date": today, "used": used, "limit": per_day,
-                      "remaining": max(0, per_day - used)},
+                   "fetch_per_source": block.get("fetch_per_source")},
+        "ai": {"enabled": bool(ai_cfg.get("enabled", True)),
+               "paused": bool(usage.get("paused")),
+               "paused_until": usage.get("paused_until") or ""},
         "stats": stats,
         "counts": counts,
         "sources": runs,

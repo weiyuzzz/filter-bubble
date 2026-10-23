@@ -168,10 +168,8 @@
     "crossref_mailto": "",
     "ai": {
       "enabled": true,
-      "max_per_run": 24,
-      "max_per_day": 20,
       "concurrency": 2
     },
-    "note": "论文每天更新一次（interval_hours=24），AI 每日调用上限 ai.max_per_day，额度存在数据库里，重启不会清零"
+    "note": "论文每天更新一次（interval_hours=24）；AI 不设条数上限，成本由全局 token 限额控制（主接口用尽切备用，两个都用尽才暂停）"
   }
 }

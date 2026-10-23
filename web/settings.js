@@ -51,47 +51,73 @@
       </div>`;
     };
 
-    const series = (usage.history || []).slice(-14);
-    series.push({ date: usage.date || "", primary: Number(primary.tokens || 0),
+    // 折线图：横轴时间，纵轴 token，两条序列（主 / 备）
+    const series = (usage.history || []).slice(-14).map((d) => ({
+      date: (d.date || "").slice(5),
+      primary: Number(d.primary || 0),
+      fallback: Number(d.fallback || 0),
+    }));
+    series.push({ date: (usage.date || "").slice(5), primary: Number(primary.tokens || 0),
                   fallback: Number(fallback.tokens || 0) });
-    const max = Math.max(1, ...series.map((d) => Number(d.primary || 0) + Number(d.fallback || 0)));
-    const W = 640, H = 150, padL = 30, padB = 22, gap = 8;
-    const bw = series.length ? Math.max(6, (W - padL - 10 - gap * (series.length - 1)) / series.length) : 10;
-    const chartH = H - padB - 18;
-    const bars = series.map((d, i) => {
-      const pv = Number(d.primary || 0);
-      const fv = Number(d.fallback || 0);
-      const x = padL + i * (bw + gap);
-      const hp = (pv / max) * chartH;
-      const hf = (fv / max) * chartH;
-      const yf = H - padB - hf;
-      const yp = yf - hp;
-      const label = (d.date || "").slice(5);
-      return `<g>
-        <title>${esc(d.date || "")}：主 ${fmt(pv)} · 备 ${fmt(fv)}</title>
-        <rect x="${x.toFixed(1)}" y="${yp.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, hp).toFixed(1)}" rx="3" fill="var(--fb-accent)"/>
-        <rect x="${x.toFixed(1)}" y="${yf.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, hf).toFixed(1)}" rx="3" fill="var(--fb-warn)"/>
-        ${i % 2 === 0 || series.length <= 7 ? `<text x="${(x + bw / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="9" fill="var(--fb-text-3)">${esc(label)}</text>` : ""}
-      </g>`;
+
+    const W = 720, H = 220, padL = 52, padR = 16, padT = 18, padB = 30;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+    const maxValue = Math.max(1, ...series.map((d) => Math.max(d.primary, d.fallback)));
+    // 纵轴取整到「好读」的刻度
+    const step = Math.pow(10, Math.floor(Math.log10(maxValue)));
+    const top = Math.ceil(maxValue / step) * step;
+    const x = (i) => series.length === 1
+      ? padL + plotW / 2
+      : padL + (plotW * i) / (series.length - 1);
+    const y = (v) => padT + plotH - (plotH * (v / top));
+
+    const line = (key) => series.map((d, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(d[key]).toFixed(1)}`).join(" ");
+    const dots = (key, color) => series.map((d, i) =>
+      `<circle cx="${x(i).toFixed(1)}" cy="${y(d[key]).toFixed(1)}" r="3.2" fill="${color}">
+         <title>${esc(d.date)}：${fmt(d[key])} tokens</title>
+       </circle>`).join("");
+    const gridLines = [0, 0.25, 0.5, 0.75, 1].map((f) => {
+      const value = top * f;
+      const yy = y(value);
+      return `<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${W - padR}" y2="${yy.toFixed(1)}"
+                stroke="var(--fb-border)" stroke-dasharray="${f === 0 ? "0" : "3 4"}"/>
+              <text x="${padL - 8}" y="${(yy + 3.5).toFixed(1)}" text-anchor="end" font-size="9"
+                fill="var(--fb-text-3)">${fmt(Math.round(value))}</text>`;
+    }).join("");
+    const xLabels = series.map((d, i) => {
+      const show = series.length <= 8 || i % Math.ceil(series.length / 8) === 0 || i === series.length - 1;
+      return show
+        ? `<text x="${x(i).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="9" fill="var(--fb-text-3)">${esc(d.date)}</text>`
+        : "";
     }).join("");
 
-    const paused = usage.paused;
-    const hasData = series.some((d) => Number(d.primary || 0) + Number(d.fallback || 0) > 0);
-    const chart = hasData
+    const hasData = series.some((d) => d.primary > 0 || d.fallback > 0);
+    const chart = hasData || series.length > 1
       ? `<div class="usage-chart">
           <div class="usage-chart-head">
-            <span>最近 ${series.length} 天 token 消耗</span>
-            <span class="usage-legend"><i class="dot primary"></i>主接口 <i class="dot fallback"></i>备用接口</span>
+            <span>最近 ${series.length} 天 token 消耗（纵轴：tokens）</span>
+            <span class="usage-legend">
+              <i class="dot primary"></i>主接口
+              <i class="dot fallback"></i>备用接口
+            </span>
           </div>
-          <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="最近 token 消耗柱状图" preserveAspectRatio="xMidYMid meet">
-            <line x1="${padL}" y1="${H - padB}" x2="${W - 10}" y2="${H - padB}" stroke="var(--fb-border)"/>
-            ${bars}
+          <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="主备接口 token 消耗折线图" preserveAspectRatio="xMidYMid meet">
+            ${gridLines}
+            <path d="${line("primary")}" fill="none" stroke="var(--fb-accent)" stroke-width="2.2"
+                  stroke-linejoin="round" stroke-linecap="round"/>
+            <path d="${line("fallback")}" fill="none" stroke="var(--fb-warn)" stroke-width="2.2"
+                  stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5 4"/>
+            ${dots("primary", "var(--fb-accent)")}
+            ${dots("fallback", "var(--fb-warn)")}
+            ${xLabels}
           </svg>
         </div>`
       : `<div class="usage-chart is-empty">
-          <p class="hint">还没有 token 消耗记录。生成 AI 解读、雷达摘要或论文概况后，这里会按天显示主/备接口的用量。</p>
+          <p class="hint">还没有 token 消耗记录。生成 AI 解读、雷达摘要或论文概况后，这里会按天显示主/备接口的用量曲线。</p>
         </div>`;
 
+    const paused = usage.paused;
     return `
       <div class="usage-head">
         ${paused
@@ -144,7 +170,7 @@
         <header class="config-head">
           <div>
             <h3>主接口</h3>
-            <p class="config-sub">三个模块默认调用这个接口。下面选择服务商会自动填好地址和模型名。</p>
+            <p class="config-sub">三个模块默认调用这个接口。地址要和服务商对应，换服务商时地址、模型、key 一起换。</p>
           </div>
           <div class="config-state">
             ${llm.available ? chip("可用", "ok") : chip("不可用", "warn")}
@@ -153,12 +179,6 @@
         </header>
 
         <div class="config-grid">
-          <div class="field">
-            <label for="setPreset">快速选择服务商</label>
-            <select id="setPreset">
-              <option value="">— 选择后会填入地址与模型 —</option>
-            </select>
-          </div>
           <div class="field">
             <label for="setEnabled">接入大模型</label>
             <select id="setEnabled">
@@ -223,12 +243,6 @@
 
         <div class="config-grid">
           <div class="field">
-            <label for="setFallbackPreset">快速选择服务商</label>
-            <select id="setFallbackPreset">
-              <option value="">— 选择后会填入地址与模型 —</option>
-            </select>
-          </div>
-          <div class="field">
             <label for="setFallbackEnabled">启用备用接口</label>
             <select id="setFallbackEnabled">
               <option value="1" ${fb.enabled ? "selected" : ""}>启用</option>
@@ -270,6 +284,7 @@
         </div>
 
         <div class="config-actions">
+          <button class="primary-btn" id="saveFallbackBtn" type="button">保存设置</button>
           <button class="ghost-btn" id="testFallbackBtn" type="button">测试备用接口</button>
           ${slot.active === "fallback" ? `<button class="ghost-btn" id="resetSlotBtn" type="button">立即切回主接口</button>` : ""}
           ${fbKey.configured ? `<button class="ghost-btn" id="clearFallbackKeyBtn" type="button">清除备用密钥</button>` : ""}
@@ -296,14 +311,14 @@
               <option value="0" ${ai.enable_briefs ? "" : "selected"}>关闭</option>
             </select>
           </div>
-          <div class="field"><label for="setBriefsPerRun">每天生成多少个</label>
-            <input id="setBriefsPerRun" type="number" min="0" max="30" value="${esc(ai.briefs_per_run)}">
-          </div>
           <div class="field"><label for="setConcurrency">并发数（免费模型建议 1）</label>
-            <input id="setConcurrency" type="number" min="1" max="3" value="${esc(ai.concurrency)}">
+            <input id="setConcurrency" type="number" min="1" max="4" value="${esc(ai.concurrency)}">
           </div>
         </div>
-        <p class="hint">生成日报时会为排名靠前的项目调用模型，结果按「仓库 + 模型」缓存，第二天不会重复消耗。未生成的项目仍显示规则版解读。</p>
+        <p class="hint">日报里的每个项目都会生成 AI 解读（不再限制条数），成本由上面的 token 限额控制；结果按「仓库 + 模型」缓存，不会重复消耗。</p>
+        <div class="config-actions">
+          <button class="primary-btn" id="saveAiBtn" type="button">保存设置</button>
+        </div>
       </section>
 
       <section class="panel">
@@ -324,30 +339,10 @@
     if (resetSlot) resetSlot.addEventListener("click", resetSlotNow);
     const resumeAi = $("#resumeAiBtn");
     if (resumeAi) resumeAi.addEventListener("click", resumeAiNow);
-
-    // 服务商预设：一次填好接口类型 / 地址 / 模型，避免 key 与地址错配
-    const presetList = llm.presets || data.presets || [];
-    const presetOptions = presetList
-      .map((p) => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join("");
-    document.querySelectorAll("#setPreset, #setFallbackPreset").forEach((select) => {
-      select.insertAdjacentHTML("beforeend", presetOptions);
-    });
-    const presets = {};
-    presetList.forEach((p) => { presets[p.id] = p; });
-    const bindPreset = (selectId, providerId, baseUrlId, modelId) => {
-      const select = $(selectId);
-      if (!select) return;
-      select.addEventListener("change", () => {
-        const preset = presets[select.value];
-        if (!preset) return;
-        if (preset.provider) $(providerId).value = preset.provider;
-        if (preset.base_url) $(baseUrlId).value = preset.base_url;
-        if (preset.model) $(modelId).value = preset.model;
-        toast(`已填入 ${preset.label}，点「保存设置」生效`);
-      });
-    };
-    bindPreset("#setPreset", "#setProvider", "#setBaseUrl", "#setModel");
-    bindPreset("#setFallbackPreset", "#setFallbackProvider", "#setFallbackBaseUrl", "#setFallbackModel");
+    const saveFallback = $("#saveFallbackBtn");
+    if (saveFallback) saveFallback.addEventListener("click", save);
+    const saveAi = $("#saveAiBtn");
+    if (saveAi) saveAi.addEventListener("click", save);
 
     loadErrors();
   }
@@ -426,10 +421,15 @@
         provider: $("#setProvider").value,
         base_url: $("#setBaseUrl").value.trim(),
         model: $("#setModel").value.trim(),
+        // token 限额跟 llm 走，避免前后端字段位置不一致
+        token_limits: {
+          primary: Number($("#setTokenLimitPrimary").value || 0),
+          fallback: Number($("#setTokenLimitFallback").value || 0),
+          window_hours: Number($("#setTokenWindowHours").value || 24),
+        },
       },
       ai: {
         enable_briefs: $("#setBriefsEnabled").value === "1",
-        briefs_per_run: Number($("#setBriefsPerRun").value),
         concurrency: Number($("#setConcurrency").value),
       },
       fallback: {
@@ -437,11 +437,6 @@
         provider: $("#setFallbackProvider").value,
         base_url: $("#setFallbackBaseUrl").value.trim(),
         model: $("#setFallbackModel").value.trim(),
-      },
-      token_limits: {
-        primary: Number($("#setTokenLimitPrimary").value || 0),
-        fallback: Number($("#setTokenLimitFallback").value || 0),
-        window_hours: Number($("#setTokenWindowHours").value || 24),
       },
       api_key: $("#setApiKey") ? $("#setApiKey").value.trim() : "",
       fallback_api_key: $("#setFallbackKey") ? $("#setFallbackKey").value.trim() : "",

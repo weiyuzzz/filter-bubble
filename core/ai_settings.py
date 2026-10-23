@@ -41,8 +41,6 @@ DEFAULTS: Dict[str, Any] = {
         "token_limits": {"primary": 500000, "fallback": 500000, "window_hours": 24},
     },
     "ai": {
-        # GitHub 项目 AI 解读：每天为多少个项目生成（其余按需在页面里生成）
-        "briefs_per_run": 12,
         # 并发请求数，免费模型建议 1–2，避免触发上游限流
         "concurrency": 1,
         # 是否在生成日报时自动调用模型
@@ -114,7 +112,7 @@ def save(updates: Dict[str, Any]) -> Dict[str, Any]:
 
     ai = current.setdefault("ai", {})
     incoming_ai = updates.get("ai") or {}
-    for key in ("briefs_per_run", "concurrency", "enable_briefs"):
+    for key in ("concurrency", "enable_briefs"):
         if key in incoming_ai:
             ai[key] = incoming_ai[key]
 

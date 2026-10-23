@@ -118,7 +118,7 @@ set OPENALEX_API_KEY=你的key
 * **采集**：`core/papers/sources.py` 每个来源一个函数，互不影响；失败写 `paper_source_runs`。
 * **分类**：采集后立刻按统一映射打分，不在前端判断。
 * **入库**：`store.upsert_papers`，按上面的优先级合并。
-* **AI**：只给"需要展示"的论文排队（最多 `ai.max_per_run`，默认 24），有界队列 + 2 线程，失败标记 `failed` 可重试。
+* **AI**：所有待分析论文都排队（不再有单次/每日条数上限），有界队列 + 2 线程，成本由全局 token 限额控制，失败标记 `failed` 可重试。
 
 ---
 
@@ -160,7 +160,7 @@ set OPENALEX_API_KEY=你的key
   },
   "openalex_api_key_env": "OPENALEX_API_KEY",
   "crossref_mailto": "",
-  "ai": { "enabled": true, "max_per_run": 24, "max_per_day": 20, "concurrency": 2 }
+  "ai": { "enabled": true, "concurrency": 2 }
 }
 ```
 
@@ -171,18 +171,16 @@ set OPENALEX_API_KEY=你的key
 | `lookback_days` | 回溯天数，覆盖数据源更新延迟 |
 | `fetch_per_source` | 每个来源每次最多取多少条 |
 | `per_discipline_limit` | 每个学科最多展示多少篇 |
-| `ai.max_per_run` | 单次任务最多分析多少篇 |
-| `ai.max_per_day` | **每日模型调用上限**，存在 `paper_ai_budget` 表里，重启不会清零 |
 
 ### 6.1 为什么是每天一次
 
 论文的更新节奏和新闻不同：arXiv/PubMed/Crossref 的日增量本来就有限，抓太频繁只是重复同样的条目。所以：
 
 * 采集：`interval_hours = 24`，每天 `08:30` 跑一次，和雷达的每小时采集完全独立；
-* AI：只分析「还没有概况」或「摘要变了」的论文，并且受 `max_per_day` 约束；
+* AI：只分析「还没有概况」或「摘要变了」的论文，不设条数上限，成本由全局 token 限额控制；
 * 同一天多点几次「采集」按钮，也不会重复调用模型（额度用完后直接返回 0）。
 
-如果某天额度提前用完，页面顶部会显示 `今日 AI 额度 20/20`，剩下的论文第二天继续分析，不会丢。
+全局 token 额度用尽时，页面顶部会提示 AI 已暂停及恢复时间，剩下的论文在恢复后继续分析，不会丢。
 
 ---
 

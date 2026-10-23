@@ -61,12 +61,6 @@ CREATE TABLE IF NOT EXISTS paper_source_runs (
     error TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_paper_runs ON paper_source_runs(source, started_at DESC);
-
--- AI 每日额度：跨进程持久化，重启不会把当天已经用掉的次数清零
-CREATE TABLE IF NOT EXISTS paper_ai_budget (
-    budget_date TEXT PRIMARY KEY,
-    used INTEGER NOT NULL DEFAULT 0
-);
 """
 
 
@@ -359,19 +353,3 @@ def stats(conn: sqlite3.Connection) -> Dict[str, Any]:
     return {"total": total, "with_abstract": with_abs,
             "abstract_ratio": round(with_abs / total, 4) if total else 0.0,
             "ai_done": done, "ai_failed": failed, "last_fetched_at": last}
-
-
-# ---------------- AI 每日额度 ----------------
-
-def ai_budget_used(conn: sqlite3.Connection, day: str) -> int:
-    row = conn.execute("SELECT used FROM paper_ai_budget WHERE budget_date=?", (day,)).fetchone()
-    return int(row["used"]) if row else 0
-
-
-def ai_budget_add(conn: sqlite3.Connection, day: str, count: int) -> int:
-    conn.execute(
-        """INSERT INTO paper_ai_budget(budget_date, used) VALUES(?,?)
-           ON CONFLICT(budget_date) DO UPDATE SET used = used + excluded.used""",
-        (day, max(0, count)))
-    conn.commit()
-    return ai_budget_used(conn, day)

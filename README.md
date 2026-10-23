@@ -294,7 +294,7 @@ python app.py radar query 芯片 突破    # 自由关键词调查
 | Anthropic (Claude) | Claude 原生接口（`/v1/messages` + `x-api-key`） | `https://api.anthropic.com` | `claude-sonnet-4-20250514` |
 | 本地模型 | Ollama / vLLM 等本机服务 | `http://127.0.0.1:11434` | `qwen2.5:7b` |
 
-不想手填可以先用 **「快速选择服务商」** 下拉：选 DeepSeek / OpenAI / OpenRouter / Anthropic / 本地 Ollama，会自动填好接口类型、地址和模型名，只需要再贴对应的 key。
+每张卡片（主接口 / 备用接口 / AI 解读）底部都有自己的 **保存设置** 按钮，改完点一下就生效，三处改动会一起保存。
 
 点 **保存设置** → 点 **测试连接**。测试会真实请求一次，并显示：
 
@@ -324,7 +324,9 @@ python app.py radar query 芯片 突破    # 自由关键词调查
 - 备用接口也超限 / 也报额度错误 → **AI 暂停 24 小时**，期间所有模块直接返回「已暂停」，不再发请求；
 - 24 小时后自动恢复并**重新计数**，也可以手动「立即恢复」；
 - 切换状态写在本机 `data/ai_state.json`，用量写在 `data/ai_usage.json`（都已 gitignore）；
-- 全局设置里有「Token 用量」面板：主/备各自的已用/上限进度条 + 最近 14 天消耗柱状图。
+- 全局设置里有「Token 用量」面板：主/备各自的已用/上限进度条 + **最近 15 天折线图**（横轴日期、纵轴 token，主接口实线、备用接口虚线，悬停看当天数值）。
+
+**这是整个应用里唯一的 AI 成本闸门**：论文模块、GitHub 解读、雷达摘要都不再有自己的次数上限，全部受这两个 token 限额约束。两个接口都用尽才停 AI。
 
 ![全局设置](docs/llm-settings.png)
 
@@ -365,11 +367,11 @@ python app.py radar query 芯片 突破    # 自由关键词调查
   "llm": { "enabled": true, "provider": "openai",
            "base_url": "https://openrouter.ai/api/v1",
            "model": "recursive/flint-v1.0:free" },
-  "ai": { "enable_briefs": true, "briefs_per_run": 12, "concurrency": 1 }
+  "ai": { "enable_briefs": true, "concurrency": 1 }
 }
 ```
 
-`ai.briefs_per_run` 控制每天自动为多少个项目生成 AI 解读（默认 12），其余项目可以在「项目速读」里点 **用 AI 重新解读** 按需生成。结果按「仓库 + 模型」缓存，不会重复消耗额度。
+日报里的**每个项目**都会生成 AI 解读，不再限制每天生成多少个——成本由上面的 token 限额控制。结果按「仓库 + 模型」缓存，不会重复消耗额度。
 
 不配置或调用失败时，两个模块都会回退到本地规则（GitHub 用规则版解读，雷达用抽取式摘要），日报不受影响。
 
@@ -421,7 +423,7 @@ python app.py radar query 芯片 突破    # 自由关键词调查
 - **7 个来源实测**：Crossref、PubMed、Europe PMC、bioRxiv、medRxiv、HuggingFace 可用；OpenAlex 需要免费 Key；**arXiv 因本机 TLS 证书链缺中间证书暂不可用**（没有关闭校验绕过）
 - **8 个学科**：全部 / 计算机与 AI / 物理 / 医学与生物医学 / 金融与经济 / 数学 / 生物学 / 工程与电子信息，按发布日期倒序
 - **每天更新一次**：`interval_hours: 24`，每天 08:30 采集；论文增量本来就慢，不需要像新闻那样每小时抓
-- **AI 有每日上限**：`ai.max_per_day`（默认 20）存在数据库里，重启不清零；同一天多点几次「采集」也不会重复调用模型
+- **AI 没有单独的次数上限**：所有待分析论文都会排队，成本统一由全局 token 限额控制（主接口用尽切备用，两个都用尽才暂停）
 - **首次采集 178 篇，94% 有摘要**：没有摘要就显示「该来源没有提供摘要」，不拿标题冒充
 - **每篇独立的 AI 中文概况**：研究内容 / 核心方法 / 主要发现 / 研究意义 / 信息局限，与原始摘要分区展示
 - **缓存优先**：按内容指纹命中，刷新页面、切换学科、重复采集都不会重新分析；失败可单篇重试
