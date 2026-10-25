@@ -250,6 +250,8 @@ def _anysearch_specs(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
             "tag": str(entry.get("tag") or section.get("tag") or ""),
             "zone": str(entry.get("zone") or section.get("zone") or ""),
             "language": str(entry.get("language") or section.get("language") or "zh"),
+            # 垂直域的必填/可选参数（如 finance.quote 需要 type）
+            "params": dict(entry.get("params")) if isinstance(entry.get("params"), dict) else {},
             "source_type": anysearch.SOURCE_TYPE,
             "enabled": bool(entry.get("enabled", True)),
             "max_items": max_results,

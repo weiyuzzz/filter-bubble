@@ -68,8 +68,12 @@ DEFAULTS: Dict[str, Any] = {
         "api_base": "https://api.anysearch.com",
         # key 只从环境变量读，不进配置文件和仓库（与 openalex_api_key_env 同一套）
         "api_key_env": "ANYSEARCH_API_KEY",
-        # 能力标签，留空 = 通用网页搜索；可选 academic.search / code.doc / finance.news / security.intel
+        # 能力标签，留空 = 通用网页搜索。可选 academic.search / code.doc / finance.news / security.intel 等；
+        # 注意部分子域有必填参数（如 finance.quote 需要 type），要配合 params 使用，
+        # 参数表：GET https://api.anysearch.com/v1/sub-domains?domain=finance（不占额度）
         "tag": "",
+        # 垂直域的默认参数，例如 {"type": "stock"}
+        "params": {},
         "zone": "cn",
         "language": "zh-CN",
         "timeout_seconds": 20,

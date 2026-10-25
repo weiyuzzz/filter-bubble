@@ -82,7 +82,31 @@
 | 返回字段 | `title` / `url` / `snippet` / `content`（清洗后的片段，不是全文） |
 | 抓正文 | `POST /v1/extract`，请求体**只能有 `url` 一个字段**（多传字段 → 400） |
 | 抓正文实测 | `go.dev` 36,395 字；财联社 / EET-China → **422 抓不到**（付费墙 / 反爬） |
-| 子能力 | `general.general`、`academic.search/citation/dataset/person`、`code.doc/snippet`、`finance.*`、`security.*` |
+| 子能力 | 17 个域：`general`、`academic`、`code`、`finance`、`security`、`travel`、`health`、`legal`、`gaming`、`film`、`business`、`ip`、`energy`、`environment`、`agriculture`、`resource`、`social_media` |
+
+**垂直域要注意必填参数**：只给 `tag` 不给必填参数会被后端判 400。带必填参数的子域实测：
+
+| 子域 | 必填参数 |
+|---|---|
+| `finance.quote` / `.news` / `.calendar` / `.macro` / `.screen` | `type`（如 `stock`） |
+| `finance.fundamental` | `type`、`symbol`、`cn_code` |
+| `security.intel` / `.scan` | `ioc`；`.noise` 要 `ip`；`.vuln` 要 `type` + `value` |
+| `travel.flight` | `departure`、`arrival`、`date` |
+| `travel.flight_status` | `departure`、`flight_number` |
+| `health.drug` | `type` |
+| `code.doc` | `library` |
+| `gaming.esports` | `type` |
+| `academic.citation` | `id` |
+| `academic.search`、`business.*`、`legal.*`、`ip.global` 等 | 全部可选 |
+
+参数表用 `GET https://api.anysearch.com/v1/sub-domains?domain=finance` 查（**不占额度**）。配置写法：
+
+```json
+{ "id": "stock", "name": "AAPL 行情", "query": "AAPL",
+  "tag": "finance.quote", "params": { "type": "stock", "symbol": "AAPL" } }
+```
+
+实测返回的是垂直索引结果，和通用网页搜索明显不同：`finance.quote` 给的是行情页（Yahoo Finance / CNN Markets），`academic.search` 给的是机构仓储论文（HKUST、Lingnan）。
 
 两种用法：
 

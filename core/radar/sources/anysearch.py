@@ -40,7 +40,7 @@ CONTENT_LIMIT = 4000
 
 # 402 的响应体可能含自动生成的账号密码，这里只暴露状态，不暴露 body
 _QUOTA_HINT = {
-    400: "请求体不合法（extract 只接受 {\"url\": \"...\"} 这一个字段）",
+    400: "请求体不合法：字段类型不对，或用了 tag 却漏了必填 params（如 finance.quote 要 type）",
     401: "API Key 无效（key 与接口地址不匹配）",
     402: "额度用尽（免费额度按窗口计）",
     403: "Key 已过期 / 账号被停用",
@@ -91,8 +91,14 @@ def _results(payload: Any) -> List[Dict[str, Any]]:
 
 def search(query: str, cfg: Dict[str, Any], max_results: int = 10,
            tag: str = "", zone: str = "", language: str = "",
+           params: Optional[Dict[str, Any]] = None,
            timeout: Optional[float] = None) -> List[Dict[str, Any]]:
-    """调 ``/v1/search``，返回 [{title, url, snippet, content, request_id}]。"""
+    """调 ``/v1/search``，返回 [{title, url, snippet, content}]。
+
+    ``params`` 是垂直域的必填/可选参数（例如 ``finance.quote`` 必填 ``type``，
+    ``security.intel`` 必填 ``ioc``）。只给 ``tag`` 不给必填参数会被后端判 400，
+    参数表可用 ``GET /v1/sub-domains?domain=finance`` 查（该接口不占额度）。
+    """
     query = (query or "").strip()
     if not query:
         return []
@@ -101,6 +107,13 @@ def search(query: str, cfg: Dict[str, Any], max_results: int = 10,
     tag = tag or str(section.get("tag") or "")
     zone = zone or str(section.get("zone") or "")
     language = language or str(section.get("language") or "")
+    merged_params: Dict[str, Any] = {}
+    global_params = section.get("params")
+    if isinstance(global_params, dict):
+        merged_params.update(global_params)
+    if isinstance(params, dict):
+        merged_params.update(params)
+
     payload: Dict[str, Any] = {"query": query, "max_results": max(1, min(int(max_results), MAX_RESULTS_CAP))}
     if tag:
         payload["tag"] = tag
@@ -108,6 +121,8 @@ def search(query: str, cfg: Dict[str, Any], max_results: int = 10,
         payload["zone"] = zone
     if language:
         payload["language"] = language
+    if merged_params:
+        payload["params"] = merged_params
 
     result, res = post_json(
         _base(cfg) + "/v1/search", payload, headers=_headers(api_key(cfg)),
@@ -176,6 +191,7 @@ def fetch(spec: Dict[str, Any], make_item) -> List[Dict[str, Any]]:
         tag=str(spec.get("tag") or ""),
         zone=str(spec.get("zone") or ""),
         language=str(spec.get("language") or ""),
+        params=spec.get("params") if isinstance(spec.get("params"), dict) else None,
         timeout=float(spec.get("timeout") or 20),
     )
     if not rows:

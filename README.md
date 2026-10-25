@@ -427,7 +427,10 @@ python app.py radar query 芯片 突破    # 自由关键词调查
     "min_interval_minutes": 240,           // 每条查询多久跑一次（限流窗口只有 20 次）
     "queries": [                           // 每条 = 一个发现源
       { "id": "ai", "name": "AI 与大模型", "query": "AI 大模型 最新进展 突破" },
-      { "id": "chip", "name": "芯片与半导体", "query": "芯片 半导体 制程 最新消息" }
+      { "id": "chip", "name": "芯片与半导体", "query": "芯片 半导体 制程 最新消息" },
+      // 垂直域要带必填参数，否则后端判 400（参数表见 docs/radar.md）
+      { "id": "stock", "name": "AAPL 行情", "query": "AAPL",
+        "tag": "finance.quote", "params": { "type": "stock", "symbol": "AAPL" } }
     ]
   },
   "investigation": {
@@ -438,7 +441,7 @@ python app.py radar query 芯片 突破    # 自由关键词调查
 }
 ```
 
-`tag` 留空 = 通用网页搜索；AnySearch 还有 `academic.search`（学术）、`code.doc`（代码文档）、`finance.news`（财经）、`security.intel`（安全情报）等子能力，按查询换成对应领域。
+`tag` 留空 = 通用网页搜索；AnySearch 还有 17 个垂直域（`academic.search` 学术、`code.doc` 代码文档、`finance.quote` 行情、`security.intel` 安全情报、`travel.flight`、`legal.*`、`business.*` 等），按查询换成对应领域。**部分子域有必填参数**（`finance.quote` 要 `type`，`security.intel` 要 `ioc`），要一起写进 `params`，否则后端判 400；完整参数表见 [docs/radar.md](docs/radar.md)。
 
 抓正文不是每次都成功：实测 `go.dev` 能抓 3.6 万字，财联社、EET-China 会返回 422（付费墙 / 反爬），这时自动退回搜索摘要，不会报错中断。
 

@@ -342,6 +342,62 @@ class TestSourceThrottle(unittest.TestCase):
         self.assertEqual(called["n"], 1)  # 没有节流就该真的跑一次
 
 
+class TestVerticalParams(unittest.TestCase):
+    """垂直域（finance.quote 等）有必填参数，只给 tag 会被后端判 400。"""
+
+    def _capture(self, spec, cfg):
+        captured = {}
+        original = anysearch.post_json
+
+        def fake(url, payload, **kwargs):
+            captured["payload"] = payload
+            from core.radar.fetch import FetchResult
+            return ({"code": 0, "data": {"results": [_row(1)]}},
+                    FetchResult(True, 200, "{}", "", 1, url))
+
+        anysearch.post_json = fake
+        try:
+            anysearch.fetch(spec, sources.make_item)
+        finally:
+            anysearch.post_json = original
+        return captured["payload"]
+
+    def test_query_params_reach_the_api(self):
+        cfg = _cfg(queries=[{"id": "stock", "query": "AAPL", "tag": "finance.quote",
+                             "params": {"type": "stock", "symbol": "AAPL"}}])
+        spec = [s for s in sources.all_specs(cfg) if s.get("adapter") == "anysearch"][0]
+        payload = self._capture(spec, cfg)
+        self.assertEqual(payload["tag"], "finance.quote")
+        self.assertEqual(payload["params"], {"type": "stock", "symbol": "AAPL"})
+
+    def test_global_params_are_merged_but_query_wins(self):
+        cfg = _cfg(params={"type": "stock", "cn_code": ""},
+                   queries=[{"id": "x", "query": "AAPL", "tag": "finance.quote",
+                             "params": {"symbol": "AAPL"}}])
+        spec = [s for s in sources.all_specs(cfg) if s.get("adapter") == "anysearch"][0]
+        payload = self._capture(spec, cfg)
+        self.assertEqual(payload["params"], {"type": "stock", "cn_code": "", "symbol": "AAPL"})
+
+    def test_no_params_field_when_nothing_configured(self):
+        cfg = _cfg(queries=[{"id": "plain", "query": "AI 进展"}])
+        spec = [s for s in sources.all_specs(cfg) if s.get("adapter") == "anysearch"][0]
+        payload = self._capture(spec, cfg)
+        self.assertNotIn("params", payload)
+
+    def test_bad_params_config_is_ignored(self):
+        cfg = _cfg(queries=[{"id": "bad", "query": "x", "params": "type=stock"}])
+        spec = [s for s in sources.all_specs(cfg) if s.get("adapter") == "anysearch"][0]
+        self.assertEqual(spec["params"], {})
+        payload = self._capture(spec, cfg)
+        self.assertNotIn("params", payload)
+
+    def test_max_results_is_capped_at_ten(self):
+        cfg = _cfg(queries=[{"id": "many", "query": "x", "max_results": 500}])
+        spec = [s for s in sources.all_specs(cfg) if s.get("adapter") == "anysearch"][0]
+        payload = self._capture(spec, cfg)
+        self.assertEqual(payload["max_results"], 10)
+
+
 class TestErrorHygiene(unittest.TestCase):
     """402 的响应体里可能带账号密码，错误信息绝不能夹带正文。"""
 
