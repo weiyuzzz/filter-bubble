@@ -81,6 +81,8 @@
     if (name === "history") loadHistory();
     if (name === "settings") loadSettings();
     if (name === "tech") loadTech();
+    // 全球态势工作台由独立脚本承载（web/radar-intel.js），这里只负责触发初始化
+    if (name === "intel" && window.RBIntel) window.RBIntel.ensureLoaded();
   }
 
   // ---------- status board ----------

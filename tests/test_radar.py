@@ -200,7 +200,11 @@ class TestFreeTextSearch(unittest.TestCase):
 class TestSourceRegistry(unittest.TestCase):
     def test_every_adapter_exists(self):
         for spec in sources.SOURCES:
-            self.assertIn(spec["adapter"], sources.ADAPTERS, spec["source_id"])
+            # 地理图层的适配器登记在 GEO_ADAPTERS（出入参与新闻适配器不同），
+            # 但"每个源的适配器都已注册"这条不变量同样适用。
+            registry = (sources.GEO_ADAPTERS if spec.get("kind") == "geo"
+                        else sources.ADAPTERS)
+            self.assertIn(spec["adapter"], registry, spec["source_id"])
 
     def test_unavailable_platforms_are_never_enabled(self):
         for spec in sources.SOURCES:

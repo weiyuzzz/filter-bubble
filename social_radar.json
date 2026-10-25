@@ -139,6 +139,37 @@
   "retention": {
     "days": 90
   },
+  "intel": {
+    "caliber_version": 1,
+    "window_days": 7,
+    "min_days_for_full_confidence": 7,
+    "activity_refs": {
+      "event_ref": 200,
+      "item_ref": 400,
+      "platform_ref": 12,
+      "evidence_gap_ref": 5
+    },
+    "activity_weights": {
+      "intensity": 0.4,
+      "volume": 0.25,
+      "breadth": 0.2,
+      "growth": 0.15
+    },
+    "credibility_weights": {
+      "verified_share": 0.45,
+      "concentration_free": 0.25,
+      "evidence_ok": 0.3
+    },
+    "strategic_weights": {
+      "observed_activity": 0.55,
+      "evidence_uncertainty": 0.25,
+      "monitoring_blind_spot": 0.2
+    },
+    "intl_share_ref": 0.3,
+    "live_news_default_limit": 50,
+    "live_news_max_limit": 200,
+    "note": "全球态势监控口径参数。activity_refs 是本站归一化参考值（分母），不是国际标准；改动这些值会让历史序列与新点不可直接比较。威胁活动与情报可信度是两个独立指标，不合成一个危险程度。"
+  },
   "llm": {
     "enabled": false,
     "provider": "openai_compatible",

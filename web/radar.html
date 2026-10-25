@@ -117,6 +117,7 @@
           <button class="radar-tab" data-view="sources" role="tab" aria-selected="false">数据源管理</button>
           <button class="radar-tab" data-view="history" role="tab" aria-selected="false">历史记录</button>
           <button class="radar-tab" data-view="settings" role="tab" aria-selected="false">监控设置</button>
+          <button class="radar-tab" data-view="intel" role="tab" aria-selected="false">全球态势</button>
         </nav>
 
         <section class="radar-view" id="view-daily" role="tabpanel">
@@ -153,6 +154,81 @@
         <section class="radar-view" id="view-settings" role="tabpanel" hidden>
           <div id="settingsResult"><p class="pending">正在载入…</p></div>
         </section>
+
+        <section class="radar-view" id="view-intel" role="tabpanel" hidden>
+          <div class="intel-shell">
+            <div class="intel-notice" id="intelNotice" role="status">正在载入全球态势数据…</div>
+
+            <div class="intel-metrics" id="intelMetrics"></div>
+
+            <div class="intel-toolbar">
+              <label class="intel-field">时间范围
+                <select id="intelDays">
+                  <option value="1">24 小时</option>
+                  <option value="7" selected>7 天</option>
+                  <option value="30">30 天</option>
+                </select>
+              </label>
+              <label class="intel-field">事件主题
+                <select id="intelTheme"><option value="">全部主题</option></select>
+              </label>
+              <label class="intel-field">国家
+                <select id="intelCountry"><option value="">全部国家</option></select>
+              </label>
+              <label class="intel-field">最低严重度
+                <select id="intelMinScore">
+                  <option value="0">全部</option>
+                  <option value="30">30 以上</option>
+                  <option value="50">50 以上</option>
+                  <option value="70">70 以上</option>
+                </select>
+              </label>
+              <label class="intel-field">位置精度
+                <select id="intelPrecision">
+                  <option value="all">全部</option>
+                  <option value="reliable">仅中/高置信</option>
+                  <option value="approx">仅国家级近似</option>
+                </select>
+              </label>
+              <span class="intel-toolbar-spacer"></span>
+              <button class="intel-btn" id="intelExport" type="button">导出当前视图</button>
+              <button class="intel-btn" id="intelReset" type="button">重置筛选</button>
+              <button class="intel-btn is-primary" id="intelRefresh" type="button">刷新</button>
+            </div>
+
+            <div class="intel-main">
+              <section class="intel-map-panel" aria-label="全球事件地图">
+                <div class="intel-map-head">
+                  <h2 class="intel-map-title">全球事件地图</h2>
+                  <span class="intel-small" id="intelMapCount"></span>
+                  <div class="intel-map-tools">
+                    <button id="intelZoomIn" type="button" aria-label="放大地图" title="放大">+</button>
+                    <button id="intelZoomOut" type="button" aria-label="缩小地图" title="缩小">−</button>
+                    <button id="intelZoomReset" type="button" aria-label="重置视图" title="重置">⌂</button>
+                  </div>
+                </div>
+                <div class="intel-map" id="intelMap">
+                  <p class="intel-empty">正在载入地图…</p>
+                </div>
+                <div class="intel-legend" id="intelLegend"></div>
+                <div class="intel-detail" id="intelDetail">
+                  <p class="intel-empty">点击地图点位或情报卡片查看事件详情。</p>
+                </div>
+              </section>
+
+              <aside class="intel-side">
+                <section class="intel-panel" id="intelTimeline"></section>
+                <section class="intel-panel" id="intelStrategic"></section>
+                <section class="intel-panel" id="intelCountries"></section>
+              </aside>
+            </div>
+
+            <div class="intel-lower">
+              <section class="intel-panel" id="intelFeed"></section>
+              <section class="intel-panel" id="intelLive"></section>
+            </div>
+          </div>
+        </section>
       </div>
     </main>
   </div>
@@ -160,6 +236,8 @@
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
 <script src="/shell.js"></script>
+<script src="/world-110m.js"></script>
+<script src="/radar-intel.js"></script>
 <script src="/radar.js"></script>
 </body>
 </html>

@@ -1,0 +1,3594 @@
+{
+ "source": "Natural Earth 10m admin_0 countries",
+ "source_url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_0_countries.geojson",
+ "license": "Public domain (Natural Earth)",
+ "generated_at": "2026-10-25T18:54:03Z",
+ "count": 239,
+ "countries": [
+  {
+   "iso2": "AD",
+   "iso3": "AND",
+   "name_en": "Andorra",
+   "name_zh": "安道尔",
+   "lat": 42.5476,
+   "lon": 1.5394,
+   "bbox": [
+    1.4065,
+    42.4287,
+    1.7651,
+    42.6494
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "AE",
+   "iso3": "ARE",
+   "name_en": "United Arab Emirates",
+   "name_zh": "阿拉伯联合酋长国",
+   "lat": 23.4663,
+   "lon": 54.5473,
+   "bbox": [
+    51.5693,
+    22.6209,
+    56.3836,
+    26.0748
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "AF",
+   "iso3": "AFG",
+   "name_en": "Afghanistan",
+   "name_zh": "阿富汗",
+   "lat": 34.1643,
+   "lon": 66.4966,
+   "bbox": [
+    60.4868,
+    29.3866,
+    74.8923,
+    38.4737
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "AG",
+   "iso3": "ATG",
+   "name_en": "Antigua and Barbuda",
+   "name_zh": "安提瓜和巴布达",
+   "lat": 17.3522,
+   "lon": -61.7906,
+   "bbox": [
+    -62.3483,
+    16.932,
+    -61.6676,
+    17.7277
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "AI",
+   "iso3": "AIA",
+   "name_en": "Anguilla",
+   "name_zh": "安圭拉",
+   "lat": 18.243,
+   "lon": -63.0264,
+   "bbox": [
+    -63.4288,
+    18.1691,
+    -62.9257,
+    18.6013
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "AL",
+   "iso3": "ALB",
+   "name_en": "Albania",
+   "name_zh": "阿尔巴尼亚",
+   "lat": 40.6549,
+   "lon": 20.1138,
+   "bbox": [
+    19.272,
+    39.637,
+    21.0367,
+    42.6548
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "AM",
+   "iso3": "ARM",
+   "name_en": "Armenia",
+   "name_zh": "亚美尼亚",
+   "lat": 40.4591,
+   "lon": 44.8006,
+   "bbox": [
+    43.4363,
+    38.8637,
+    46.6026,
+    41.2905
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "AO",
+   "iso3": "AGO",
+   "name_en": "Angola",
+   "name_zh": "安哥拉",
+   "lat": -12.1828,
+   "lon": 17.9842,
+   "bbox": [
+    11.6694,
+    -18.0314,
+    24.0617,
+    -4.3912
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "AQ",
+   "iso3": "ATA",
+   "name_en": "Antarctica",
+   "name_zh": "南极洲",
+   "lat": -79.8432,
+   "lon": 35.8855,
+   "bbox": [
+    -180.0,
+    -90.0,
+    180.0,
+    -60.5162
+   ],
+   "ne_type": "Indeterminate"
+  },
+  {
+   "iso2": "AR",
+   "iso3": "ARG",
+   "name_en": "Argentina",
+   "name_zh": "阿根廷",
+   "lat": -33.5012,
+   "lon": -64.1733,
+   "bbox": [
+    -73.5727,
+    -55.052,
+    -53.6616,
+    -21.7869
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "AS",
+   "iso3": "ASM",
+   "name_en": "American Samoa",
+   "name_zh": "美属萨摩亚",
+   "lat": -14.3267,
+   "lon": -170.7472,
+   "bbox": [
+    -171.0865,
+    -14.5329,
+    -168.1605,
+    -11.0514
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "AT",
+   "iso3": "AUT",
+   "name_en": "Austria",
+   "name_zh": "奥地利",
+   "lat": 47.5189,
+   "lon": 14.1305,
+   "bbox": [
+    9.5212,
+    46.3786,
+    17.1483,
+    49.0098
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "AU",
+   "iso3": "AUS",
+   "name_en": "Australia",
+   "name_zh": "澳大利亚",
+   "lat": -24.1295,
+   "lon": 134.0497,
+   "bbox": [
+    112.9194,
+    -54.7504,
+    159.1065,
+    -9.2402
+   ],
+   "ne_type": "Country"
+  },
+  {
+   "iso2": "AW",
+   "iso3": "ABW",
+   "name_en": "Aruba",
+   "name_zh": "阿鲁巴",
+   "lat": 12.5174,
+   "lon": -69.9728,
+   "bbox": [
+    -70.0624,
+    12.4177,
+    -69.8768,
+    12.6321
+   ],
+   "ne_type": "Country"
+  },
+  {
+   "iso2": "AX",
+   "iso3": "ALA",
+   "name_en": "Aland",
+   "name_zh": "奥兰",
+   "lat": 60.1565,
+   "lon": 19.8697,
+   "bbox": [
+    19.5132,
+    59.9045,
+    21.0967,
+    60.4808
+   ],
+   "ne_type": "Country"
+  },
+  {
+   "iso2": "AZ",
+   "iso3": "AZE",
+   "name_en": "Azerbaijan",
+   "name_zh": "阿塞拜疆",
+   "lat": 40.4024,
+   "lon": 47.211,
+   "bbox": [
+    44.7746,
+    38.3926,
+    50.6257,
+    41.8904
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "BA",
+   "iso3": "BIH",
+   "name_en": "Bosnia and Herzegovina",
+   "name_zh": "波斯尼亚和黑塞哥维那",
+   "lat": 44.0911,
+   "lon": 18.0684,
+   "bbox": [
+    15.7161,
+    42.5592,
+    19.6189,
+    45.2845
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "BB",
+   "iso3": "BRB",
+   "name_en": "Barbados",
+   "name_zh": "巴巴多斯",
+   "lat": 13.1637,
+   "lon": -59.569,
+   "bbox": [
+    -59.6542,
+    13.0512,
+    -59.4269,
+    13.3445
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "BD",
+   "iso3": "BGD",
+   "name_en": "Bangladesh",
+   "name_zh": "孟加拉国",
+   "lat": 24.215,
+   "lon": 89.685,
+   "bbox": [
+    88.0218,
+    20.7387,
+    92.6429,
+    26.6235
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "BE",
+   "iso3": "BEL",
+   "name_en": "Belgium",
+   "name_zh": "比利时",
+   "lat": 50.7854,
+   "lon": 4.8004,
+   "bbox": [
+    2.5218,
+    49.4952,
+    6.3745,
+    51.4962
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "BF",
+   "iso3": "BFA",
+   "name_en": "Burkina Faso",
+   "name_zh": "布基纳法索",
+   "lat": 12.673,
+   "lon": -1.3639,
+   "bbox": [
+    -5.5226,
+    9.3919,
+    2.3902,
+    15.0799
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "BG",
+   "iso3": "BGR",
+   "name_en": "Bulgaria",
+   "name_zh": "保加利亚",
+   "lat": 42.5088,
+   "lon": 25.1571,
+   "bbox": [
+    22.345,
+    41.2381,
+    28.6035,
+    44.2284
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "BH",
+   "iso3": "BHR",
+   "name_en": "Bahrain",
+   "name_zh": "巴林",
+   "lat": 26.056,
+   "lon": 50.5548,
+   "bbox": [
+    50.3805,
+    25.5799,
+    50.8199,
+    26.2874
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "BI",
+   "iso3": "BDI",
+   "name_en": "Burundi",
+   "name_zh": "布隆迪",
+   "lat": -3.3328,
+   "lon": 29.9171,
+   "bbox": [
+    28.9869,
+    -4.4633,
+    30.834,
+    -2.3031
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "BJ",
+   "iso3": "BEN",
+   "name_en": "Benin",
+   "name_zh": "贝宁",
+   "lat": 10.3248,
+   "lon": 2.352,
+   "bbox": [
+    0.7599,
+    6.2139,
+    3.8374,
+    12.3992
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "BL",
+   "iso3": "BLM",
+   "name_en": "Saint Barthelemy",
+   "name_zh": "圣巴泰勒米",
+   "lat": 17.902,
+   "lon": -62.8332,
+   "bbox": [
+    -62.8673,
+    17.882,
+    -62.7917,
+    17.9291
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "BM",
+   "iso3": "BMU",
+   "name_en": "Bermuda",
+   "name_zh": "百慕大",
+   "lat": 32.2966,
+   "lon": -64.7636,
+   "bbox": [
+    -64.886,
+    32.2481,
+    -64.6476,
+    32.3887
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "BN",
+   "iso3": "BRN",
+   "name_en": "Brunei",
+   "name_zh": "文莱",
+   "lat": 4.4483,
+   "lon": 114.5519,
+   "bbox": [
+    113.9988,
+    4.0167,
+    115.3607,
+    5.0572
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "BO",
+   "iso3": "BOL",
+   "name_en": "Bolivia",
+   "name_zh": "玻利维亚",
+   "lat": -16.666,
+   "lon": -64.5934,
+   "bbox": [
+    -69.6665,
+    -22.8973,
+    -57.4657,
+    -9.6798
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "BR",
+   "iso3": "BRA",
+   "name_en": "Brazil",
+   "name_zh": "巴西",
+   "lat": -12.0987,
+   "lon": -49.5594,
+   "bbox": [
+    -74.0185,
+    -33.7423,
+    -28.8771,
+    5.2672
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "BS",
+   "iso3": "BHS",
+   "name_en": "The Bahamas",
+   "name_zh": "巴哈马",
+   "lat": 26.4018,
+   "lon": -77.1467,
+   "bbox": [
+    -79.5944,
+    20.9124,
+    -72.7462,
+    26.9284
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "BT",
+   "iso3": "BTN",
+   "name_en": "Bhutan",
+   "name_zh": "不丹",
+   "lat": 27.5367,
+   "lon": 90.0403,
+   "bbox": [
+    88.7301,
+    26.6961,
+    92.0888,
+    28.3584
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "BW",
+   "iso3": "BWA",
+   "name_en": "Botswana",
+   "name_zh": "博茨瓦纳",
+   "lat": -22.1026,
+   "lon": 24.1792,
+   "bbox": [
+    19.9783,
+    -26.8918,
+    29.3501,
+    -17.7818
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "BY",
+   "iso3": "BLR",
+   "name_en": "Belarus",
+   "name_zh": "白俄罗斯",
+   "lat": 53.8219,
+   "lon": 28.4177,
+   "bbox": [
+    23.1656,
+    51.2352,
+    32.7195,
+    56.1568
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "BZ",
+   "iso3": "BLZ",
+   "name_en": "Belize",
+   "name_zh": "伯利兹",
+   "lat": 17.2021,
+   "lon": -88.713,
+   "bbox": [
+    -89.2365,
+    15.8797,
+    -87.7831,
+    18.4908
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "CA",
+   "iso3": "CAN",
+   "name_en": "Canada",
+   "name_zh": "加拿大",
+   "lat": 60.3243,
+   "lon": -101.9107,
+   "bbox": [
+    -141.0056,
+    41.6691,
+    -52.6166,
+    83.1165
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "CD",
+   "iso3": "COD",
+   "name_en": "Democratic Republic of the Congo",
+   "name_zh": "刚果民主共和国",
+   "lat": -1.8582,
+   "lon": 23.4588,
+   "bbox": [
+    12.2105,
+    -13.4584,
+    31.2804,
+    5.3753
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "CF",
+   "iso3": "CAF",
+   "name_en": "Central African Republic",
+   "name_zh": "中非共和国",
+   "lat": 6.9897,
+   "lon": 20.9069,
+   "bbox": [
+    14.3873,
+    2.2365,
+    27.4413,
+    11.0008
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "CG",
+   "iso3": "COG",
+   "name_en": "Republic of the Congo",
+   "name_zh": "刚果共和国",
+   "lat": 0.1423,
+   "lon": 15.9005,
+   "bbox": [
+    11.114,
+    -5.0196,
+    18.6424,
+    3.7083
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "CH",
+   "iso3": "CHE",
+   "name_en": "Switzerland",
+   "name_zh": "瑞士",
+   "lat": 46.7191,
+   "lon": 7.464,
+   "bbox": [
+    5.9548,
+    45.8207,
+    10.4666,
+    47.8012
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "CI",
+   "iso3": "CIV",
+   "name_en": "Ivory Coast",
+   "name_zh": "科特迪瓦",
+   "lat": 7.4914,
+   "lon": -5.5686,
+   "bbox": [
+    -8.6187,
+    4.3441,
+    -2.5063,
+    10.7265
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "CK",
+   "iso3": "COK",
+   "name_en": "Cook Islands",
+   "name_zh": "库克群岛",
+   "lat": -21.216,
+   "lon": -159.7857,
+   "bbox": [
+    -165.8245,
+    -21.9389,
+    -157.3128,
+    -8.9467
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "CL",
+   "iso3": "CHL",
+   "name_en": "Chile",
+   "name_zh": "智利",
+   "lat": -38.1518,
+   "lon": -72.3189,
+   "bbox": [
+    -109.4537,
+    -55.9185,
+    -66.4208,
+    -17.5066
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "CM",
+   "iso3": "CMR",
+   "name_en": "Cameroon",
+   "name_zh": "喀麦隆",
+   "lat": 4.585,
+   "lon": 12.4735,
+   "bbox": [
+    8.5051,
+    1.6546,
+    16.2077,
+    13.0811
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "CN",
+   "iso3": "CHN",
+   "name_en": "China",
+   "name_zh": "中华人民共和国",
+   "lat": 32.4982,
+   "lon": 106.3373,
+   "bbox": [
+    73.6023,
+    15.7754,
+    134.7726,
+    53.5694
+   ],
+   "ne_type": "Country"
+  },
+  {
+   "iso2": "CO",
+   "iso3": "COL",
+   "name_en": "Colombia",
+   "name_zh": "哥伦比亚",
+   "lat": 3.3731,
+   "lon": -73.1743,
+   "bbox": [
+    -81.7237,
+    -4.2365,
+    -66.8751,
+    13.5784
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "CR",
+   "iso3": "CRI",
+   "name_en": "Costa Rica",
+   "name_zh": "哥斯达黎加",
+   "lat": 10.0651,
+   "lon": -84.0779,
+   "bbox": [
+    -87.1177,
+    5.5151,
+    -82.5628,
+    11.2099
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "CU",
+   "iso3": "CUB",
+   "name_en": "Cuba",
+   "name_zh": "古巴",
+   "lat": 21.334,
+   "lon": -77.9759,
+   "bbox": [
+    -84.9496,
+    19.8278,
+    -74.1329,
+    23.2656
+   ],
+   "ne_type": "Sovereignty"
+  },
+  {
+   "iso2": "CV",
+   "iso3": "CPV",
+   "name_en": "Cabo Verde",
+   "name_zh": "佛得角",
+   "lat": 15.0748,
+   "lon": -23.6394,
+   "bbox": [
+    -25.3604,
+    14.8039,
+    -22.6666,
+    17.1966
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "CW",
+   "iso3": "CUW",
+   "name_en": "Curaçao",
+   "name_zh": "库拉索",
+   "lat": 12.145,
+   "lon": -68.9206,
+   "bbox": [
+    -69.1717,
+    12.0413,
+    -68.7397,
+    12.3915
+   ],
+   "ne_type": "Country"
+  },
+  {
+   "iso2": "CY",
+   "iso3": "CYP",
+   "name_en": "Cyprus",
+   "name_zh": "塞浦路斯",
+   "lat": 34.9133,
+   "lon": 33.0842,
+   "bbox": [
+    32.2717,
+    34.625,
+    34.0991,
+    35.1871
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "CZ",
+   "iso3": "CZE",
+   "name_en": "Czechia",
+   "name_zh": "捷克",
+   "lat": 49.8824,
+   "lon": 15.3776,
+   "bbox": [
+    12.0761,
+    48.5579,
+    18.8374,
+    51.04
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "DE",
+   "iso3": "DEU",
+   "name_en": "Germany",
+   "name_zh": "德国",
+   "lat": 50.9617,
+   "lon": 9.6783,
+   "bbox": [
+    5.8525,
+    47.2711,
+    15.0221,
+    55.0653
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "DJ",
+   "iso3": "DJI",
+   "name_en": "Djibouti",
+   "name_zh": "吉布提",
+   "lat": 11.9763,
+   "lon": 42.4988,
+   "bbox": [
+    41.7491,
+    10.9298,
+    43.4187,
+    12.7079
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "DK",
+   "iso3": "DNK",
+   "name_en": "Denmark",
+   "name_zh": "丹麦",
+   "lat": 55.967,
+   "lon": 9.0182,
+   "bbox": [
+    8.094,
+    54.5686,
+    15.1514,
+    57.7512
+   ],
+   "ne_type": "Country"
+  },
+  {
+   "iso2": "DM",
+   "iso3": "DMA",
+   "name_en": "Dominica",
+   "name_zh": "多米尼克",
+   "lat": 15.4588,
+   "lon": -61.345,
+   "bbox": [
+    -61.4889,
+    15.2018,
+    -61.2493,
+    15.6339
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "DO",
+   "iso3": "DOM",
+   "name_en": "Dominican Republic",
+   "name_zh": "多米尼加",
+   "lat": 19.1041,
+   "lon": -70.654,
+   "bbox": [
+    -72.0098,
+    17.5456,
+    -68.3286,
+    19.9377
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "DZ",
+   "iso3": "DZA",
+   "name_en": "Algeria",
+   "name_zh": "阿尔及利亚",
+   "lat": 27.3974,
+   "lon": 2.8082,
+   "bbox": [
+    -8.6824,
+    18.9756,
+    11.9689,
+    37.0939
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "EC",
+   "iso3": "ECU",
+   "name_en": "Ecuador",
+   "name_zh": "厄瓜多尔",
+   "lat": -1.2591,
+   "lon": -78.1884,
+   "bbox": [
+    -92.0116,
+    -5.0114,
+    -75.2273,
+    1.6644
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "EE",
+   "iso3": "EST",
+   "name_en": "Estonia",
+   "name_zh": "爱沙尼亚",
+   "lat": 58.7249,
+   "lon": 25.8671,
+   "bbox": [
+    21.8324,
+    57.5158,
+    28.1865,
+    59.6709
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "EG",
+   "iso3": "EGY",
+   "name_en": "Egypt",
+   "name_zh": "埃及",
+   "lat": 26.1862,
+   "lon": 29.4458,
+   "bbox": [
+    24.6883,
+    21.9944,
+    36.8992,
+    31.6565
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "EH",
+   "iso3": "ESH",
+   "name_en": "Western Sahara",
+   "name_zh": "西撒哈拉",
+   "lat": 23.9676,
+   "lon": -12.6303,
+   "bbox": [
+    -17.1046,
+    20.7669,
+    -8.6808,
+    27.6615
+   ],
+   "ne_type": "Indeterminate"
+  },
+  {
+   "iso2": "ER",
+   "iso3": "ERI",
+   "name_en": "Eritrea",
+   "name_zh": "厄立特里亚",
+   "lat": 15.7874,
+   "lon": 38.2856,
+   "bbox": [
+    36.4236,
+    12.36,
+    43.1239,
+    18.0048
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "ES",
+   "iso3": "ESP",
+   "name_en": "Spain",
+   "name_zh": "西班牙",
+   "lat": 40.091,
+   "lon": -3.4647,
+   "bbox": [
+    -18.1672,
+    27.6422,
+    4.3371,
+    43.7934
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "ET",
+   "iso3": "ETH",
+   "name_en": "Ethiopia",
+   "name_zh": "埃塞俄比亚",
+   "lat": 8.0328,
+   "lon": 39.0886,
+   "bbox": [
+    32.9898,
+    3.4033,
+    47.9792,
+    14.8795
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "FI",
+   "iso3": "FIN",
+   "name_en": "Finland",
+   "name_zh": "芬兰",
+   "lat": 63.2524,
+   "lon": 27.2764,
+   "bbox": [
+    20.6232,
+    59.8112,
+    31.5695,
+    70.0753
+   ],
+   "ne_type": "Country"
+  },
+  {
+   "iso2": "FJ",
+   "iso3": "FJI",
+   "name_en": "Fiji",
+   "name_zh": "斐济",
+   "lat": -17.8261,
+   "lon": 177.9754,
+   "bbox": [
+    -180.0,
+    -21.7111,
+    180.0,
+    -12.4753
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "FK",
+   "iso3": "FLK",
+   "name_en": "Falkland Islands",
+   "name_zh": "福克兰群岛",
+   "lat": -51.6089,
+   "lon": -58.7386,
+   "bbox": [
+    -61.3182,
+    -52.4065,
+    -57.7343,
+    -51.0278
+   ],
+   "ne_type": "Disputed"
+  },
+  {
+   "iso2": "FM",
+   "iso3": "FSM",
+   "name_en": "Federated States of Micronesia",
+   "name_zh": "密克罗尼西亚联邦",
+   "lat": 6.8876,
+   "lon": 158.234,
+   "bbox": [
+    138.0638,
+    0.9182,
+    163.0466,
+    9.7756
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "FO",
+   "iso3": "FRO",
+   "name_en": "Faroe Islands",
+   "name_zh": "法罗群岛",
+   "lat": 62.1856,
+   "lon": -7.0584,
+   "bbox": [
+    -7.6442,
+    61.3941,
+    -6.2758,
+    62.3989
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "FR",
+   "iso3": "",
+   "name_en": "France",
+   "name_zh": "法国",
+   "lat": 46.6961,
+   "lon": 2.5523,
+   "bbox": [
+    -61.7978,
+    -21.3708,
+    55.8545,
+    51.0875
+   ],
+   "ne_type": "Country"
+  },
+  {
+   "iso2": "GA",
+   "iso3": "GAB",
+   "name_en": "Gabon",
+   "name_zh": "加蓬",
+   "lat": -0.4377,
+   "lon": 11.8359,
+   "bbox": [
+    8.6956,
+    -3.9369,
+    14.499,
+    2.3225
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "GB",
+   "iso3": "GBR",
+   "name_en": "United Kingdom",
+   "name_zh": "英国",
+   "lat": 54.4027,
+   "lon": -2.1163,
+   "bbox": [
+    -13.6913,
+    49.9096,
+    1.7712,
+    60.8479
+   ],
+   "ne_type": "Country"
+  },
+  {
+   "iso2": "GD",
+   "iso3": "GRD",
+   "name_en": "Grenada",
+   "name_zh": "格林纳达",
+   "lat": 12.1132,
+   "lon": -61.6805,
+   "bbox": [
+    -61.7905,
+    12.0028,
+    -61.4216,
+    12.5297
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "GE",
+   "iso3": "GEO",
+   "name_en": "Georgia",
+   "name_zh": "格鲁吉亚",
+   "lat": 41.8701,
+   "lon": 43.7357,
+   "bbox": [
+    39.986,
+    41.0441,
+    46.6948,
+    43.5758
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "GG",
+   "iso3": "GGY",
+   "name_en": "Guernsey",
+   "name_zh": "根西",
+   "lat": 49.4635,
+   "lon": -2.5617,
+   "bbox": [
+    -2.6735,
+    49.4116,
+    -2.1703,
+    49.7314
+   ],
+   "ne_type": "Country"
+  },
+  {
+   "iso2": "GH",
+   "iso3": "GHA",
+   "name_en": "Ghana",
+   "name_zh": "加纳",
+   "lat": 7.7176,
+   "lon": -1.0369,
+   "bbox": [
+    -3.2625,
+    4.7371,
+    1.188,
+    11.1629
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "GI",
+   "iso3": "GIB",
+   "name_en": "Gibraltar",
+   "name_zh": "直布罗陀",
+   "lat": 36.1294,
+   "lon": -5.3467,
+   "bbox": [
+    -5.3584,
+    36.1105,
+    -5.3388,
+    36.1411
+   ],
+   "ne_type": "Disputed"
+  },
+  {
+   "iso2": "GL",
+   "iso3": "GRL",
+   "name_en": "Greenland",
+   "name_zh": "格陵兰",
+   "lat": 74.3194,
+   "lon": -39.3353,
+   "bbox": [
+    -73.0572,
+    59.7926,
+    -11.3768,
+    83.6341
+   ],
+   "ne_type": "Country"
+  },
+  {
+   "iso2": "GM",
+   "iso3": "GMB",
+   "name_en": "Gambia",
+   "name_zh": "冈比亚",
+   "lat": 13.6417,
+   "lon": -14.9983,
+   "bbox": [
+    -16.8297,
+    13.065,
+    -13.8187,
+    13.82
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "GN",
+   "iso3": "GIN",
+   "name_en": "Guinea",
+   "name_zh": "几内亚",
+   "lat": 10.6185,
+   "lon": -10.0164,
+   "bbox": [
+    -15.0811,
+    7.1902,
+    -7.6624,
+    12.6734
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "GQ",
+   "iso3": "GNQ",
+   "name_en": "Equatorial Guinea",
+   "name_zh": "赤道几内亚",
+   "lat": 2.333,
+   "lon": 8.9902,
+   "bbox": [
+    5.612,
+    -1.4757,
+    11.3363,
+    3.7724
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "GR",
+   "iso3": "GRC",
+   "name_en": "Greece",
+   "name_zh": "希腊",
+   "lat": 39.4928,
+   "lon": 21.7257,
+   "bbox": [
+    19.6265,
+    34.815,
+    28.2398,
+    41.7505
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "GS",
+   "iso3": "SGS",
+   "name_en": "South Georgia and the Islands",
+   "name_zh": "南乔治亚和南桑威奇群岛",
+   "lat": -55.6834,
+   "lon": -31.0632,
+   "bbox": [
+    -38.087,
+    -59.4728,
+    -26.2393,
+    -53.9724
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "GT",
+   "iso3": "GTM",
+   "name_en": "Guatemala",
+   "name_zh": "危地马拉",
+   "lat": 14.9821,
+   "lon": -90.4971,
+   "bbox": [
+    -92.2463,
+    13.7314,
+    -88.2209,
+    17.816
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "GU",
+   "iso3": "GUM",
+   "name_en": "Guam",
+   "name_zh": "关岛",
+   "lat": 13.3542,
+   "lon": 144.7036,
+   "bbox": [
+    144.6242,
+    13.241,
+    144.9522,
+    13.6541
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "GW",
+   "iso3": "GNB",
+   "name_en": "Guinea-Bissau",
+   "name_zh": "几内亚比绍",
+   "lat": 12.1637,
+   "lon": -14.5241,
+   "bbox": [
+    -16.7284,
+    10.9276,
+    -13.6607,
+    12.6794
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "GY",
+   "iso3": "GUY",
+   "name_en": "Guyana",
+   "name_zh": "圭亚那",
+   "lat": 5.1243,
+   "lon": -58.9426,
+   "bbox": [
+    -61.3967,
+    1.1858,
+    -56.4818,
+    8.558
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "HK",
+   "iso3": "HKG",
+   "name_en": "Hong Kong S.A.R.",
+   "name_zh": "香港",
+   "lat": 22.4488,
+   "lon": 114.0978,
+   "bbox": [
+    113.8373,
+    22.1771,
+    114.4013,
+    22.5639
+   ],
+   "ne_type": "Country"
+  },
+  {
+   "iso2": "HM",
+   "iso3": "HMD",
+   "name_en": "Heard Island and McDonald Islands",
+   "name_zh": "赫德岛和麦克唐纳群岛",
+   "lat": -53.1035,
+   "lon": 73.5052,
+   "bbox": [
+    73.236,
+    -53.1926,
+    73.8122,
+    -52.9616
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "HN",
+   "iso3": "HND",
+   "name_en": "Honduras",
+   "name_zh": "洪都拉斯",
+   "lat": 14.7948,
+   "lon": -86.8876,
+   "bbox": [
+    -89.3638,
+    12.9798,
+    -83.1304,
+    17.4186
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "HR",
+   "iso3": "HRV",
+   "name_en": "Croatia",
+   "name_zh": "克罗地亚",
+   "lat": 45.8058,
+   "lon": 16.3724,
+   "bbox": [
+    13.5015,
+    42.4163,
+    19.4078,
+    46.547
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "HT",
+   "iso3": "HTI",
+   "name_en": "Haiti",
+   "name_zh": "海地",
+   "lat": 19.2638,
+   "lon": -72.2241,
+   "bbox": [
+    -74.4892,
+    18.0259,
+    -71.6391,
+    20.0898
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "HU",
+   "iso3": "HUN",
+   "name_en": "Hungary",
+   "name_zh": "匈牙利",
+   "lat": 47.0868,
+   "lon": 19.4479,
+   "bbox": [
+    16.094,
+    45.7413,
+    22.8776,
+    48.5692
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "ID",
+   "iso3": "IDN",
+   "name_en": "Indonesia",
+   "name_zh": "印度尼西亚",
+   "lat": -0.9544,
+   "lon": 101.8929,
+   "bbox": [
+    95.0127,
+    -10.9226,
+    140.9776,
+    5.9101
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "IE",
+   "iso3": "IRL",
+   "name_en": "Ireland",
+   "name_zh": "爱尔兰",
+   "lat": 53.0787,
+   "lon": -7.7986,
+   "bbox": [
+    -10.4782,
+    51.4457,
+    -5.9935,
+    55.3864
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "IL",
+   "iso3": "ISR",
+   "name_en": "Israel",
+   "name_zh": "以色列",
+   "lat": 30.9111,
+   "lon": 34.8479,
+   "bbox": [
+    34.2484,
+    29.4897,
+    35.8881,
+    33.4067
+   ],
+   "ne_type": "Disputed"
+  },
+  {
+   "iso2": "IM",
+   "iso3": "IMN",
+   "name_en": "Isle of Man",
+   "name_zh": "马恩岛",
+   "lat": 54.2208,
+   "lon": -4.5301,
+   "bbox": [
+    -4.7902,
+    54.057,
+    -4.3119,
+    54.419
+   ],
+   "ne_type": "Country"
+  },
+  {
+   "iso2": "IN",
+   "iso3": "IND",
+   "name_en": "India",
+   "name_zh": "印度",
+   "lat": 22.6869,
+   "lon": 79.3581,
+   "bbox": [
+    68.1434,
+    6.7456,
+    97.3623,
+    35.4954
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "IO",
+   "iso3": "IOT",
+   "name_en": "British Indian Ocean Territory",
+   "name_zh": "英属印度洋领地",
+   "lat": -6.1908,
+   "lon": 71.3483,
+   "bbox": [
+    71.261,
+    -7.4322,
+    72.4946,
+    -5.227
+   ],
+   "ne_type": "Disputed"
+  },
+  {
+   "iso2": "IQ",
+   "iso3": "IRQ",
+   "name_en": "Iraq",
+   "name_zh": "伊拉克",
+   "lat": 33.094,
+   "lon": 43.2618,
+   "bbox": [
+    38.7745,
+    29.0631,
+    48.5593,
+    37.3755
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "IR",
+   "iso3": "IRN",
+   "name_en": "Iran",
+   "name_zh": "伊朗",
+   "lat": 32.1662,
+   "lon": 54.9315,
+   "bbox": [
+    44.0149,
+    25.0594,
+    63.3196,
+    39.7715
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "IS",
+   "iso3": "ISL",
+   "name_en": "Iceland",
+   "name_zh": "冰岛",
+   "lat": 64.7793,
+   "lon": -18.6737,
+   "bbox": [
+    -24.5399,
+    63.3967,
+    -13.5029,
+    66.5642
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "IT",
+   "iso3": "ITA",
+   "name_en": "Italy",
+   "name_zh": "意大利",
+   "lat": 44.7325,
+   "lon": 11.0769,
+   "bbox": [
+    6.6027,
+    35.4892,
+    18.5174,
+    47.0852
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "JE",
+   "iso3": "JEY",
+   "name_en": "Jersey",
+   "name_zh": "泽西",
+   "lat": 49.2208,
+   "lon": -2.0901,
+   "bbox": [
+    -2.242,
+    49.1713,
+    -2.0083,
+    49.267
+   ],
+   "ne_type": "Country"
+  },
+  {
+   "iso2": "JM",
+   "iso3": "JAM",
+   "name_en": "Jamaica",
+   "name_zh": "牙买加",
+   "lat": 18.1371,
+   "lon": -77.3188,
+   "bbox": [
+    -78.3747,
+    17.7032,
+    -76.188,
+    18.5251
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "JO",
+   "iso3": "JOR",
+   "name_en": "Jordan",
+   "name_zh": "约旦",
+   "lat": 30.805,
+   "lon": 36.376,
+   "bbox": [
+    34.9494,
+    29.19,
+    39.292,
+    33.3717
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "JP",
+   "iso3": "JPN",
+   "name_en": "Japan",
+   "name_zh": "日本",
+   "lat": 36.1425,
+   "lon": 138.4422,
+   "bbox": [
+    122.9382,
+    24.2121,
+    153.9856,
+    45.5204
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "KE",
+   "iso3": "KEN",
+   "name_en": "Kenya",
+   "name_zh": "肯尼亚",
+   "lat": 0.549,
+   "lon": 37.9076,
+   "bbox": [
+    33.8905,
+    -4.6775,
+    41.885,
+    5.0304
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "KG",
+   "iso3": "KGZ",
+   "name_en": "Kyrgyzstan",
+   "name_zh": "吉尔吉斯斯坦",
+   "lat": 41.6685,
+   "lon": 74.5326,
+   "bbox": [
+    69.2263,
+    39.1892,
+    80.2576,
+    43.2617
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "KH",
+   "iso3": "KHM",
+   "name_en": "Cambodia",
+   "name_zh": "柬埔寨",
+   "lat": 12.6476,
+   "lon": 104.5049,
+   "bbox": [
+    102.3134,
+    10.4158,
+    107.6105,
+    14.7046
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "KI",
+   "iso3": "KIR",
+   "name_en": "Kiribati",
+   "name_zh": "基里巴斯",
+   "lat": 1.8204,
+   "lon": -157.3846,
+   "bbox": [
+    -174.5434,
+    -11.4611,
+    176.8509,
+    4.7231
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "KM",
+   "iso3": "COM",
+   "name_en": "Comoros",
+   "name_zh": "科摩罗",
+   "lat": -11.7277,
+   "lon": 43.3181,
+   "bbox": [
+    43.2132,
+    -12.3803,
+    44.5291,
+    -11.3613
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "KN",
+   "iso3": "KNA",
+   "name_en": "Saint Kitts and Nevis",
+   "name_zh": "圣基茨和尼维斯",
+   "lat": 17.3366,
+   "lon": -62.758,
+   "bbox": [
+    -62.8611,
+    17.1005,
+    -62.5368,
+    17.4158
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "KP",
+   "iso3": "PRK",
+   "name_en": "North Korea",
+   "name_zh": "朝鲜民主主义人民共和国",
+   "lat": 39.8853,
+   "lon": 126.4445,
+   "bbox": [
+    124.2113,
+    37.6756,
+    130.7,
+    43.0103
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "KR",
+   "iso3": "KOR",
+   "name_en": "South Korea",
+   "name_zh": "大韩民国",
+   "lat": 36.3849,
+   "lon": 128.1295,
+   "bbox": [
+    124.6136,
+    33.1976,
+    131.8625,
+    38.6243
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "KW",
+   "iso3": "KWT",
+   "name_en": "Kuwait",
+   "name_zh": "科威特",
+   "lat": 29.4136,
+   "lon": 47.314,
+   "bbox": [
+    46.5324,
+    28.5335,
+    48.4328,
+    30.0982
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "KY",
+   "iso3": "CYM",
+   "name_en": "Cayman Islands",
+   "name_zh": "开曼群岛",
+   "lat": 19.3199,
+   "lon": -81.2405,
+   "bbox": [
+    -81.4165,
+    19.2639,
+    -79.7266,
+    19.7576
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "KZ",
+   "iso3": "KAZ",
+   "name_en": "Kazakhstan",
+   "name_zh": "哈萨克斯坦",
+   "lat": 49.0541,
+   "lon": 68.6855,
+   "bbox": [
+    46.4783,
+    40.5847,
+    87.3238,
+    55.4346
+   ],
+   "ne_type": "Sovereignty"
+  },
+  {
+   "iso2": "LA",
+   "iso3": "LAO",
+   "name_en": "Laos",
+   "name_zh": "老挝",
+   "lat": 19.4318,
+   "lon": 102.5339,
+   "bbox": [
+    100.0971,
+    13.9155,
+    107.6644,
+    22.496
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "LB",
+   "iso3": "LBN",
+   "name_en": "Lebanon",
+   "name_zh": "黎巴嫩",
+   "lat": 34.1334,
+   "lon": 35.9929,
+   "bbox": [
+    35.0996,
+    33.0556,
+    36.6041,
+    34.6875
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "LC",
+   "iso3": "LCA",
+   "name_en": "Saint Lucia",
+   "name_zh": "圣卢西亚",
+   "lat": 13.8924,
+   "lon": -60.9801,
+   "bbox": [
+    -61.0785,
+    13.7147,
+    -60.883,
+    14.1119
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "LI",
+   "iso3": "LIE",
+   "name_en": "Liechtenstein",
+   "name_zh": "列支敦士登",
+   "lat": 47.1114,
+   "lon": 9.5594,
+   "bbox": [
+    9.4759,
+    47.0524,
+    9.6157,
+    47.2628
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "LK",
+   "iso3": "LKA",
+   "name_en": "Sri Lanka",
+   "name_zh": "斯里兰卡",
+   "lat": 7.5811,
+   "lon": 80.7048,
+   "bbox": [
+    79.6558,
+    5.9237,
+    81.8903,
+    9.8296
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "LR",
+   "iso3": "LBR",
+   "name_en": "Liberia",
+   "name_zh": "利比里亚",
+   "lat": 6.4472,
+   "lon": -9.4604,
+   "bbox": [
+    -11.4762,
+    4.3472,
+    -7.3841,
+    8.5654
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "LS",
+   "iso3": "LSO",
+   "name_en": "Lesotho",
+   "name_zh": "莱索托",
+   "lat": -29.4802,
+   "lon": 28.2466,
+   "bbox": [
+    27.0022,
+    -30.6588,
+    29.4359,
+    -28.5708
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "LT",
+   "iso3": "LTU",
+   "name_en": "Lithuania",
+   "name_zh": "立陶宛",
+   "lat": 55.1037,
+   "lon": 24.0899,
+   "bbox": [
+    20.9246,
+    53.8868,
+    26.8007,
+    56.4426
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "LU",
+   "iso3": "LUX",
+   "name_en": "Luxembourg",
+   "name_zh": "卢森堡",
+   "lat": 49.7337,
+   "lon": 6.0776,
+   "bbox": [
+    5.7149,
+    49.4413,
+    6.5026,
+    50.175
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "LV",
+   "iso3": "LVA",
+   "name_en": "Latvia",
+   "name_zh": "拉脱维亚",
+   "lat": 57.0669,
+   "lon": 25.4587,
+   "bbox": [
+    20.9686,
+    55.667,
+    28.2173,
+    58.0751
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "LY",
+   "iso3": "LBY",
+   "name_en": "Libya",
+   "name_zh": "利比亚",
+   "lat": 26.6389,
+   "lon": 18.011,
+   "bbox": [
+    9.2865,
+    19.4961,
+    25.1563,
+    33.1812
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "MA",
+   "iso3": "MAR",
+   "name_en": "Morocco",
+   "name_zh": "摩洛哥",
+   "lat": 31.6507,
+   "lon": -7.1873,
+   "bbox": [
+    -17.0137,
+    21.42,
+    -1.032,
+    35.9265
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "MC",
+   "iso3": "MCO",
+   "name_en": "Monaco",
+   "name_zh": "摩纳哥",
+   "lat": 43.7397,
+   "lon": 7.3983,
+   "bbox": [
+    7.3658,
+    43.718,
+    7.4375,
+    43.7635
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "MD",
+   "iso3": "MDA",
+   "name_en": "Moldova",
+   "name_zh": "摩尔多瓦",
+   "lat": 47.435,
+   "lon": 28.4879,
+   "bbox": [
+    26.6179,
+    45.4618,
+    30.1316,
+    48.486
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "ME",
+   "iso3": "MNE",
+   "name_en": "Montenegro",
+   "name_zh": "黑山",
+   "lat": 42.8031,
+   "lon": 19.1437,
+   "bbox": [
+    18.4335,
+    41.8524,
+    20.3552,
+    43.5479
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "MF",
+   "iso3": "MAF",
+   "name_en": "Saint Martin",
+   "name_zh": "法属圣马丁",
+   "lat": 18.0813,
+   "lon": -63.0494,
+   "bbox": [
+    -63.1468,
+    18.0334,
+    -63.0107,
+    18.1221
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "MG",
+   "iso3": "MDG",
+   "name_en": "Madagascar",
+   "name_zh": "马达加斯加",
+   "lat": -18.6283,
+   "lon": 46.7042,
+   "bbox": [
+    43.2229,
+    -25.5986,
+    50.5039,
+    -11.9436
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "MH",
+   "iso3": "MHL",
+   "name_en": "Marshall Islands",
+   "name_zh": "马绍尔群岛",
+   "lat": 7.0826,
+   "lon": 171.1936,
+   "bbox": [
+    165.2822,
+    4.5738,
+    172.0298,
+    14.6105
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "MK",
+   "iso3": "MKD",
+   "name_en": "North Macedonia",
+   "name_zh": "北马其顿",
+   "lat": 41.5582,
+   "lon": 21.5558,
+   "bbox": [
+    20.4442,
+    40.8494,
+    23.0096,
+    42.3703
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "ML",
+   "iso3": "MLI",
+   "name_en": "Mali",
+   "name_zh": "马里",
+   "lat": 18.6927,
+   "lon": -2.0385,
+   "bbox": [
+    -12.2641,
+    10.1401,
+    4.2356,
+    24.9951
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "MM",
+   "iso3": "MMR",
+   "name_en": "Myanmar",
+   "name_zh": "缅甸",
+   "lat": 21.5739,
+   "lon": 95.8045,
+   "bbox": [
+    92.175,
+    9.7907,
+    101.1739,
+    28.5385
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "MN",
+   "iso3": "MNG",
+   "name_en": "Mongolia",
+   "name_zh": "蒙古国",
+   "lat": 45.9975,
+   "lon": 104.1504,
+   "bbox": [
+    87.7357,
+    41.5861,
+    119.907,
+    52.1296
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "MO",
+   "iso3": "MAC",
+   "name_en": "Macao S.A.R",
+   "name_zh": "澳门",
+   "lat": 22.1297,
+   "lon": 113.556,
+   "bbox": [
+    113.5199,
+    22.1054,
+    113.5875,
+    22.2208
+   ],
+   "ne_type": "Country"
+  },
+  {
+   "iso2": "MP",
+   "iso3": "MNP",
+   "name_en": "Northern Mariana Islands",
+   "name_zh": "北马里亚纳群岛",
+   "lat": 15.1882,
+   "lon": 145.7344,
+   "bbox": [
+    144.9021,
+    14.1107,
+    145.8689,
+    20.5554
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "MR",
+   "iso3": "MRT",
+   "name_en": "Mauritania",
+   "name_zh": "毛里塔尼亚",
+   "lat": 19.5871,
+   "lon": -9.7403,
+   "bbox": [
+    -17.0812,
+    14.7344,
+    -4.8216,
+    27.2854
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "MS",
+   "iso3": "MSR",
+   "name_en": "Montserrat",
+   "name_zh": "蒙特塞拉特",
+   "lat": 16.7372,
+   "lon": -62.1883,
+   "bbox": [
+    -62.2301,
+    16.6754,
+    -62.1405,
+    16.8193
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "MT",
+   "iso3": "MLT",
+   "name_en": "Malta",
+   "name_zh": "马耳他",
+   "lat": 35.8929,
+   "lon": 14.433,
+   "bbox": [
+    14.1836,
+    35.8012,
+    14.5671,
+    36.0756
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "MU",
+   "iso3": "MUS",
+   "name_en": "Mauritius",
+   "name_zh": "毛里求斯",
+   "lat": -20.2995,
+   "lon": 57.5658,
+   "bbox": [
+    56.5242,
+    -20.5173,
+    63.4939,
+    -10.3239
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "MV",
+   "iso3": "MDV",
+   "name_en": "Maldives",
+   "name_zh": "马尔代夫",
+   "lat": 4.1744,
+   "lon": 73.5076,
+   "bbox": [
+    72.6848,
+    -0.6886,
+    73.7532,
+    7.1072
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "MW",
+   "iso3": "MWI",
+   "name_en": "Malawi",
+   "name_zh": "马拉维",
+   "lat": -13.3867,
+   "lon": 33.6081,
+   "bbox": [
+    32.6633,
+    -17.1353,
+    35.9043,
+    -9.3812
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "MX",
+   "iso3": "MEX",
+   "name_en": "Mexico",
+   "name_zh": "墨西哥",
+   "lat": 23.92,
+   "lon": -102.2894,
+   "bbox": [
+    -118.3688,
+    14.5463,
+    -86.7006,
+    32.7128
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "MY",
+   "iso3": "MYS",
+   "name_en": "Malaysia",
+   "name_zh": "马来西亚",
+   "lat": 2.5287,
+   "lon": 113.8371,
+   "bbox": [
+    99.6452,
+    0.8514,
+    119.2781,
+    7.3558
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "MZ",
+   "iso3": "MOZ",
+   "name_en": "Mozambique",
+   "name_zh": "莫桑比克",
+   "lat": -13.9432,
+   "lon": 37.8379,
+   "bbox": [
+    30.2138,
+    -26.8603,
+    40.848,
+    -10.469
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "NA",
+   "iso3": "NAM",
+   "name_en": "Namibia",
+   "name_zh": "纳米比亚",
+   "lat": -20.5753,
+   "lon": 17.1082,
+   "bbox": [
+    11.7176,
+    -28.9594,
+    25.2598,
+    -16.9511
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "NC",
+   "iso3": "NCL",
+   "name_en": "New Caledonia",
+   "name_zh": "新喀里多尼亚",
+   "lat": -21.0647,
+   "lon": 165.084,
+   "bbox": [
+    163.6157,
+    -22.6707,
+    171.3438,
+    -19.6237
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "NE",
+   "iso3": "NER",
+   "name_en": "Niger",
+   "name_zh": "尼日尔",
+   "lat": 17.4462,
+   "lon": 9.5044,
+   "bbox": [
+    0.1529,
+    11.6958,
+    15.9703,
+    23.5174
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "NF",
+   "iso3": "NFK",
+   "name_en": "Norfolk Island",
+   "name_zh": "诺福克岛",
+   "lat": -29.033,
+   "lon": 167.9545,
+   "bbox": [
+    167.9121,
+    -29.08,
+    167.9963,
+    -28.9975
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "NG",
+   "iso3": "NGA",
+   "name_en": "Nigeria",
+   "name_zh": "尼日利亚",
+   "lat": 9.4398,
+   "lon": 7.5032,
+   "bbox": [
+    2.6711,
+    4.2722,
+    14.6699,
+    13.8803
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "NI",
+   "iso3": "NIC",
+   "name_en": "Nicaragua",
+   "name_zh": "尼加拉瓜",
+   "lat": 12.6707,
+   "lon": -85.0693,
+   "bbox": [
+    -87.6858,
+    10.7135,
+    -82.7257,
+    15.031
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "NL",
+   "iso3": "NLD",
+   "name_en": "Netherlands",
+   "name_zh": "荷兰",
+   "lat": 52.4222,
+   "lon": 5.6114,
+   "bbox": [
+    -68.4174,
+    12.022,
+    7.1985,
+    53.5581
+   ],
+   "ne_type": "Country"
+  },
+  {
+   "iso2": "NO",
+   "iso3": "",
+   "name_en": "Norway",
+   "name_zh": "挪威",
+   "lat": 61.3571,
+   "lon": 9.68,
+   "bbox": [
+    -9.1174,
+    -54.4625,
+    33.6404,
+    80.7701
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "NP",
+   "iso3": "NPL",
+   "name_en": "Nepal",
+   "name_zh": "尼泊尔",
+   "lat": 28.2979,
+   "lon": 83.6399,
+   "bbox": [
+    80.0303,
+    26.3438,
+    88.1691,
+    30.4169
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "NR",
+   "iso3": "NRU",
+   "name_en": "Nauru",
+   "name_zh": "瑙鲁",
+   "lat": -0.5203,
+   "lon": 166.9326,
+   "bbox": [
+    166.907,
+    -0.5519,
+    166.9583,
+    -0.4904
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "NU",
+   "iso3": "NIU",
+   "name_en": "Niue",
+   "name_zh": "纽埃",
+   "lat": -19.046,
+   "lon": -169.8626,
+   "bbox": [
+    -169.9504,
+    -19.1428,
+    -169.7829,
+    -18.964
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "NZ",
+   "iso3": "NZL",
+   "name_en": "New Zealand",
+   "name_zh": "新西兰",
+   "lat": -39.759,
+   "lon": 172.787,
+   "bbox": [
+    -177.958,
+    -52.6003,
+    178.8439,
+    -8.5432
+   ],
+   "ne_type": "Country"
+  },
+  {
+   "iso2": "OM",
+   "iso3": "OMN",
+   "name_en": "Oman",
+   "name_zh": "阿曼",
+   "lat": 22.1204,
+   "lon": 57.3366,
+   "bbox": [
+    51.9786,
+    16.6424,
+    59.8446,
+    26.386
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "PA",
+   "iso3": "PAN",
+   "name_en": "Panama",
+   "name_zh": "巴拿马",
+   "lat": 8.722,
+   "lon": -80.3521,
+   "bbox": [
+    -83.0532,
+    7.2057,
+    -77.1633,
+    9.6293
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "PE",
+   "iso3": "PER",
+   "name_en": "Peru",
+   "name_zh": "秘鲁",
+   "lat": -12.9767,
+   "lon": -72.9002,
+   "bbox": [
+    -81.3376,
+    -18.3377,
+    -68.6843,
+    -0.0291
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "PF",
+   "iso3": "PYF",
+   "name_en": "French Polynesia",
+   "name_zh": "法属波利尼西亚",
+   "lat": -17.6281,
+   "lon": -149.4616,
+   "bbox": [
+    -154.537,
+    -27.6412,
+    -134.943,
+    -7.9501
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "PG",
+   "iso3": "PNG",
+   "name_en": "Papua New Guinea",
+   "name_zh": "巴布亚新几内亚",
+   "lat": -5.6953,
+   "lon": 143.9102,
+   "bbox": [
+    140.8492,
+    -11.6363,
+    155.9675,
+    -1.3464
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "PH",
+   "iso3": "PHL",
+   "name_en": "Philippines",
+   "name_zh": "菲律宾",
+   "lat": 11.198,
+   "lon": 122.465,
+   "bbox": [
+    116.9549,
+    4.6557,
+    126.6177,
+    21.1224
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "PK",
+   "iso3": "PAK",
+   "name_en": "Pakistan",
+   "name_zh": "巴基斯坦",
+   "lat": 29.3284,
+   "lon": 68.5456,
+   "bbox": [
+    60.8444,
+    23.6945,
+    77.049,
+    37.0545
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "PL",
+   "iso3": "POL",
+   "name_en": "Poland",
+   "name_zh": "波兰",
+   "lat": 51.9903,
+   "lon": 19.4905,
+   "bbox": [
+    14.1239,
+    48.994,
+    24.1432,
+    54.8383
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "PM",
+   "iso3": "SPM",
+   "name_en": "Saint Pierre and Miquelon",
+   "name_zh": "圣皮埃尔和密克隆",
+   "lat": 47.0403,
+   "lon": -56.3324,
+   "bbox": [
+    -56.3966,
+    46.7528,
+    -56.1448,
+    47.1413
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "PN",
+   "iso3": "PCN",
+   "name_en": "Pitcairn Islands",
+   "name_zh": "皮特凯恩群岛",
+   "lat": -24.3646,
+   "lon": -128.3175,
+   "bbox": [
+    -130.7531,
+    -25.0771,
+    -124.7781,
+    -23.9244
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "PR",
+   "iso3": "PRI",
+   "name_en": "Puerto Rico",
+   "name_zh": "波多黎各",
+   "lat": 18.2347,
+   "lon": -66.4811,
+   "bbox": [
+    -67.9378,
+    17.9229,
+    -65.2446,
+    18.5228
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "PS",
+   "iso3": "PSE",
+   "name_en": "Palestine",
+   "name_zh": "巴勒斯坦",
+   "lat": 32.0474,
+   "lon": 35.2913,
+   "bbox": [
+    34.2003,
+    31.2114,
+    35.5725,
+    32.5426
+   ],
+   "ne_type": "Indeterminate"
+  },
+  {
+   "iso2": "PT",
+   "iso3": "PRT",
+   "name_en": "Portugal",
+   "name_zh": "葡萄牙",
+   "lat": 39.6067,
+   "lon": -8.2718,
+   "bbox": [
+    -31.2849,
+    30.0292,
+    -6.2059,
+    42.1536
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "PW",
+   "iso3": "PLW",
+   "name_en": "Palau",
+   "name_zh": "帕劳",
+   "lat": 7.5183,
+   "lon": 134.5802,
+   "bbox": [
+    131.1311,
+    2.949,
+    134.7273,
+    8.0966
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "PY",
+   "iso3": "PRY",
+   "name_en": "Paraguay",
+   "name_zh": "巴拉圭",
+   "lat": -21.6745,
+   "lon": -60.1464,
+   "bbox": [
+    -62.6504,
+    -27.5868,
+    -54.2453,
+    -19.2867
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "QA",
+   "iso3": "QAT",
+   "name_en": "Qatar",
+   "name_zh": "卡塔尔",
+   "lat": 25.2374,
+   "lon": 51.1435,
+   "bbox": [
+    50.751,
+    24.5599,
+    51.6165,
+    26.1601
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "RO",
+   "iso3": "ROU",
+   "name_en": "Romania",
+   "name_zh": "罗马尼亚",
+   "lat": 45.7332,
+   "lon": 24.9726,
+   "bbox": [
+    20.2428,
+    43.6501,
+    29.6996,
+    48.2748
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "RS",
+   "iso3": "SRB",
+   "name_en": "Republic of Serbia",
+   "name_zh": "塞尔维亚",
+   "lat": 44.1899,
+   "lon": 20.788,
+   "bbox": [
+    18.845,
+    42.2349,
+    22.9846,
+    46.1739
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "RU",
+   "iso3": "RUS",
+   "name_en": "Russia",
+   "name_zh": "俄罗斯",
+   "lat": 58.2494,
+   "lon": 44.6865,
+   "bbox": [
+    -180.0,
+    41.1927,
+    180.0,
+    81.8587
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "RW",
+   "iso3": "RWA",
+   "name_en": "Rwanda",
+   "name_zh": "卢旺达",
+   "lat": -1.8972,
+   "lon": 30.1039,
+   "bbox": [
+    28.8572,
+    -2.8269,
+    30.8878,
+    -1.0587
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "SA",
+   "iso3": "SAU",
+   "name_en": "Saudi Arabia",
+   "name_zh": "沙特阿拉伯",
+   "lat": 23.8069,
+   "lon": 44.6996,
+   "bbox": [
+    34.5728,
+    16.371,
+    55.6376,
+    32.1213
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "SB",
+   "iso3": "SLB",
+   "name_en": "Solomon Islands",
+   "name_zh": "所罗门群岛",
+   "lat": -8.0295,
+   "lon": 159.1705,
+   "bbox": [
+    155.508,
+    -12.2906,
+    168.8259,
+    -6.5999
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "SC",
+   "iso3": "SYC",
+   "name_en": "Seychelles",
+   "name_zh": "塞舌尔",
+   "lat": -4.6767,
+   "lon": 55.4802,
+   "bbox": [
+    46.2074,
+    -9.7555,
+    56.2874,
+    -3.7911
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "SD",
+   "iso3": "SDN",
+   "name_en": "Sudan",
+   "name_zh": "苏丹",
+   "lat": 16.3307,
+   "lon": 29.2607,
+   "bbox": [
+    21.8094,
+    8.6816,
+    38.6039,
+    22.227
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "SE",
+   "iso3": "SWE",
+   "name_en": "Sweden",
+   "name_zh": "瑞典",
+   "lat": 65.8592,
+   "lon": 19.0171,
+   "bbox": [
+    11.1082,
+    55.3427,
+    24.1634,
+    69.0364
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "SG",
+   "iso3": "SGP",
+   "name_en": "Singapore",
+   "name_zh": "新加坡",
+   "lat": 1.3666,
+   "lon": 103.8169,
+   "bbox": [
+    103.6404,
+    1.2643,
+    104.0034,
+    1.4486
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "SH",
+   "iso3": "SHN",
+   "name_en": "Saint Helena",
+   "name_zh": "圣赫勒拿",
+   "lat": -15.9505,
+   "lon": -5.7126,
+   "bbox": [
+    -14.4177,
+    -40.3979,
+    -5.6504,
+    -7.8779
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "SI",
+   "iso3": "SVN",
+   "name_en": "Slovenia",
+   "name_zh": "斯洛文尼亚",
+   "lat": 46.0608,
+   "lon": 14.9153,
+   "bbox": [
+    13.3653,
+    45.4236,
+    16.5153,
+    46.864
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "SK",
+   "iso3": "SVK",
+   "name_en": "Slovakia",
+   "name_zh": "斯洛伐克",
+   "lat": 48.734,
+   "lon": 19.0499,
+   "bbox": [
+    16.8445,
+    47.75,
+    22.5396,
+    49.6018
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "SL",
+   "iso3": "SLE",
+   "name_en": "Sierra Leone",
+   "name_zh": "塞拉利昂",
+   "lat": 8.6174,
+   "lon": -11.7637,
+   "bbox": [
+    -13.3011,
+    6.9194,
+    -10.2822,
+    9.996
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "SM",
+   "iso3": "SMR",
+   "name_en": "San Marino",
+   "name_zh": "圣马力诺",
+   "lat": 43.9339,
+   "lon": 12.4412,
+   "bbox": [
+    12.3856,
+    43.8921,
+    12.4924,
+    43.9826
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "SN",
+   "iso3": "SEN",
+   "name_en": "Senegal",
+   "name_zh": "塞内加尔",
+   "lat": 15.1381,
+   "lon": -14.7786,
+   "bbox": [
+    -17.536,
+    12.3056,
+    -11.3778,
+    16.6914
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "SO",
+   "iso3": "SOM",
+   "name_en": "Somalia",
+   "name_zh": "索马里",
+   "lat": 3.5689,
+   "lon": 45.1924,
+   "bbox": [
+    40.9654,
+    -1.6963,
+    51.417,
+    11.9891
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "SR",
+   "iso3": "SUR",
+   "name_en": "Suriname",
+   "name_zh": "苏里南",
+   "lat": 4.144,
+   "lon": -55.9109,
+   "bbox": [
+    -58.0677,
+    1.8335,
+    -53.9864,
+    6.0116
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "SS",
+   "iso3": "SSD",
+   "name_en": "South Sudan",
+   "name_zh": "南苏丹",
+   "lat": 7.2305,
+   "lon": 30.3902,
+   "bbox": [
+    24.1216,
+    3.4902,
+    35.9208,
+    12.2162
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "ST",
+   "iso3": "STP",
+   "name_en": "São Tomé and Principe",
+   "name_zh": "圣多美和普林西比",
+   "lat": 0.9709,
+   "lon": 7.021,
+   "bbox": [
+    6.4617,
+    0.0241,
+    7.4627,
+    1.6998
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "SV",
+   "iso3": "SLV",
+   "name_en": "El Salvador",
+   "name_zh": "萨尔瓦多",
+   "lat": 13.6854,
+   "lon": -88.8901,
+   "bbox": [
+    -90.1148,
+    13.1586,
+    -87.6932,
+    14.4454
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "SX",
+   "iso3": "SXM",
+   "name_en": "Sint Maarten",
+   "name_zh": "荷属圣马丁",
+   "lat": 18.0409,
+   "lon": -63.0701,
+   "bbox": [
+    -63.1189,
+    18.0191,
+    -63.0176,
+    18.0621
+   ],
+   "ne_type": "Country"
+  },
+  {
+   "iso2": "SY",
+   "iso3": "SYR",
+   "name_en": "Syria",
+   "name_zh": "叙利亚",
+   "lat": 35.0066,
+   "lon": 38.2778,
+   "bbox": [
+    35.7234,
+    32.313,
+    42.3772,
+    37.3249
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "SZ",
+   "iso3": "SWZ",
+   "name_en": "eSwatini",
+   "name_zh": "斯威士兰",
+   "lat": -26.5337,
+   "lon": 31.4673,
+   "bbox": [
+    30.7829,
+    -27.3163,
+    32.1174,
+    -25.736
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "TC",
+   "iso3": "TCA",
+   "name_en": "Turks and Caicos Islands",
+   "name_zh": "特克斯和凯科斯群岛",
+   "lat": 21.8166,
+   "lon": -71.7527,
+   "bbox": [
+    -72.4813,
+    21.2901,
+    -71.1289,
+    21.9592
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "TD",
+   "iso3": "TCD",
+   "name_en": "Chad",
+   "name_zh": "乍得",
+   "lat": 15.143,
+   "lon": 18.645,
+   "bbox": [
+    13.4492,
+    7.4556,
+    23.9844,
+    23.4447
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "TF",
+   "iso3": "ATF",
+   "name_en": "French Southern and Antarctic Lands",
+   "name_zh": "法属南部和南极领地",
+   "lat": -49.3037,
+   "lon": 69.1221,
+   "bbox": [
+    39.7283,
+    -49.7216,
+    77.5852,
+    -11.5506
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "TG",
+   "iso3": "TGO",
+   "name_en": "Togo",
+   "name_zh": "多哥",
+   "lat": 8.8072,
+   "lon": 1.0581,
+   "bbox": [
+    -0.1661,
+    6.1005,
+    1.7824,
+    11.135
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "TH",
+   "iso3": "THA",
+   "name_en": "Thailand",
+   "name_zh": "泰国",
+   "lat": 15.4597,
+   "lon": 101.0732,
+   "bbox": [
+    97.3514,
+    5.6299,
+    105.651,
+    20.445
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "TJ",
+   "iso3": "TJK",
+   "name_en": "Tajikistan",
+   "name_zh": "塔吉克斯坦",
+   "lat": 38.1998,
+   "lon": 72.5873,
+   "bbox": [
+    67.3427,
+    36.6786,
+    75.1641,
+    41.04
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "TL",
+   "iso3": "TLS",
+   "name_en": "East Timor",
+   "name_zh": "东帝汶",
+   "lat": -8.8037,
+   "lon": 125.8547,
+   "bbox": [
+    124.03,
+    -9.5012,
+    127.3132,
+    -8.135
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "TM",
+   "iso3": "TKM",
+   "name_en": "Turkmenistan",
+   "name_zh": "土库曼斯坦",
+   "lat": 39.8552,
+   "lon": 58.6766,
+   "bbox": [
+    52.4377,
+    35.1406,
+    66.6458,
+    42.7912
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "TN",
+   "iso3": "TUN",
+   "name_en": "Tunisia",
+   "name_zh": "突尼斯",
+   "lat": 33.6873,
+   "lon": 9.0079,
+   "bbox": [
+    7.4798,
+    30.2289,
+    11.5641,
+    37.3452
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "TO",
+   "iso3": "TON",
+   "name_en": "Tonga",
+   "name_zh": "汤加",
+   "lat": -21.21,
+   "lon": -175.163,
+   "bbox": [
+    -176.2193,
+    -22.3388,
+    -173.9143,
+    -15.5595
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "TR",
+   "iso3": "TUR",
+   "name_en": "Turkey",
+   "name_zh": "土耳其",
+   "lat": 39.3454,
+   "lon": 34.5083,
+   "bbox": [
+    25.6633,
+    35.8198,
+    44.807,
+    42.0988
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "TT",
+   "iso3": "TTO",
+   "name_en": "Trinidad and Tobago",
+   "name_zh": "特立尼达和多巴哥",
+   "lat": 10.9989,
+   "lon": -60.9184,
+   "bbox": [
+    -61.9287,
+    10.0421,
+    -60.5221,
+    11.3511
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "TV",
+   "iso3": "TUV",
+   "name_en": "Tuvalu",
+   "name_zh": "图瓦卢",
+   "lat": -8.5137,
+   "lon": 179.2096,
+   "bbox": [
+    176.1253,
+    -9.4207,
+    179.9067,
+    -5.6775
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "TW",
+   "iso3": "TWN",
+   "name_en": "Taiwan",
+   "name_zh": "中华民国",
+   "lat": 23.6524,
+   "lon": 120.8682,
+   "bbox": [
+    118.2796,
+    21.9046,
+    122.0054,
+    25.2874
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "TZ",
+   "iso3": "TZA",
+   "name_en": "United Republic of Tanzania",
+   "name_zh": "坦桑尼亚",
+   "lat": -6.0519,
+   "lon": 34.9592,
+   "bbox": [
+    29.321,
+    -11.7313,
+    40.4494,
+    -0.9858
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "UA",
+   "iso3": "UKR",
+   "name_en": "Ukraine",
+   "name_zh": "乌克兰",
+   "lat": 49.7247,
+   "lon": 32.1409,
+   "bbox": [
+    22.1328,
+    45.2136,
+    40.1595,
+    52.3689
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "UG",
+   "iso3": "UGA",
+   "name_en": "Uganda",
+   "name_zh": "乌干达",
+   "lat": 1.9726,
+   "lon": 32.9486,
+   "bbox": [
+    29.5485,
+    -1.4752,
+    35.0065,
+    4.2197
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "UM",
+   "iso3": "UMI",
+   "name_en": "United States Minor Outlying Islands",
+   "name_zh": "美国本土外小岛屿",
+   "lat": 19.2857,
+   "lon": 166.6445,
+   "bbox": [
+    -177.3896,
+    -0.3888,
+    166.6524,
+    28.2153
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "US",
+   "iso3": "USA",
+   "name_en": "United States of America",
+   "name_zh": "美国",
+   "lat": 39.5385,
+   "lon": -97.4826,
+   "bbox": [
+    -179.1435,
+    18.9061,
+    179.7809,
+    71.4125
+   ],
+   "ne_type": "Country"
+  },
+  {
+   "iso2": "UY",
+   "iso3": "URY",
+   "name_en": "Uruguay",
+   "name_zh": "乌拉圭",
+   "lat": -32.9611,
+   "lon": -55.9669,
+   "bbox": [
+    -58.4394,
+    -34.9734,
+    -53.1108,
+    -30.0969
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "UZ",
+   "iso3": "UZB",
+   "name_en": "Uzbekistan",
+   "name_zh": "乌兹别克斯坦",
+   "lat": 41.6936,
+   "lon": 64.0054,
+   "bbox": [
+    55.9758,
+    37.1851,
+    73.1486,
+    45.5587
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "VA",
+   "iso3": "VAT",
+   "name_en": "Vatican",
+   "name_zh": "梵蒂冈",
+   "lat": 41.9033,
+   "lon": 12.4534,
+   "bbox": [
+    12.4527,
+    41.9028,
+    12.454,
+    41.9039
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "VC",
+   "iso3": "VCT",
+   "name_en": "Saint Vincent and the Grenadines",
+   "name_zh": "圣文森特和格林纳丁斯",
+   "lat": 13.0879,
+   "lon": -61.3359,
+   "bbox": [
+    -61.4598,
+    12.5852,
+    -61.1239,
+    13.3808
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "VE",
+   "iso3": "VEN",
+   "name_en": "Venezuela",
+   "name_zh": "委内瑞拉",
+   "lat": 7.1825,
+   "lon": -64.5994,
+   "bbox": [
+    -73.3911,
+    0.6493,
+    -59.8156,
+    15.7029
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "VG",
+   "iso3": "VGB",
+   "name_en": "British Virgin Islands",
+   "name_zh": "英属维尔京群岛",
+   "lat": 18.4266,
+   "lon": -64.6366,
+   "bbox": [
+    -64.774,
+    18.3347,
+    -64.2707,
+    18.7462
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "VI",
+   "iso3": "VIR",
+   "name_en": "United States Virgin Islands",
+   "name_zh": "美属维尔京群岛",
+   "lat": 17.7467,
+   "lon": -64.7792,
+   "bbox": [
+    -65.0415,
+    17.6828,
+    -64.5594,
+    18.3866
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "VN",
+   "iso3": "VNM",
+   "name_en": "Vietnam",
+   "name_zh": "越南",
+   "lat": 21.7154,
+   "lon": 105.3873,
+   "bbox": [
+    102.1187,
+    8.5656,
+    109.4724,
+    23.3663
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "VU",
+   "iso3": "VUT",
+   "name_en": "Vanuatu",
+   "name_zh": "瓦努阿图",
+   "lat": -15.3715,
+   "lon": 166.9088,
+   "bbox": [
+    166.5205,
+    -20.2531,
+    169.8989,
+    -13.0649
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "WF",
+   "iso3": "WLF",
+   "name_en": "Wallis and Futuna",
+   "name_zh": "瓦利斯和富图纳",
+   "lat": -14.2864,
+   "lon": -178.1374,
+   "bbox": [
+    -178.1857,
+    -14.3194,
+    -176.1256,
+    -13.2089
+   ],
+   "ne_type": "Dependency"
+  },
+  {
+   "iso2": "WS",
+   "iso3": "WSM",
+   "name_en": "Samoa",
+   "name_zh": "萨摩亚",
+   "lat": -13.6391,
+   "lon": -172.4382,
+   "bbox": [
+    -172.7826,
+    -14.0528,
+    -171.4377,
+    -13.4628
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "XK",
+   "iso3": "",
+   "name_en": "Kosovo",
+   "name_zh": "科索沃",
+   "lat": 42.5936,
+   "lon": 20.8607,
+   "bbox": [
+    20.0248,
+    41.844,
+    21.7728,
+    43.2631
+   ],
+   "ne_type": "Disputed"
+  },
+  {
+   "iso2": "YE",
+   "iso3": "YEM",
+   "name_en": "Yemen",
+   "name_zh": "也门",
+   "lat": 15.3282,
+   "lon": 45.8744,
+   "bbox": [
+    42.5457,
+    12.1114,
+    54.5403,
+    18.9956
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "ZA",
+   "iso3": "ZAF",
+   "name_en": "South Africa",
+   "name_zh": "南非",
+   "lat": -29.7088,
+   "lon": 23.6657,
+   "bbox": [
+    16.47,
+    -46.9658,
+    37.9778,
+    -22.1265
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "ZM",
+   "iso3": "ZMB",
+   "name_en": "Zambia",
+   "name_zh": "赞比亚",
+   "lat": -14.6608,
+   "lon": 26.3953,
+   "bbox": [
+    21.9799,
+    -18.0692,
+    33.6742,
+    -8.1941
+   ],
+   "ne_type": "Sovereign country"
+  },
+  {
+   "iso2": "ZW",
+   "iso3": "ZWE",
+   "name_en": "Zimbabwe",
+   "name_zh": "津巴布韦",
+   "lat": -18.9116,
+   "lon": 29.9254,
+   "bbox": [
+    25.2194,
+    -22.3973,
+    33.0428,
+    -15.6148
+   ],
+   "ne_type": "Sovereign country"
+  }
+ ]
+}

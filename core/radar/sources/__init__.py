@@ -102,6 +102,54 @@ SOURCES: List[Dict[str, Any]] = [
      "language": "en", "source_type": "social_post", "enabled": False,
      "notes": "本机 403/超时，默认关闭"},
 
+    # ---- 结构化地理图层（只入库 radar_geo_points，不进入新闻聚类） ----
+    # 官方 GeoJSON，免 key。外部 ID 幂等，重复采集不产生重复行。
+    {"source_id": "usgs_quake", "platform": "USGS", "name": "USGS 地震（M4.5+ / 7 天）",
+     "kind": "geo", "adapter": "usgs", "layer": "usgs_quake",
+     "feed": "4.5", "period": "week", "url": "",
+     "max_items": 500, "max_age_days": 7, "min_interval_seconds": 2.0,
+     "enabled": True, "source_type": "geo",
+     "notes": "USGS 官方 GeoJSON；免 key；仅用于地图图层，不进入新闻聚类或日报统计"},
+
+    # NASA EONET v3：自然事件（野火/火山/洪水/风暴等）。
+    # 实测响应头写的是 application/rss+xml 但内容是 JSON —— 解析不看 Content-Type。
+    {"source_id": "eonet", "platform": "NASA EONET", "name": "NASA EONET 自然事件",
+     "kind": "geo", "adapter": "eonet", "layer": "eonet",
+     "url": "", "days": 7, "max_items": 200, "min_interval_seconds": 2.0,
+     # 只收灾害相关类别；冰山（seaLakeIce）等归 other，默认不当地图灾害层
+     "hazards": ["wildfire", "volcano", "flood", "storm", "earthquake", "drought"],
+     "enabled": True, "source_type": "geo",
+     "notes": "NASA EONET v3 官方 API；免 key；含 Point/Polygon；不进入新闻聚类"},
+
+    # GDACS：全球灾害警报（EU JRC）。
+    {"source_id": "gdacs", "platform": "GDACS", "name": "GDACS 灾害警报",
+     "kind": "geo", "adapter": "gdacs", "layer": "gdacs",
+     "url": "https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH",
+     "max_items": 300,
+     # 存全量列表、由时间窗决定展示；iscurrent 仍保留在 raw 里供审计。
+     # 若只收 iscurrent=true，实测只剩 2 条，地图覆盖会过低。
+     "current_only": False, "min_interval_seconds": 3.0,
+     "enabled": True, "source_type": "geo",
+     "notes": "GDACS 官方 API；免 key；含 alertlevel 警戒等级；使用条款需人工核对"},
+
+    # ---- 国际新闻（官方 RSS，实测可解析；进入现有聚类与去重流水线） ----
+    {"source_id": "bbc_world", "platform": "BBC World", "name": "BBC 世界新闻",
+     "kind": "rss", "adapter": "rss", "url": "https://feeds.bbci.co.uk/news/world/rss.xml",
+     "language": "en", "source_type": "news", "enabled": True, "max_items": 30,
+     "notes": "BBC 官方 RSS；免 key；英文国际新闻"},
+    {"source_id": "guardian_world", "platform": "The Guardian", "name": "卫报·国际",
+     "kind": "rss", "adapter": "rss", "url": "https://www.theguardian.com/world/rss",
+     "language": "en", "source_type": "news", "enabled": True, "max_items": 30,
+     "notes": "卫报官方 RSS；免 key；英文国际新闻"},
+    {"source_id": "aljazeera", "platform": "Al Jazeera", "name": "半岛电视台",
+     "kind": "rss", "adapter": "rss", "url": "https://www.aljazeera.com/xml/rss/all.xml",
+     "language": "en", "source_type": "news", "enabled": True, "max_items": 30,
+     "notes": "半岛电视台官方 RSS；免 key；中东与全球南方视角"},
+    {"source_id": "npr_world", "platform": "NPR", "name": "NPR·国际",
+     "kind": "rss", "adapter": "rss", "url": "https://feeds.npr.org/1004/rss.xml",
+     "language": "en", "source_type": "news", "enabled": True, "max_items": 25,
+     "notes": "NPR 官方 RSS；免 key；美国公共广播国际新闻"},
+
     # ---- 通过第三方聚合 API 接入（无可直连公开接口的平台） ----
     {"source_id": "douyin", "platform": "抖音", "name": "抖音热点", "kind": "hotlist",
      "adapter": "newsnow", "api_id": "douyin", "expected_domain": "douyin.com",
@@ -166,6 +214,17 @@ def unavailable(spec: Dict[str, Any], make_item) -> List[Dict[str, Any]]:
 
 ADAPTERS["unavailable"] = unavailable
 
+# 结构化地理图层的适配器单独登记：它们的入参/出参与新闻适配器不同
+# （新闻返回 item 列表，地理返回经纬度点），但"每个 spec 的 adapter 必须已注册"
+# 这条不变量两边都要成立。
+from ...geo import sources as geo_sources  # noqa: E402
+
+GEO_ADAPTERS: Dict[str, Any] = {
+    "usgs": geo_sources.fetch_points,
+    "eonet": geo_sources.fetch_points,
+    "gdacs": geo_sources.fetch_points,
+}
+
 
 def _hash(value: str) -> str:
     return hashlib.sha1((value or "").encode("utf-8", "ignore")).hexdigest()
@@ -201,7 +260,8 @@ def make_item(spec: Dict[str, Any], title: str, url: str = "", published_at: str
 
 _OVERRIDABLE = ("url", "enabled", "max_items", "query", "timespan", "headers", "notes",
                 "language", "api_id", "expected_domain", "verify_domain", "timeout",
-                "tag", "zone", "max_results")
+                "tag", "zone", "max_results", "feed", "period", "layer", "max_age_days",
+                "min_interval_seconds")
 
 
 def _pick(*values, default=None):
@@ -334,6 +394,18 @@ def _run_one(spec: Dict[str, Any]) -> Tuple[Dict[str, Any], List[Dict[str, Any]]
         return spec, [], "%s: %s" % (type(exc).__name__, exc), int((time.time() - started) * 1000)
 
 
+def _run_geo(spec: Dict[str, Any]) -> Tuple[Dict[str, Any], List[Dict[str, Any]], str, int]:
+    """结构化地理图层：只做网络请求 + 解析，**不写库**（写库由调用方短事务完成）。"""
+    from ...geo import sources as geo_sources
+
+    started = time.time()
+    try:
+        points = geo_sources.fetch_points(spec) or []
+        return spec, points, "", int((time.time() - started) * 1000)
+    except Exception as exc:  # noqa: BLE001 - 单个图层失败不影响其它源
+        return spec, [], "%s: %s" % (type(exc).__name__, exc), int((time.time() - started) * 1000)
+
+
 def _haystack(item: Dict[str, Any]) -> str:
     return ((item.get("title") or "") + " " + (item.get("raw_content") or "")).lower()
 
@@ -456,14 +528,31 @@ def collect(conn, cfg: Dict[str, Any], force: bool = False) -> Dict[str, Any]:
     total_filtered = 0
     total_ranks = 0
     per_source: List[Dict[str, Any]] = []
+    geo_layers: List[Dict[str, Any]] = []
 
     with cf.ThreadPoolExecutor(max_workers=6) as pool:
-        futures = [pool.submit(_run_one, spec) for spec in runnable]
+        futures = [pool.submit(_run_geo if spec.get("kind") == "geo" else _run_one, spec)
+                   for spec in runnable]
         for future in cf.as_completed(futures):
             spec, items, error, latency = future.result()
             if error:
                 store.record_source_result(conn, spec["source_id"], False, 0, latency, error, now)
                 failed.append({"source_id": spec["source_id"], "name": spec["name"], "error": error})
+            elif spec.get("kind") == "geo":
+                # 结构化地理点：不进 news 过滤/聚类统计，只写 radar_geo_points
+                for point in items:
+                    point.setdefault("collected_at", now)
+                counts = store.upsert_geo_points(conn, items)
+                store.record_source_result(conn, spec["source_id"], True, len(items), latency,
+                                           None, now)
+                ok_sources += 1
+                geo_layers.append({
+                    "source_id": spec["source_id"],
+                    "layer": spec.get("layer") or spec["source_id"],
+                    "points": len(items),
+                    "inserted": counts["inserted"],
+                    "updated": counts["updated"],
+                })
             else:
                 total_raw += len(items)
                 kept, noise, low, truncated = filter_items(spec, items, cfg)
@@ -497,5 +586,6 @@ def collect(conn, cfg: Dict[str, Any], force: bool = False) -> Dict[str, Any]:
         "items_seen": total_seen,
         "ranks_recorded": total_ranks,
         "per_source": per_source,
+        "geo_layers": geo_layers,
         "collected_at": now,
     }

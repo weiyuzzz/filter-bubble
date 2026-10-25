@@ -185,6 +185,38 @@ DEFAULTS: Dict[str, Any] = {
         ],
     },
     "retention": {"days": 90},
+    # 全球态势监控（core/radar/intel.py）：全部为可解释的固定口径参数。
+    # 注意：这些常量是"本站的归一化参考"，不是国际标准，改动会让历史序列与新点不可比。
+    "intel": {
+        # 当前固定口径版本；版本 1 从本次开始逐日物化到 radar_threat_daily
+        "caliber_version": 1,
+        "window_days": 7,
+        # 达到这个天数才认为历史"完整"；不足时接口会下调 history_confidence
+        "min_days_for_full_confidence": 7,
+        # 归一化参考值（分母）：达到该量则分项取 1.0
+        "activity_refs": {
+            "event_ref": 200,      # 每日事件数参考
+            "item_ref": 400,       # 每日条目数参考
+            "platform_ref": 12,    # 当日平台广度参考
+            "evidence_gap_ref": 5, # 缺媒体报道的事件数参考
+        },
+        # 威胁活动分项权重（intensity 用绝对 raw_heat，不用按日重标定的 heat）
+        "activity_weights": {
+            "intensity": 0.40, "volume": 0.25, "breadth": 0.20, "growth": 0.15,
+        },
+        # 情报可信度分项权重
+        "credibility_weights": {
+            "verified_share": 0.45, "concentration_free": 0.25, "evidence_ok": 0.30,
+        },
+        # 战略风险估算权重（活动 / 证据不确定 / 监控盲区）
+        "strategic_weights": {
+            "observed_activity": 0.55, "evidence_uncertainty": 0.25, "monitoring_blind_spot": 0.20,
+        },
+        # 认为"国际来源覆盖达标"的非中文条目占比参考值
+        "intl_share_ref": 0.30,
+        "live_news_default_limit": 50,
+        "live_news_max_limit": 200,
+    },
     "llm": {
         "enabled": False,
         "provider": "openai_compatible",

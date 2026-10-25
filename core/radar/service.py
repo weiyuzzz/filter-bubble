@@ -153,10 +153,39 @@ def collect_and_report(cfg: Optional[Dict[str, Any]] = None, reason: str = "manu
         stats["stories"] = len(stories)
         stats["items_considered"] = len(items)
 
+        # 地理标注 + 主题分类：只处理当天事件，纯本地计算（不联网），
+        # 每 50 条一个短事务，避免长事务增加写锁竞争。
+        try:
+            from . import geo_tag
+            geo_stats = geo_tag.tag_events(conn, events, force=False, commit_every=50)
+            stats["geo_tag"] = {
+                "processed": geo_stats.get("processed"),
+                "located": geo_stats.get("located"),
+                "by_confidence": geo_stats.get("by_confidence"),
+                "by_theme": geo_stats.get("by_theme"),
+            }
+        except Exception as exc:  # noqa: BLE001 - 地理标注失败不影响日报
+            print("[radar] geo tagging failed:", exc)
+            stats["geo_tag"] = {"error": "%s: %s" % (type(exc).__name__, exc)}
+
         _set("reporting")
         payload = report.build(conn, date, cfg, collect_summary)
         store.save_report(conn, date, "daily", payload, now_iso(),
                           version=int(payload.get("version") or 1))
+        # 全球态势：在同一个事务里物化当日的固定口径快照。
+        # 纯本地计算，不联网、不等待外部请求；失败不影响日报。
+        try:
+            from . import intel
+            record = intel.record_daily_snapshot(conn, date, cfg)
+            stats["threat_snapshot"] = {
+                "date": date,
+                "caliber_version": record.get("caliber_version"),
+                "activity": record.get("activity"),
+                "credibility": record.get("credibility"),
+            }
+        except Exception as exc:  # noqa: BLE001
+            print("[radar] threat snapshot failed:", exc)
+            stats["threat_snapshot"] = {"error": "%s: %s" % (type(exc).__name__, exc)}
         conn.commit()
         stats["report_date"] = date
 
@@ -189,6 +218,15 @@ def collect_and_report(cfg: Optional[Dict[str, Any]] = None, reason: str = "manu
         _end("%s: %s" % (type(exc).__name__, exc), stats)
         return {"ok": False, "run_id": run_id, "error": str(exc), "stats": stats}
     finally:
+        # 兜底收尾：任何异常路径漏掉时也把运行记录置为 failed，绝不留 running
+        try:
+            row = conn.execute("SELECT status FROM radar_runs WHERE id=?", (run_id,)).fetchone()
+            if row is not None and str(row["status"]) == "running":
+                store.finish_run(conn, run_id, now_iso(), "failed", stats,
+                                 error or "运行未正常结束（兜底收尾）")
+                conn.commit()
+        except Exception:  # noqa: BLE001 - 收尾失败也不能再抛出去
+            pass
         conn.close()
 
 
@@ -203,6 +241,12 @@ def generate_report_only(cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]
         date = today()
         payload = report.build(conn, date, cfg)
         store.save_report(conn, date, "daily", payload, now_iso())
+        # 与完整流水线一致：同一事务内物化当日态势快照
+        try:
+            from . import intel
+            intel.record_daily_snapshot(conn, date, cfg)
+        except Exception as exc:  # noqa: BLE001
+            print("[radar] threat snapshot failed:", exc)
         conn.commit()
         _end(None, {"report_date": date})
         return {"ok": True, "date": date}
@@ -354,6 +398,17 @@ def scheduler_loop(stop: threading.Event) -> None:
 
 
 def start_scheduler(stop: threading.Event) -> Optional[threading.Thread]:
+    # 启动时收尾上一次被中断、永远停在 running 的运行记录（不新增任何线程）
+    try:
+        conn = db.connect()
+        try:
+            stale = store.finish_stale_runs(conn)
+        finally:
+            conn.close()
+        if stale:
+            print("[radar] 已收尾 %d 条未正常结束的运行记录" % stale)
+    except Exception as exc:  # noqa: BLE001
+        print("[radar] stale run cleanup failed:", exc)
     thread = threading.Thread(target=scheduler_loop, args=(stop,), daemon=True, name="radar-scheduler")
     thread.start()
     return thread

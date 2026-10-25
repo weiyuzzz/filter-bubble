@@ -194,6 +194,69 @@ CREATE TABLE IF NOT EXISTS radar_rank_history (
 );
 CREATE INDEX IF NOT EXISTS idx_radar_rank_hash ON radar_rank_history(url_hash, captured_at DESC);
 CREATE INDEX IF NOT EXISTS idx_radar_rank_date ON radar_rank_history(date, captured_at DESC);
+
+-- 每日态势快照（全球态势监控）：把"当日真实输入"按固定口径物化下来。
+-- 目的是让历史趋势只依赖当次写入的真实值，而不是事后用"当前 raw_heat"回填历史。
+-- caliber_version: 1 = 本次引入的固定口径；0 = 由 radar_event_snapshots 反推的旧口径（输入不全）。
+CREATE TABLE IF NOT EXISTS radar_threat_daily (
+    date TEXT PRIMARY KEY,
+    caliber_version INTEGER NOT NULL DEFAULT 1,
+    activity REAL NOT NULL DEFAULT 0,
+    credibility REAL,
+    activity_components TEXT NOT NULL DEFAULT '{}',
+    credibility_components TEXT NOT NULL DEFAULT '{}',
+    event_count INTEGER NOT NULL DEFAULT 0,
+    story_count INTEGER NOT NULL DEFAULT 0,
+    item_count INTEGER NOT NULL DEFAULT 0,
+    platform_count INTEGER NOT NULL DEFAULT 0,
+    source_count INTEGER NOT NULL DEFAULT 0,
+    unverified_share REAL,
+    concentration_share REAL,
+    evidence_gap_count INTEGER,
+    continuing_event_count INTEGER NOT NULL DEFAULT 0,
+    grew_event_count INTEGER NOT NULL DEFAULT 0,
+    top_activity_heat_mean REAL,
+    inputs_available TEXT NOT NULL DEFAULT '[]',
+    missing_inputs TEXT NOT NULL DEFAULT '[]',
+    computed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_radar_threat_daily_date ON radar_threat_daily(date DESC);
+
+-- 结构化地理点（地震/灾害等）。与新闻聚类完全隔离：
+-- 这些"标题"是程序生成的，塞进 token 相似度会污染新闻事件，而且量级会挤爆 O(n²) 聚类。
+-- (layer, external_id) 唯一 → 重复采集幂等更新，不产生重复行。
+CREATE TABLE IF NOT EXISTS radar_geo_points (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    layer TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    title TEXT,
+    detail TEXT,
+    magnitude REAL,
+    severity TEXT,
+    observed_at TEXT,
+    source_id TEXT,
+    url TEXT,
+    collected_at TEXT NOT NULL,
+    raw TEXT NOT NULL DEFAULT '{}',
+    -- 灾害类型（earthquake/volcano/wildfire/flood/storm/...），供前端按类型开关
+    hazard TEXT,
+    magnitude_unit TEXT,
+    -- 几何：Point 才是精确点位；Polygon 只保存原始多边形，前端按面绘制
+    geometry_type TEXT,
+    geometry_json TEXT,
+    -- 位置精度：point=来源点 / area=面范围 / approximate=近似
+    position_precision TEXT,
+    closed_at TEXT,
+    updated_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_radar_geo_points_ext
+    ON radar_geo_points(layer, external_id);
+CREATE INDEX IF NOT EXISTS idx_radar_geo_points_layer
+    ON radar_geo_points(layer, observed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_radar_geo_points_collected
+    ON radar_geo_points(collected_at DESC);
 """
 
 
@@ -204,6 +267,29 @@ def init() -> None:
         # 向后兼容的增量迁移：只加列，不动已有数据
         _ensure_column(conn, "radar_events", "story_id", "TEXT")
         _ensure_column(conn, "radar_sources", "paused_reason", "TEXT")
+        # 地理维度：本阶段只预留字段（全部保持 NULL），不做任何自动回填。
+        # 报道来源国与事件发生国必须是两个字段，不能互相顶替。
+        _ensure_column(conn, "radar_events", "origin_country_code", "TEXT")
+        _ensure_column(conn, "radar_events", "event_country_code", "TEXT")
+        _ensure_column(conn, "radar_events", "geo_lat", "REAL")
+        _ensure_column(conn, "radar_events", "geo_lon", "REAL")
+        _ensure_column(conn, "radar_events", "geo_label", "TEXT")
+        _ensure_column(conn, "radar_events", "geo_confidence", "TEXT")
+        _ensure_column(conn, "radar_events", "geo_method", "TEXT")
+        _ensure_column(conn, "radar_events", "geo_source", "TEXT")
+        _ensure_column(conn, "radar_items", "origin_country_code", "TEXT")
+        _ensure_column(conn, "radar_items", "event_country_code", "TEXT")
+        # 独立的分类字段：不覆盖 category（category 服务于兴趣主题，语义保持不变）
+        _ensure_column(conn, "radar_events", "theme", "TEXT")
+        _ensure_column(conn, "radar_events", "region", "TEXT")
+        # 结构化地理图层的扩展列（阶段四 B：EONET/GDACS 需要灾害类型与几何）
+        _ensure_column(conn, "radar_geo_points", "hazard", "TEXT")
+        _ensure_column(conn, "radar_geo_points", "magnitude_unit", "TEXT")
+        _ensure_column(conn, "radar_geo_points", "geometry_type", "TEXT")
+        _ensure_column(conn, "radar_geo_points", "geometry_json", "TEXT")
+        _ensure_column(conn, "radar_geo_points", "position_precision", "TEXT")
+        _ensure_column(conn, "radar_geo_points", "closed_at", "TEXT")
+        _ensure_column(conn, "radar_geo_points", "updated_at", "TEXT")
         conn.commit()
 
 
@@ -533,6 +619,282 @@ def last_runs(conn: sqlite3.Connection, limit: int = 10) -> List[Dict[str, Any]]
             d["stats"] = {}
         out.append(d)
     return out
+
+
+def finish_stale_runs(conn: sqlite3.Connection, grace_minutes: int = 180) -> int:
+    """收尾进程被中断后永久停在 running 的运行记录，返回处理条数。
+
+    调度器只在启动时调用一次：把明显早于当前时间、仍标记 running 的记录
+    置为 failed 并写入原因，避免"数据库里永远挂着一个正在运行的任务"。
+    宽限期内（可能是另一个仍在运行的进程刚开的）不动。
+    """
+    import datetime as dt
+
+    now = dt.datetime.now().astimezone()
+    cutoff = (now - dt.timedelta(minutes=max(1, int(grace_minutes)))).isoformat(timespec="seconds")
+    cur = conn.execute(
+        "UPDATE radar_runs SET status='failed', finished_at=?, "
+        "error=COALESCE(NULLIF(error, ''), '运行未正常结束（进程中断），启动时自动收尾') "
+        "WHERE status='running' AND started_at < ?",
+        (now.isoformat(timespec="seconds"), cutoff),
+    )
+    conn.commit()
+    return cur.rowcount or 0
+
+
+# ---------- threat snapshots（全球态势监控：每日固定口径快照） ----------
+
+def save_threat_daily(conn: sqlite3.Connection, row: Dict[str, Any]) -> None:
+    """按主键 upsert 当日态势快照。只写本地计算出的真实输入，不做任何推测。"""
+    conn.execute(
+        """INSERT INTO radar_threat_daily(
+               date, caliber_version, activity, credibility, activity_components,
+               credibility_components, event_count, story_count, item_count, platform_count,
+               source_count, unverified_share, concentration_share, evidence_gap_count,
+               continuing_event_count, grew_event_count, top_activity_heat_mean,
+               inputs_available, missing_inputs, computed_at)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(date) DO UPDATE SET
+             caliber_version=excluded.caliber_version, activity=excluded.activity,
+             credibility=excluded.credibility,
+             activity_components=excluded.activity_components,
+             credibility_components=excluded.credibility_components,
+             event_count=excluded.event_count, story_count=excluded.story_count,
+             item_count=excluded.item_count, platform_count=excluded.platform_count,
+             source_count=excluded.source_count, unverified_share=excluded.unverified_share,
+             concentration_share=excluded.concentration_share,
+             evidence_gap_count=excluded.evidence_gap_count,
+             continuing_event_count=excluded.continuing_event_count,
+             grew_event_count=excluded.grew_event_count,
+             top_activity_heat_mean=excluded.top_activity_heat_mean,
+             inputs_available=excluded.inputs_available,
+             missing_inputs=excluded.missing_inputs, computed_at=excluded.computed_at""",
+        (
+            row["date"], int(row.get("caliber_version") or 1), float(row.get("activity") or 0),
+            None if row.get("credibility") is None else float(row["credibility"]),
+            json.dumps(row.get("activity_components") or {}, ensure_ascii=False),
+            json.dumps(row.get("credibility_components") or {}, ensure_ascii=False),
+            int(row.get("event_count") or 0), int(row.get("story_count") or 0),
+            int(row.get("item_count") or 0), int(row.get("platform_count") or 0),
+            int(row.get("source_count") or 0),
+            None if row.get("unverified_share") is None else float(row["unverified_share"]),
+            None if row.get("concentration_share") is None else float(row["concentration_share"]),
+            None if row.get("evidence_gap_count") is None else int(row["evidence_gap_count"]),
+            int(row.get("continuing_event_count") or 0), int(row.get("grew_event_count") or 0),
+            None if row.get("top_activity_heat_mean") is None else float(row["top_activity_heat_mean"]),
+            json.dumps(row.get("inputs_available") or [], ensure_ascii=False),
+            json.dumps(row.get("missing_inputs") or [], ensure_ascii=False),
+            row["computed_at"],
+        ),
+    )
+
+
+def threat_daily_range(conn: sqlite3.Connection, since_date: str, until_date: str) -> List[Dict[str, Any]]:
+    """读取 [since_date, until_date] 区间内已物化的固定口径快照。"""
+    rows = conn.execute(
+        "SELECT * FROM radar_threat_daily WHERE date >= ? AND date <= ? ORDER BY date ASC",
+        (since_date, until_date),
+    ).fetchall()
+    out = []
+    for row in rows:
+        d = dict(row)
+        for key in ("activity_components", "credibility_components", "inputs_available",
+                    "missing_inputs"):
+            try:
+                d[key] = json.loads(d.get(key) or ("[]" if key.endswith("inputs") else "{}"))
+            except ValueError:
+                d[key] = [] if key.endswith("inputs") else {}
+        out.append(d)
+    return out
+
+
+def threat_daily_by_date(conn: sqlite3.Connection, date: str) -> Optional[Dict[str, Any]]:
+    rows = threat_daily_range(conn, date, date)
+    return rows[0] if rows else None
+
+
+# ---------- 地理：事件地理标注与结构化地理点 ----------
+
+GEO_EVENT_COLUMNS = ("origin_country_code", "event_country_code", "geo_lat", "geo_lon",
+                     "geo_label", "geo_confidence", "geo_method", "geo_source")
+
+
+def apply_event_geo(conn: sqlite3.Connection, event_id: str, result: Dict[str, Any]) -> None:
+    """把地理识别结果写入事件。**只写识别出来的值**，识别不出来就写 NULL。"""
+    conn.execute(
+        """UPDATE radar_events SET
+             origin_country_code=?, event_country_code=?, geo_lat=?, geo_lon=?,
+             geo_label=?, geo_confidence=?, geo_method=?, geo_source=?
+           WHERE id=?""",
+        (
+            result.get("origin_country_code"),
+            result.get("country_code"),
+            result.get("latitude"),
+            result.get("longitude"),
+            result.get("label") or None,
+            result.get("confidence"),
+            result.get("method"),
+            result.get("source") or None,
+            event_id,
+        ),
+    )
+
+
+def events_for_geo_tagging(conn: sqlite3.Connection, limit: int = 500,
+                           force: bool = False) -> List[Dict[str, Any]]:
+    """需要做地理标注的事件。
+
+    默认只取"从未标注 / 标注为 none"的；``force=True`` 时取全部事件，
+    用于规则变更后按新口径重算（例如体育队名误判收紧之后）。
+    """
+    if force:
+        rows = conn.execute(
+            "SELECT * FROM radar_events ORDER BY date DESC, heat DESC LIMIT ?",
+            (limit,)).fetchall()
+    else:
+        rows = conn.execute(
+            """SELECT * FROM radar_events
+               WHERE geo_method IS NULL OR geo_method IN ('none', '')
+               ORDER BY date DESC, heat DESC LIMIT ?""", (limit,)).fetchall()
+    out = []
+    for row in rows:
+        data = dict(row)
+        try:
+            data["keywords"] = json.loads(data.get("keywords") or "[]")
+        except ValueError:
+            data["keywords"] = []
+        out.append(data)
+    return out
+
+
+def geo_tag_stats(conn: sqlite3.Connection) -> Dict[str, Any]:
+    row = conn.execute(
+        """SELECT COUNT(1) total,
+                  SUM(CASE WHEN geo_confidence IS NOT NULL AND geo_confidence <> 'none'
+                           THEN 1 ELSE 0 END) located,
+                  SUM(CASE WHEN event_country_code IS NOT NULL THEN 1 ELSE 0 END) with_country,
+                  SUM(CASE WHEN geo_confidence = 'high' THEN 1 ELSE 0 END) high,
+                  SUM(CASE WHEN geo_confidence = 'medium' THEN 1 ELSE 0 END) medium,
+                  SUM(CASE WHEN geo_confidence = 'low' THEN 1 ELSE 0 END) low
+           FROM radar_events""").fetchone()
+    total = int((row["total"] if row else 0) or 0)
+    located = int((row["located"] if row else 0) or 0)
+    return {
+        "events_total": total,
+        "events_located": located,
+        "events_with_country": int((row["with_country"] if row else 0) or 0),
+        "confidence": {"high": int((row["high"] if row else 0) or 0),
+                       "medium": int((row["medium"] if row else 0) or 0),
+                       "low": int((row["low"] if row else 0) or 0)},
+        "hit_rate": (round(located / float(total), 4) if total else None),
+    }
+
+
+def upsert_geo_points(conn: sqlite3.Connection, points: Iterable[Dict[str, Any]]) -> Dict[str, int]:
+    """幂等写入地理点：同一 (layer, external_id) 只更新，不新增。"""
+    inserted = 0
+    updated = 0
+    for point in points:
+        exists = conn.execute(
+            "SELECT 1 FROM radar_geo_points WHERE layer=? AND external_id=?",
+            (point["layer"], str(point["external_id"]))).fetchone()
+        conn.execute(
+            """INSERT INTO radar_geo_points(layer, external_id, latitude, longitude, title,
+                   detail, magnitude, severity, observed_at, source_id, url, collected_at, raw,
+                   hazard, magnitude_unit, geometry_type, geometry_json, position_precision,
+                   closed_at, updated_at)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               ON CONFLICT(layer, external_id) DO UPDATE SET
+                 latitude=excluded.latitude, longitude=excluded.longitude, title=excluded.title,
+                 detail=excluded.detail, magnitude=excluded.magnitude, severity=excluded.severity,
+                 observed_at=excluded.observed_at, url=excluded.url,
+                 collected_at=excluded.collected_at, raw=excluded.raw,
+                 hazard=excluded.hazard, magnitude_unit=excluded.magnitude_unit,
+                 geometry_type=excluded.geometry_type, geometry_json=excluded.geometry_json,
+                 position_precision=excluded.position_precision,
+                 closed_at=excluded.closed_at, updated_at=excluded.updated_at""",
+            (
+                point["layer"], str(point["external_id"]), float(point["lat"]),
+                float(point["lon"]), point.get("title"), point.get("detail"),
+                point.get("magnitude"), point.get("severity"), point.get("observed_at"),
+                point.get("source_id"), point.get("url"), point.get("collected_at"),
+                json.dumps(point.get("raw") or {}, ensure_ascii=False),
+                point.get("hazard"), point.get("magnitude_unit"),
+                point.get("geometry_type"), json.dumps(point.get("geometry_json"), ensure_ascii=False)
+                if point.get("geometry_json") is not None else None,
+                point.get("position_precision"), point.get("closed_at"), point.get("updated_at"),
+            ),
+        )
+        if exists:
+            updated += 1
+        else:
+            inserted += 1
+    return {"inserted": inserted, "updated": updated}
+
+
+# 判断一个灾害点是否"落在时间窗内"：取**活动区间**与窗口是否重叠，
+# 而不是只看起始时间。一场 10-14 开始、10-25 才结束的风暴，在"最近 7 天"里仍然应该出现。
+GEO_TIME_EXPR = ("COALESCE(NULLIF(closed_at, ''), NULLIF(observed_at, ''), collected_at)")
+
+
+def geo_points(conn: sqlite3.Connection, layer: Optional[str] = None,
+               since_iso: Optional[str] = None, limit: int = 800) -> List[Dict[str, Any]]:
+    where, params = [], []
+    if layer:
+        where.append("layer = ?")
+        params.append(layer)
+    if since_iso:
+        where.append("%s >= ?" % GEO_TIME_EXPR)
+        params.append(since_iso)
+    clause = (" WHERE " + " AND ".join(where)) if where else ""
+    rows = conn.execute(
+        "SELECT * FROM radar_geo_points%s ORDER BY %s DESC LIMIT ?" % (clause, GEO_TIME_EXPR),
+        params + [limit]).fetchall()
+    out = []
+    for row in rows:
+        data = dict(row)
+        try:
+            data["raw"] = json.loads(data.get("raw") or "{}")
+        except ValueError:
+            data["raw"] = {}
+        out.append(data)
+    return out
+
+
+def geo_point_counts(conn: sqlite3.Connection,
+                     since_iso: Optional[str] = None) -> Dict[str, int]:
+    if since_iso:
+        rows = conn.execute(
+            "SELECT layer, COUNT(1) c FROM radar_geo_points "
+            "WHERE %s >= ? GROUP BY layer" % GEO_TIME_EXPR, (since_iso,)).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT layer, COUNT(1) c FROM radar_geo_points GROUP BY layer").fetchall()
+    return {row["layer"]: int(row["c"]) for row in rows}
+
+
+def geo_hazard_counts(conn: sqlite3.Connection,
+                      since_iso: Optional[str] = None) -> Dict[str, int]:
+    """按灾害类型统计点数（前端按 地震/火山/野火/洪水/其他 分开关）。"""
+    if since_iso:
+        rows = conn.execute(
+            "SELECT COALESCE(NULLIF(hazard,''),'other') h, COUNT(1) c FROM radar_geo_points "
+            "WHERE %s >= ? GROUP BY h" % GEO_TIME_EXPR,
+            (since_iso,)).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT COALESCE(NULLIF(hazard,''),'other') h, COUNT(1) c "
+            "FROM radar_geo_points GROUP BY h").fetchall()
+    return {row["h"]: int(row["c"]) for row in rows}
+
+
+def last_geo_collect_at(conn: sqlite3.Connection, layer: Optional[str] = None) -> Optional[str]:
+    if layer:
+        row = conn.execute("SELECT MAX(collected_at) m FROM radar_geo_points WHERE layer=?",
+                           (layer,)).fetchone()
+    else:
+        row = conn.execute("SELECT MAX(collected_at) m FROM radar_geo_points").fetchone()
+    return (row["m"] if row else None) or None
 
 
 # ---------- push ----------

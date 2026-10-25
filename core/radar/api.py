@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from .. import db
 from . import config as radar_config
-from . import investigate, llm, push, report, secrets, service, sources, store
+from . import intel, investigate, llm, push, report, secrets, service, sources, store
 
 _TTL = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
@@ -102,6 +102,8 @@ def handle_get(path: str, query: Dict[str, str]) -> Tuple[int, Dict[str, Any]]:
             event["items"] = store.items_for_event(conn, event_id)
             event["claims"] = store.claims_for_event(conn, event_id)
             return _ok(event)
+        if path.startswith("/api/radar/intel"):
+            return _intel(path, query, conn, cfg)
         return _err(404, "not found")
     except Exception as exc:  # noqa: BLE001 - radar errors must not break the app
         print("[radar] api GET error:", exc)
@@ -118,6 +120,124 @@ def _investigation_view(conn, event_id: str) -> Dict[str, Any]:
         if str(row["date"]).endswith("|" + event_id):
             return json.loads(row["payload"])
     return investigate.run(conn, event_id, radar_config.cached())
+
+
+def _query_int(query: Dict[str, str], name: str) -> Optional[int]:
+    raw = query.get(name)
+    if raw is None or str(raw).strip() == "":
+        return None
+    try:
+        return int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _query_text(query: Dict[str, str], name: str, limit: int = 60) -> str:
+    return str(query.get(name) or "").strip()[:limit]
+
+
+def _query_float(query: Dict[str, str], name: str) -> Optional[float]:
+    raw = query.get(name)
+    if raw is None or str(raw).strip() == "":
+        return None
+    try:
+        return float(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _query_layers(query: Dict[str, str]) -> Optional[List[str]]:
+    raw = str(query.get("layers") or "").strip()
+    if not raw:
+        return None
+    return [part.strip() for part in raw.split(",") if part.strip()][:12]
+
+
+def _query_hazards(query: Dict[str, str]) -> Optional[List[str]]:
+    """灾害类型过滤：earthquake/volcano/wildfire/flood/storm/drought/other。"""
+    raw = str(query.get("hazards") or "").strip()
+    if not raw:
+        return None
+    return [part.strip().lower() for part in raw.split(",") if part.strip()][:12]
+
+
+def _intel(path: str, query: Dict[str, str], conn, cfg) -> Tuple[int, Dict[str, Any]]:
+    """全球态势监控的只读接口。所有失败都返回可诊断的错误信息，且不影响其它接口。"""
+    days = _query_int(query, "days") or 7
+    if days < 1:
+        days = 1
+    if days > 90:
+        days = 90
+    end_date = _query_text(query, "date", 10) or None
+    theme = _query_text(query, "theme", 24) or None
+    country = _query_text(query, "country", 3) or None
+    min_heat = _query_float(query, "min_heat")
+    layers = _query_layers(query)
+    hazards = _query_hazards(query)
+    try:
+        if path == "/api/radar/intel":
+            feed_limit = _query_int(query, "feed_limit")
+            feed_offset = _query_int(query, "feed_offset")
+            news_limit = _query_int(query, "news_limit")
+            payload = intel.build_payload(
+                conn, cfg,
+                days=days,
+                end_date=end_date,
+                feed_limit=feed_limit if feed_limit is not None else 20,
+                feed_offset=feed_offset or 0,
+                news_limit=news_limit if news_limit is not None else 50,
+                before_id=_query_int(query, "before_id"),
+                since_id=_query_int(query, "since_id"),
+                q=_query_text(query, "q"),
+                theme=theme, country=country, min_heat=min_heat, layers=layers,
+                hazards=hazards,
+            )
+            # 大模型可用性由 api 层补充，让 intel 模块保持对模型零依赖
+            try:
+                payload.setdefault("llm", {})["enabled"] = bool(llm.resolve(cfg)[0])
+            except Exception:  # noqa: BLE001
+                payload["llm"]["enabled"] = False
+            return _ok(payload)
+        if path == "/api/radar/intel/threat":
+            timeline = intel.threat_timeline(conn, days=days, end_date=end_date, cfg=cfg)
+            return _ok({"generated_at": intel._now_iso(),
+                        "window": timeline.get("window"),
+                        "threat_timeline": timeline,
+                        "coverage": intel.coverage_status(conn, timeline=timeline, cfg=cfg),
+                        "missing_inputs": timeline.get("missing_inputs") or [],
+                        "degraded": ([] if timeline.get("history_confidence") not in ("none", "insufficient")
+                                     else [{"module": "threat_timeline",
+                                            "reason": "历史快照不足，不做插值",
+                                            "missing_inputs": ["history_depth"]}])})
+        if path == "/api/radar/intel/live":
+            limit = _query_int(query, "limit")
+            payload = intel.live_news(
+                conn, limit=limit if limit is not None else 50,
+                before_id=_query_int(query, "before_id"),
+                since_id=_query_int(query, "since_id"),
+                q=_query_text(query, "q"), cfg=cfg)
+            payload["generated_at"] = intel._now_iso()
+            payload["window"] = None
+            return _ok(payload)
+        if path == "/api/radar/intel/countries":
+            payload = intel.country_index(conn, days=days, cfg=cfg, theme=theme)
+            payload["generated_at"] = intel._now_iso()
+            return _ok(payload)
+        if path == "/api/radar/intel/map":
+            payload = intel.map_payload(conn, cfg=cfg, days=days, theme=theme,
+                                        country=country, min_heat=min_heat, layers=layers,
+                                        hazards=hazards)
+            payload["generated_at"] = intel._now_iso()
+            return _ok(payload)
+        return _err(404, "not found: %s" % path)
+    except Exception as exc:  # noqa: BLE001 - 新功能失败绝不能影响既有接口
+        print("[intel] GET error:", exc)
+        return 500, {
+            "error": "%s: %s" % (type(exc).__name__, exc),
+            "error_type": type(exc).__name__,
+            "path": path,
+            "hint": "全球态势接口失败；既有雷达接口不受影响。",
+        }
 
 
 def handle_post(path: str, body: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:

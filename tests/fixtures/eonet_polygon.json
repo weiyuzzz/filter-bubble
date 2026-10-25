@@ -1,0 +1,56 @@
+{
+ "title": "EONET Events",
+ "_fixture_note": "CONSTRUCTED FIXTURE (not a captured response). The live EONET v3 feed returned only Point geometries on 2026-10-26, so this sample follows the documented v3 schema to exercise the Polygon code path.",
+ "events": [
+  {
+   "id": "EONET_FIXTURE_POLYGON_1",
+   "title": "Wildfire FIXTURE AREA, Somewhere",
+   "description": "constructed polygon sample",
+   "closed": null,
+   "categories": [
+    {
+     "id": "wildfires",
+     "title": "Wildfires"
+    }
+   ],
+   "sources": [
+    {
+     "id": "FIXTURE",
+     "url": "https://example.invalid/fixture"
+    }
+   ],
+   "geometry": [
+    {
+     "magnitudeValue": 1200.0,
+     "magnitudeUnit": "acres",
+     "date": "2026-10-24T00:00:00Z",
+     "type": "Polygon",
+     "coordinates": [
+      [
+       [
+        -120.1,
+        38.1
+       ],
+       [
+        -120.0,
+        38.1
+       ],
+       [
+        -120.0,
+        38.2
+       ],
+       [
+        -120.1,
+        38.2
+       ],
+       [
+        -120.1,
+        38.1
+       ]
+      ]
+     ]
+    }
+   ]
+  }
+ ]
+}

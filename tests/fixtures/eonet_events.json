@@ -1,0 +1,294 @@
+{
+ "title": "EONET Events",
+ "description": "Natural events from EONET.",
+ "link": "https://eonet.gsfc.nasa.gov/api/v3/events",
+ "_fixture_note": "captured from eonet.gsfc.nasa.gov/api/v3/events?status=open&days=7 on 2026-10-26; geometry trimmed to the last 3 entries per event",
+ "events": [
+  {
+   "id": "EONET_25590",
+   "title": "Wildfire BEE HAVEN (2) (24-06), Hamilton, Florida",
+   "description": "28 Miles NW from LAKE CITY, FL",
+   "link": "https://eonet.gsfc.nasa.gov/api/v3/events/EONET_25590",
+   "closed": null,
+   "categories": [
+    {
+     "id": "wildfires",
+     "title": "Wildfires"
+    }
+   ],
+   "sources": [
+    {
+     "id": "IRWIN",
+     "url": "https://irwin.doi.gov/observer/incidents/2026-FLFLS-260601105"
+    }
+   ],
+   "geometry": [
+    {
+     "magnitudeValue": 2060.0,
+     "magnitudeUnit": "acres",
+     "date": "2026-10-22T21:45:00Z",
+     "type": "Point",
+     "coordinates": [
+      -82.8577778,
+      30.4952778
+     ]
+    }
+   ]
+  },
+  {
+   "id": "EONET_5359",
+   "title": "Iceberg A76C",
+   "description": null,
+   "link": "https://eonet.gsfc.nasa.gov/api/v3/events/EONET_5359",
+   "closed": null,
+   "categories": [
+    {
+     "id": "seaLakeIce",
+     "title": "Sea and Lake Ice"
+    }
+   ],
+   "sources": [
+    {
+     "id": "NATICE",
+     "url": "https://usicecenter.gov/Products/AntarcIcebergs"
+    }
+   ],
+   "geometry": [
+    {
+     "magnitudeValue": 112.0,
+     "magnitudeUnit": "NM^2",
+     "date": "2026-10-01T00:00:00Z",
+     "type": "Point",
+     "coordinates": [
+      -25.27,
+      -55.41
+     ]
+    },
+    {
+     "magnitudeValue": 112.0,
+     "magnitudeUnit": "NM^2",
+     "date": "2026-10-09T00:00:00Z",
+     "type": "Point",
+     "coordinates": [
+      -24.53,
+      -56.33
+     ]
+    },
+    {
+     "magnitudeValue": 112.0,
+     "magnitudeUnit": "NM^2",
+     "date": "2026-10-22T00:00:00Z",
+     "type": "Point",
+     "coordinates": [
+      -23.74,
+      -56.87
+     ]
+    }
+   ]
+  },
+  {
+   "id": "EONET_6288",
+   "title": "Iceberg D32",
+   "description": null,
+   "link": "https://eonet.gsfc.nasa.gov/api/v3/events/EONET_6288",
+   "closed": null,
+   "categories": [
+    {
+     "id": "seaLakeIce",
+     "title": "Sea and Lake Ice"
+    }
+   ],
+   "sources": [
+    {
+     "id": "NATICE",
+     "url": "https://usicecenter.gov/pub/Iceberg_Tabular.csv"
+    }
+   ],
+   "geometry": [
+    {
+     "magnitudeValue": 54.0,
+     "magnitudeUnit": "NM^2",
+     "date": "2026-09-18T00:00:00Z",
+     "type": "Point",
+     "coordinates": [
+      -38.36,
+      -57.62
+     ]
+    },
+    {
+     "magnitudeValue": 54.0,
+     "magnitudeUnit": "NM^2",
+     "date": "2026-10-01T00:00:00Z",
+     "type": "Point",
+     "coordinates": [
+      -38.41,
+      -56.49
+     ]
+    },
+    {
+     "magnitudeValue": 54.0,
+     "magnitudeUnit": "NM^2",
+     "date": "2026-10-22T00:00:00Z",
+     "type": "Point",
+     "coordinates": [
+      -39.35,
+      -56.65
+     ]
+    }
+   ]
+  },
+  {
+   "id": "EONET_6424",
+   "title": "Iceberg D33B",
+   "description": null,
+   "link": "https://eonet.gsfc.nasa.gov/api/v3/events/EONET_6424",
+   "closed": null,
+   "categories": [
+    {
+     "id": "seaLakeIce",
+     "title": "Sea and Lake Ice"
+    }
+   ],
+   "sources": [
+    {
+     "id": "NATICE",
+     "url": "https://usicecenter.gov/pub/Iceberg_Tabular.csv"
+    }
+   ],
+   "geometry": [
+    {
+     "magnitudeValue": 252.0,
+     "magnitudeUnit": "NM^2",
+     "date": "2026-10-09T00:00:00Z",
+     "type": "Point",
+     "coordinates": [
+      -48.18,
+      -57.75
+     ]
+    },
+    {
+     "magnitudeValue": 252.0,
+     "magnitudeUnit": "NM^2",
+     "date": "2026-10-15T00:00:00Z",
+     "type": "Point",
+     "coordinates": [
+      -46.05,
+      -56.98
+     ]
+    },
+    {
+     "magnitudeValue": 252.0,
+     "magnitudeUnit": "NM^2",
+     "date": "2026-10-22T00:00:00Z",
+     "type": "Point",
+     "coordinates": [
+      -43.32,
+      -56.74
+     ]
+    }
+   ]
+  },
+  {
+   "id": "EONET_12716",
+   "title": "Iceberg A85",
+   "description": null,
+   "link": "https://eonet.gsfc.nasa.gov/api/v3/events/EONET_12716",
+   "closed": null,
+   "categories": [
+    {
+     "id": "seaLakeIce",
+     "title": "Sea and Lake Ice"
+    }
+   ],
+   "sources": [
+    {
+     "id": "NATICE",
+     "url": "https://usicecenter.gov/pub/Iceberg_Tabular.csv"
+    }
+   ],
+   "geometry": [
+    {
+     "magnitudeValue": 30.0,
+     "magnitudeUnit": "NM^2",
+     "date": "2026-10-09T00:00:00Z",
+     "type": "Point",
+     "coordinates": [
+      -50.95,
+      -58.74
+     ]
+    },
+    {
+     "magnitudeValue": 30.0,
+     "magnitudeUnit": "NM^2",
+     "date": "2026-10-15T00:00:00Z",
+     "type": "Point",
+     "coordinates": [
+      -50.23,
+      -58.41
+     ]
+    },
+    {
+     "magnitudeValue": 30.0,
+     "magnitudeUnit": "NM^2",
+     "date": "2026-10-22T00:00:00Z",
+     "type": "Point",
+     "coordinates": [
+      -47.31,
+      -58.56
+     ]
+    }
+   ]
+  },
+  {
+   "id": "EONET_25589",
+   "title": "Hurricane Vance",
+   "description": null,
+   "link": "https://eonet.gsfc.nasa.gov/api/v3/events/EONET_25589",
+   "closed": null,
+   "categories": [
+    {
+     "id": "severeStorms",
+     "title": "Severe Storms"
+    }
+   ],
+   "sources": [
+    {
+     "id": "JTWC",
+     "url": "https://www.metoc.navy.mil/jtwc/products/ep2226.tcw"
+    }
+   ],
+   "geometry": [
+    {
+     "magnitudeValue": 80.0,
+     "magnitudeUnit": "kts",
+     "date": "2026-10-25T00:00:00Z",
+     "type": "Point",
+     "coordinates": [
+      -103.3,
+      13.5
+     ]
+    },
+    {
+     "magnitudeValue": 75.0,
+     "magnitudeUnit": "kts",
+     "date": "2026-10-25T06:00:00Z",
+     "type": "Point",
+     "coordinates": [
+      -103.3,
+      14.1
+     ]
+    },
+    {
+     "magnitudeValue": 65.0,
+     "magnitudeUnit": "kts",
+     "date": "2026-10-25T12:00:00Z",
+     "type": "Point",
+     "coordinates": [
+      -103.8,
+      14.6
+     ]
+    }
+   ]
+  }
+ ]
+}
