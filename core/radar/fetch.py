@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import gzip
 import html
+import json
 import re
 import threading
 import time
@@ -103,9 +104,16 @@ class FetchResult:
                 "latency_ms": self.latency_ms, "url": self.url, "bytes": len(self.text)}
 
 
-def get(url: str, headers: Optional[Dict[str, str]] = None, timeout: Optional[float] = None,
-        retries: Optional[int] = None, rate_key: str = "", min_interval: float = 0.0) -> FetchResult:
-    """One GET with at most ``retries + 1`` attempts and exponential backoff."""
+def _perform(method: str, url: str, body: Optional[bytes] = None,
+             headers: Optional[Dict[str, str]] = None, timeout: Optional[float] = None,
+             retries: Optional[int] = None, rate_key: str = "",
+             min_interval: float = 0.0) -> FetchResult:
+    """One request with at most ``retries + 1`` attempts and exponential backoff.
+
+    Error strings never carry the response body. Some upstreams return credentials in
+    their error bodies (AnySearch's 402 auto-registration returns username/password/
+    api_key), and these errors end up in logs, so only the status is kept.
+    """
     cfg = radar_config.cached()
     limits = cfg.get("limits") or {}
     timeout = float(timeout or limits.get("source_timeout_seconds", 12))
@@ -126,7 +134,7 @@ def get(url: str, headers: Optional[Dict[str, str]] = None, timeout: Optional[fl
     status = 0
     for attempt in range(retries + 1):
         try:
-            req = urllib.request.Request(url, headers=merged)
+            req = urllib.request.Request(url, data=body, headers=merged, method=method)
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 raw = resp.read()
                 raw = _decompress(raw, resp.headers.get("Content-Encoding", ""))
@@ -146,9 +154,31 @@ def get(url: str, headers: Optional[Dict[str, str]] = None, timeout: Optional[fl
     return FetchResult(False, status, "", last_error[:300], int((time.time() - started) * 1000), url)
 
 
-def get_json(url: str, **kwargs) -> Tuple[Optional[Any], FetchResult]:
-    import json
+def get(url: str, headers: Optional[Dict[str, str]] = None, timeout: Optional[float] = None,
+        retries: Optional[int] = None, rate_key: str = "", min_interval: float = 0.0) -> FetchResult:
+    """One GET with at most ``retries + 1`` attempts and exponential backoff."""
+    return _perform("GET", url, None, headers, timeout, retries, rate_key, min_interval)
 
+
+def post_json(url: str, payload: Any, headers: Optional[Dict[str, str]] = None,
+              timeout: Optional[float] = None, retries: Optional[int] = None,
+              rate_key: str = "", min_interval: float = 0.0) -> Tuple[Optional[Any], FetchResult]:
+    """POST a JSON body and parse a JSON response, with the same retry/rate policy."""
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    merged = {"Content-Type": "application/json", "Accept": "application/json"}
+    merged.update(headers or {})
+    result = _perform("POST", url, body, merged, timeout, retries, rate_key, min_interval)
+    if not result.ok:
+        return None, result
+    try:
+        return json.loads(result.text), result
+    except ValueError as exc:
+        result.ok = False
+        result.error = "invalid JSON: %s" % exc
+        return None, result
+
+
+def get_json(url: str, **kwargs) -> Tuple[Optional[Any], FetchResult]:
     result = get(url, **kwargs)
     if not result.ok:
         return None, result

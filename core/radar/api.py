@@ -65,6 +65,11 @@ def handle_get(path: str, query: Dict[str, str]) -> Tuple[int, Dict[str, Any]]:
                 event["items"] = store.items_for_event(conn, event["id"])[:6]
             return _ok({"date": date, "events": events})
         if path == "/api/radar/sources":
+            # 先把当前配置里的源同步进库：这样新加的源（自定义 RSS、AnySearch 查询）
+            # 不用等到下一次采集就会出现在数据源管理页里
+            for spec in sources.all_specs(cfg):
+                store.ensure_source(conn, spec)
+            conn.commit()
             rows = store.sources(conn)
             return _ok({"sources": rows,
                         "summary": {

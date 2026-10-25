@@ -113,6 +113,10 @@
     "min_heat": 70,
     "max_evidence": 60,
     "tech_auto_check": true,
+    "external_search": true,
+    "external_max_results": 6,
+    "external_extract_top": 2,
+    "min_local_evidence": 3,
     "tech_keywords": [
       "芯片",
       "半导体",
@@ -148,6 +152,36 @@
     "note": "可在网页「监控设置 → 大模型」里配置；API Key 只存本地 data/radar_secrets.json。未配置时自动回退到本地抽取式摘要"
   },
   "sources": {},
+  "anysearch": {
+    "enabled": true,
+    "api_base": "https://api.anysearch.com",
+    "api_key_env": "ANYSEARCH_API_KEY",
+    "tag": "",
+    "zone": "cn",
+    "language": "zh-CN",
+    "timeout_seconds": 20,
+    "retries": 1,
+    "min_interval_seconds": 1.0,
+    "max_results": 10,
+    "min_interval_minutes": 240,
+    "note": "统一搜索引擎。queries 里每条 = 一个发现源（4 小时才跑一次，限流窗口 20 次）；调查阶段由 investigation.external_search 控制是否用来补外部证据。key 放 .env 的 ANYSEARCH_API_KEY",
+    "queries": [
+      {
+        "id": "ai",
+        "name": "AI 与大模型",
+        "query": "AI 大模型 最新进展 突破",
+        "enabled": true,
+        "min_interval_minutes": 240
+      },
+      {
+        "id": "chip",
+        "name": "芯片与半导体",
+        "query": "芯片 半导体 制程 最新消息",
+        "enabled": true,
+        "min_interval_minutes": 240
+      }
+    ]
+  },
   "papers": {
     "enabled": true,
     "daily_time": "08:30",

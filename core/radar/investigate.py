@@ -56,6 +56,7 @@ def _sentences(text: str, limit: int = 6) -> List[str]:
 def _source_role(item: Dict[str, Any]) -> Dict[str, Any]:
     source_type = item.get("source_type", "news")
     first_hand = source_type in ("social_post", "paper", "official", "press_release")
+    external = _is_external(item)
     return {
         "url": item.get("url", ""),
         "platform": item.get("platform", ""),
@@ -66,7 +67,11 @@ def _source_role(item: Dict[str, Any]) -> Dict[str, Any]:
         "collected_at": item.get("collected_at", ""),
         "language": item.get("language", ""),
         "first_hand": first_hand,
-        "independent_group": _domain(item.get("url", "")) or item.get("platform", ""),
+        "external": external,
+        # 搜索引擎材料不给 independent_group：否则同一篇通稿的几个转载站就能把
+        # 一个说法顶到 multi_support（"3 个独立来源内容一致"）。它仍然会出现在证据
+        # 列表里供人查看，只是不参与"独立来源"计数。
+        "independent_group": "" if external else (_domain(item.get("url", "")) or item.get("platform", "")),
         "quote": (item.get("raw_content") or item.get("title") or "")[:240],
     }
 
@@ -124,6 +129,70 @@ def search_pool(conn, text: str, days: int = 7, limit: int = 60) -> List[Dict[st
     return [item for _, item in scored[:limit]]
 
 
+def external_evidence(event: Dict[str, Any], cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """用 AnySearch 补外部材料（搜索 + 少量抓正文）。
+
+    为什么要单独一套：``gather_evidence`` 只在本项目已采集的条目里找证据，本地材料少
+    的时候结论会挂"独立来源不足"。搜索引擎能补上这个缺口，但它的结果**不能**当成
+    独立来源计数——同一篇通稿的转载站会被算成"3 个独立域名"。所以这里产出的条目统一
+    打上 ``source_type="search"``（不在 ``score.NEWS_TYPES`` 里），
+    ``independent_domains`` 只统计非搜索材料的域名。
+
+    返回的条目只用于当次调查（不写回 items 表），字段对齐 ``_source_role`` 的输入。
+    """
+    from .sources import anysearch
+
+    section = cfg.get("anysearch") or {}
+    if not section.get("enabled"):
+        return []
+    title = (event.get("title") or "").strip()
+    if not title:
+        return []
+
+    now = dt.datetime.now().astimezone().isoformat(timespec="seconds")
+    out: List[Dict[str, Any]] = []
+    try:
+        rows = anysearch.search(title, cfg, max_results=int(section.get("max_results") or 10))
+    except Exception as exc:  # noqa: BLE001 - 外部取证失败不能影响调查本身
+        print("[investigate] AnySearch 取证失败：%s" % exc)
+        return []
+
+    extract_top = max(0, int(((cfg.get("investigation") or {}).get("external_extract_top")) or 0))
+    for idx, row in enumerate(rows, start=1):
+        if not row.get("url") or not row.get("title"):
+            continue
+        body = row.get("content") or row.get("snippet") or ""
+        if idx <= extract_top:
+            try:
+                full = anysearch.extract(row["url"], cfg)
+                if len(full) > len(body):
+                    body = full
+            except Exception:  # noqa: BLE001 - 抓不到正文就用摘要
+                pass
+        out.append({
+            "source_id": "anysearch_external",
+            "platform": anysearch.PLATFORM,
+            "title": row["title"],
+            "url": row["url"],
+            "url_hash": hashlib.sha1(row["url"].encode("utf-8", "ignore")).hexdigest(),
+            "raw_content": body,
+            "content_hash": "",
+            "published_at": "",
+            "collected_at": now,
+            "language": str(section.get("language") or ""),
+            "engagement": {"rank": idx},
+            "source_type": anysearch.SOURCE_TYPE,
+            "fetch_status": "ok",
+            "last_seen_at": now,
+            "external": True,
+        })
+    return out
+
+
+def _is_external(item: Dict[str, Any]) -> bool:
+    return bool(item.get("external")) or item.get("source_type") == "search"
+
+
 def gather_evidence(conn, event: Dict[str, Any], cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
     max_evidence = int(((cfg.get("investigation") or {}).get("max_evidence")) or 60)
     items = store.items_for_event(conn, event["id"])
@@ -135,6 +204,16 @@ def gather_evidence(conn, event: Dict[str, Any], cfg: Dict[str, Any]) -> List[Di
         seen.add(extra.get("url_hash"))
         if len(items) >= max_evidence:
             break
+
+    # 本地材料不够时，用搜索引擎补外部材料（不写库，只在这次调查里用）
+    investigation = cfg.get("investigation") or {}
+    only_local = [i for i in items if not _is_external(i)]
+    if investigation.get("external_search") and len(only_local) < int(investigation.get("min_local_evidence") or 3):
+        for extra in external_evidence(event, cfg):
+            if extra["url_hash"] in seen:
+                continue
+            items.append(extra)
+            seen.add(extra["url_hash"])
     return items
 
 
@@ -440,6 +519,16 @@ def run(conn, event_id: str, cfg: Dict[str, Any]) -> Dict[str, Any]:
     disputed = [c for c in claims if c["status"] in ("disputed", "contradicted")]
     unverified = [c for c in claims if c["status"] in ("insufficient", "partial")]
 
+    # 独立来源只数"本项目自己采到的"材料：搜索引擎结果是召回，不是独立佐证
+    own = [i for i in evidence if not _is_external(i)]
+    own_domains = {_domain(i.get("url", "")) for i in own if i.get("url")}
+    external = [i for i in evidence if _is_external(i)]
+    external_domains = {_domain(i.get("url", "")) for i in external if i.get("url")}
+    external_note = ""
+    if external:
+        external_note = ("另有 %d 条搜索引擎材料（%d 个域名）未计入独立来源"
+                         % (len(external), len(external_domains)))
+
     payload = {
         "kind": "tech" if event.get("tech_flag") else "event",
         "event": {
@@ -455,13 +544,18 @@ def run(conn, event_id: str, cfg: Dict[str, Any]) -> Dict[str, Any]:
         "disputed": [c["text"] for c in disputed],
         "unverified": [c["text"] for c in unverified],
         "evidence_count": len(evidence),
-        "independent_domains": len({_domain(i.get("url", "")) for i in evidence if i.get("url")}),
+        "independent_domains": len(own_domains),
+        "external_evidence": len(external),
+        "external_domains": len(external_domains),
         "gaps": [
             g for g in [
                 "" if origin["earliest"] else "尚未找到最早公开来源",
                 "" if corrections else "未发现公开更正或撤回材料",
-                "" if any(i.get("source_type") in score.NEWS_TYPES for i in evidence) else "仅有热榜/社交材料，缺少媒体报道",
-                "" if len({_domain(i.get("url", "")) for i in evidence}) >= 3 else "独立来源不足 3 个，结论应谨慎",
+                "" if any(i.get("source_type") in score.NEWS_TYPES for i in own)
+                else ("只有搜索引擎材料，缺少媒体报道" if external
+                      else "仅有热榜/社交材料，缺少媒体报道"),
+                "" if len(own_domains) >= 3 else "独立来源不足 3 个，结论应谨慎",
+                external_note,
             ] if g
         ],
         "method": _method_note(cfg),

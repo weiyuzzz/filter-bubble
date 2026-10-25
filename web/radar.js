@@ -294,6 +294,13 @@
   }
 
   // ---------- investigation ----------
+  // 来源类型的中文标签；search = 搜索引擎材料，单独一类，不参与"独立来源"计数
+  const SOURCE_LABEL = {
+    news: "媒体", paper: "论文", official: "官方", press_release: "新闻稿",
+    social_trend: "热榜", social_post: "社交帖", community: "社区", search: "搜索引擎",
+  };
+  const sourceLabel = (type) => SOURCE_LABEL[type] || type || "";
+
   function renderTimeline(origin) {
     const rows = (origin && origin.timeline) || [];
     if (!rows.length) {
@@ -301,7 +308,7 @@
     }
     return `<ul class="timeline">${rows.map((row) => `
       <li>
-        <div class="t-time">${esc(fmtTime(row.published_at))} · ${esc(row.platform)} · ${esc(row.source_type)}${row.first_hand ? " · 一手材料" : " · 转述"}</div>
+        <div class="t-time">${esc(fmtTime(row.published_at))} · ${esc(row.platform)} · ${esc(sourceLabel(row.source_type))}${row.external ? " · 搜索引擎材料（未计入独立来源）" : (row.first_hand ? " · 一手材料" : " · 转述")}</div>
         <div class="t-title"><a href="${esc(row.url)}" target="_blank" rel="noopener noreferrer">${esc(row.title)}</a></div>
         <div class="t-meta">${esc(row.independent_group)}${row.quotes_previous ? " · 引用了更早来源" : ""}</div>
       </li>`).join("")}</ul>`;
@@ -315,7 +322,7 @@
       const evidence = (claim.evidence || []).map((row) => `
         <li>
           <a href="${esc(row.url)}" target="_blank" rel="noopener noreferrer">${esc(row.platform)} · ${esc(row.title)}</a>
-          <span class="mono"> · ${esc(row.relation)} · 独立来源 ${esc(row.independent_group)}</span>
+          <span class="mono"> · ${esc(row.relation)} · ${row.external ? "搜索引擎材料（不计入独立来源）" : "独立来源 " + esc(row.independent_group)}</span>
         </li>`).join("");
       return `<div class="claim">
         <div class="claim-head">

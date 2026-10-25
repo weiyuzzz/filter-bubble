@@ -16,7 +16,8 @@ DISCLAIMER = ("热度分是本站对当前可采集材料的相对排序，不�
 CONFIDENCE_LABEL = {
     "verified_multi": "多个独立媒体来源报道",
     "reported": "有媒体报道，尚未多方独立验证",
-    "unverified": "仅见于热榜/社交平台，缺少核实",
+    # 没有媒体来源时，材料可能来自热榜、社交帖，也可能只来自搜索引擎（source_type=search）
+    "unverified": "仅见于热榜/搜索/社交平台，缺少媒体报道",
 }
 
 
@@ -372,10 +373,14 @@ def _evidence_gaps(conn, events: List[Dict[str, Any]]) -> List[str]:
     gaps: List[str] = []
     for event in events[:8]:
         items = store.items_for_event(conn, event["id"])
-        if not any(i.get("source_type") in score.NEWS_TYPES for i in items):
-            gaps.append("「%s」暂无媒体报道，仅有热榜/社交信号" % event.get("title", "")[:40])
-        elif not any(i.get("published_at") for i in items):
-            gaps.append("「%s」缺少可核对的发布时间" % event.get("title", "")[:40])
+        if any(i.get("source_type") in score.NEWS_TYPES for i in items):
+            if not any(i.get("published_at") for i in items):
+                gaps.append("「%s」缺少可核对的发布时间" % event.get("title", "")[:40])
+            continue
+        # 搜索引擎材料不是媒体报道，但也不能说成"热榜/社交信号"，文案要分开
+        kind = ("只有搜索引擎材料" if any(i.get("source_type") == "search" for i in items)
+                else "仅有热榜/社交信号")
+        gaps.append("「%s」%s，缺少媒体报道" % (event.get("title", "")[:40], kind))
     return gaps[:6]
 
 

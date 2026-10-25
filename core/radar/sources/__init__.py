@@ -14,7 +14,7 @@ from typing import Any, Callable, Dict, List, Tuple
 
 from ... import keywords
 from .. import store, urls
-from . import hotlists, intl, newsnow, rss
+from . import anysearch, hotlists, intl, newsnow, rss
 
 NON_FREE_NOTE = "无合规免费入口，未接入（不绕过登录/验证码/访问控制）"
 
@@ -154,6 +154,7 @@ SOURCES: List[Dict[str, Any]] = [
 ADAPTERS: Dict[str, Callable[..., List[Dict[str, Any]]]] = {
     "rss": rss.fetch,
     "newsnow": newsnow.fetch,
+    "anysearch": anysearch.fetch,
     **hotlists.ADAPTERS,
     **intl.ADAPTERS,
 }
@@ -199,7 +200,68 @@ def make_item(spec: Dict[str, Any], title: str, url: str = "", published_at: str
 
 
 _OVERRIDABLE = ("url", "enabled", "max_items", "query", "timespan", "headers", "notes",
-                "language", "api_id", "expected_domain", "verify_domain", "timeout")
+                "language", "api_id", "expected_domain", "verify_domain", "timeout",
+                "tag", "zone", "max_results")
+
+
+def _pick(*values, default=None):
+    """取第一个"显式给过"的值。
+
+    不能用 ``a or b or DEFAULT``：``0`` 是合法值（0 = 不限速），用 or 会被当成没给，
+    于是没法把某条查询的间隔调成 0。
+    """
+    for value in values:
+        if value is not None:
+            return value
+    return default
+
+
+def _anysearch_specs(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """把配置里的每条查询展开成一个发现源（加查询不用改代码）。
+
+    每条查询都是一次独立调用，而 AnySearch 的限流窗口只有 20 次，所以 spec 里带
+    ``min_interval_minutes``：距上次成功采集不足这个间隔就整条跳过，避免每小时采集
+    把额度烧光（节流逻辑在 ``collect`` 里统一处理）。
+    """
+    section = cfg.get("anysearch") or {}
+    if not section.get("enabled"):
+        return []
+    entries = section.get("queries") or []
+    specs: List[Dict[str, Any]] = []
+    for entry in entries:
+        if isinstance(entry, str):
+            entry = {"query": entry}
+        if not isinstance(entry, dict):
+            continue
+        query = str(entry.get("query") or "").strip()
+        if not query:
+            continue
+        name = str(entry.get("name") or query).strip()
+        query_id = str(entry.get("id") or name).strip()
+        max_results = int(_pick(entry.get("max_results"), section.get("max_results"), default=10))
+        specs.append({
+            "source_id": "anysearch_" + query_id,
+            "platform": anysearch.PLATFORM,
+            "name": "AnySearch·" + name,
+            "kind": "api",
+            "adapter": "anysearch",
+            "url": "",
+            "query": query,
+            "tag": str(entry.get("tag") or section.get("tag") or ""),
+            "zone": str(entry.get("zone") or section.get("zone") or ""),
+            "language": str(entry.get("language") or section.get("language") or "zh"),
+            "source_type": anysearch.SOURCE_TYPE,
+            "enabled": bool(entry.get("enabled", True)),
+            "max_items": max_results,
+            "max_results": max_results,
+            # 0 = 每条查询都跑（不节流）；不写则跟随 anysearch.min_interval_minutes
+            "min_interval_minutes": float(_pick(entry.get("min_interval_minutes"),
+                                                section.get("min_interval_minutes"), default=240)),
+            # 适配器只拿到 spec，把全局段带进去（key 名、base、超时都在里面）
+            "_anysearch_cfg": dict(section),
+            "notes": "统一搜索引擎源（配置在 social_radar.json → anysearch.queries）",
+        })
+    return specs
 
 
 def _rss_specs(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -231,14 +293,14 @@ def _rss_specs(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def _merged(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """静态清单 + 自定义 RSS + 用户覆盖 + newsnow 全局设置。"""
+    """静态清单 + 自定义 RSS + AnySearch 查询 + 用户覆盖 + newsnow 全局设置。"""
     overrides = (cfg.get("sources") or {})
     newsnow_cfg = (cfg.get("newsnow") or {})
     api_url = str(newsnow_cfg.get("api_url") or "").strip()
     verify = bool(newsnow_cfg.get("verify_domain", True))
 
     merged_all: List[Dict[str, Any]] = []
-    for spec in SOURCES + _rss_specs(cfg):
+    for spec in SOURCES + _rss_specs(cfg) + _anysearch_specs(cfg):
         merged = dict(spec)
         if merged.get("adapter") == "newsnow":
             merged["verify_domain"] = verify
@@ -373,6 +435,12 @@ def collect(conn, cfg: Dict[str, Any], force: bool = False) -> Dict[str, Any]:
         if failures >= degrade_after and _minutes_since(state.get("last_error_at")) < degrade_interval:
             skipped.append({"source_id": spec["source_id"], "name": spec["name"],
                             "reason": "连续失败 %d 次，降频中" % failures})
+            continue
+        # 单源节流：只有显式声明 min_interval_minutes 的源才生效（例如 AnySearch 有额度限制）
+        min_interval = float(spec.get("min_interval_minutes") or 0)
+        if min_interval > 0 and _minutes_since(state.get("last_ok_at")) < min_interval:
+            skipped.append({"source_id": spec["source_id"], "name": spec["name"],
+                            "reason": "距上次成功不足 %d 分钟，本轮跳过" % int(min_interval)})
             continue
         runnable.append(spec)
     conn.commit()

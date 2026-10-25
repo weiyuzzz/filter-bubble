@@ -59,6 +59,29 @@ DEFAULTS: Dict[str, Any] = {
         # 校验返回链接的域名；不匹配的条目直接丢弃（防第三方数据被篡改）
         "verify_domain": True,
     },
+    # 统一搜索引擎（AnySearch）：可选。两种用法——
+    #   1) queries 里每条查询 = 一个"发现源"，和 RSS 源平级；
+    #   2) 调查阶段用作外部取证（见 investigation.external_search）。
+    # 限流窗口只有 20 次（响应头 X-Ratelimit-Limit），所以发现源按 min_interval_minutes 节流。
+    "anysearch": {
+        "enabled": False,
+        "api_base": "https://api.anysearch.com",
+        # key 只从环境变量读，不进配置文件和仓库（与 openalex_api_key_env 同一套）
+        "api_key_env": "ANYSEARCH_API_KEY",
+        # 能力标签，留空 = 通用网页搜索；可选 academic.search / code.doc / finance.news / security.intel
+        "tag": "",
+        "zone": "cn",
+        "language": "zh-CN",
+        "timeout_seconds": 20,
+        "extract_timeout_seconds": 30,
+        "retries": 1,
+        "min_interval_seconds": 1.0,
+        "max_results": 10,
+        # 发现源默认 4 小时才跑一次，避免每小时采集把 20 次的窗口烧光
+        "min_interval_minutes": 240,
+        # [{"id": "ai", "name": "AI 与大模型", "query": "AI 大模型 最新进展", "enabled": true}]
+        "queries": [],
+    },
 
     # 学术论文模块（paper_* 表，与雷达数据隔离）
     "papers": {
@@ -85,8 +108,8 @@ DEFAULTS: Dict[str, Any] = {
         },
         "openalex_api_key_env": "OPENALEX_API_KEY",
         "crossref_mailto": "",
-        # max_per_day 是每日模型调用上限，存在数据库里，重启不会清零
-        "ai": {"enabled": True, "max_per_run": 24, "max_per_day": 20, "concurrency": 2},
+        # AI 不设条数上限，成本统一由全局 token 限额控制（ai_settings.llm.token_limits）
+        "ai": {"enabled": True, "concurrency": 2},
     },
     "filters": {
         # 全局噪音词：命中即丢弃（娱乐段子、抽奖、标题党）
@@ -144,6 +167,13 @@ DEFAULTS: Dict[str, Any] = {
         "min_heat": 70,
         "max_evidence": 60,
         "tech_auto_check": True,
+        # 外部取证：本地证据不足时，用 AnySearch 搜一圈补充材料（见 anysearch 段）
+        "external_search": False,
+        "external_max_results": 6,
+        # 对前几条抓正文（每条占一次额度，所以默认只抓 2 条）
+        "external_extract_top": 2,
+        # 本地证据少于这个条数才补，够多就不浪费额度
+        "min_local_evidence": 3,
         "tech_keywords": [
             "芯片", "半导体", "光刻", "大模型", "人工智能", "量子", "可控核聚变",
             "超导", "6G", "卫星", "航空发动机", "新材料", "量产", "首次实现",
