@@ -20,7 +20,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, Optional, Tuple
 
-from core import config, db, digest, follows, notify, prefs
+from core import bookmarks, config, db, digest, follows, github, notify, prefs
 
 MIME = {
     ".html": "text/html; charset=utf-8",
@@ -90,6 +90,9 @@ def _status_payload() -> Dict[str, Any]:
         "last_generated_date": last,
         "last_refresh_failed_at": last_failed,
         "push": push,
+        "push_state": {k: push.get(k) for k in
+                       ("enabled", "configured", "ready", "reason", "time", "items",
+                        "last_pushed_date")},
         "latest_date": row["date"] if row else None,
         "latest_generated_at": row["generated_at"] if row else None,
         "schedule": {
@@ -256,6 +259,10 @@ class Handler(BaseHTTPRequestHandler):
                 return _json(self, 500, {"error": str(exc)})
             finally:
                 conn.close()
+        if path == "/api/follows/search":
+            return self._follow_search(parsed)
+        if path == "/api/bookmarks":
+            return self._bookmarks(parsed)
         if path.startswith("/api/"):
             return _json(self, 404, {"error": "not found"})
         return self._static(path)
@@ -286,6 +293,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._feedback(conn, body)
             if path == "/api/bookmark":
                 return self._bookmark(conn, body)
+            if path == "/api/bookmarks/folder":
+                return self._bookmark_folder(conn, body)
+            if path == "/api/bookmarks/move":
+                return self._bookmark_move(conn, body)
             if path == "/api/follow":
                 owner = str(body.get("owner") or "").strip()
                 try:
@@ -357,26 +368,122 @@ class Handler(BaseHTTPRequestHandler):
 
     def _bookmark(self, conn, body: Dict[str, Any]):
         repo = str(body.get("repo") or "").strip()
+        if not repo:
+            return _json(self, 400, {"error": "repo required"})
+        bookmarks.init(conn)
         payload = digest.latest(conn)
-        if not payload:
+        # 只有「新增收藏」需要当天日报来取元数据；收藏页里的移除不该被日报状态挡住
+        marking = not bookmarks.exists(conn, repo)
+        if marking and not payload:
             return _json(self, 409, {"error": "digest not ready"})
-        existing = conn.execute("SELECT 1 FROM bookmarks WHERE full_name=?", (repo,)).fetchone()
-        if existing:
-            conn.execute("DELETE FROM bookmarks WHERE full_name=?", (repo,))
-            marked = False
-        else:
-            conn.execute("INSERT INTO bookmarks(full_name, created_at) VALUES(?,?)", (repo, db.now_iso()))
-            marked = True
+        # 收藏时顺便存一份元数据，收藏列表就不再依赖「当天日报」和 repos 表
+        item = None
+        if payload:
+            item = next((i for i in payload.get("items", []) if i.get("full_name") == repo), None)
+        # folder 只对「新收藏」生效：已是收藏的再点一次就是取消，不当成移动
+        marked = bookmarks.toggle(conn, repo, item=item, folder_id=body.get("folder_id"))
+        if payload:
+            for row in payload.get("items", []):
+                if row["full_name"] == repo:
+                    row["bookmarked"] = marked
+            conn.execute(
+                "INSERT OR REPLACE INTO digests(date, payload, generated_at) VALUES(?,?,?)",
+                (payload["date"], json.dumps(payload, ensure_ascii=False), payload["generated_at"]),
+            )
         conn.commit()
-        for item in payload.get("items", []):
-            if item["full_name"] == repo:
-                item["bookmarked"] = marked
-        conn.execute(
-            "INSERT OR REPLACE INTO digests(date, payload, generated_at) VALUES(?,?,?)",
-            (payload["date"], json.dumps(payload, ensure_ascii=False), payload["generated_at"]),
-        )
-        conn.commit()
-        return _json(self, 200, {"bookmarked": marked, "repo": repo})
+        return _json(self, 200, {"bookmarked": marked, "repo": repo,
+                                 "bookmarks": bookmarks.counts(conn)})
+
+    def _bookmarks(self, parsed):
+        """收藏列表：支持按文件夹筛选和关键词搜索。"""
+        conn = db.connect()
+        try:
+            bookmarks.init(conn)
+            query = urllib.parse.parse_qs(parsed.query)
+            folder = (query.get("folder") or ["all"])[0]
+            q = (query.get("q") or [""])[0]
+            data = bookmarks.state(conn, folder, q)
+            # 给今天的日报补上收藏标记，卡片上的书签图标才不会和收藏页互相打架
+            payload = digest.latest(conn)
+            if payload:
+                marked = bookmarks.names(conn)
+                changed = False
+                for item in payload.get("items", []):
+                    flag = item["full_name"] in marked
+                    if item.get("bookmarked") != flag:
+                        item["bookmarked"] = flag
+                        changed = True
+                if changed:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO digests(date, payload, generated_at) VALUES(?,?,?)",
+                        (payload["date"], json.dumps(payload, ensure_ascii=False),
+                         payload["generated_at"]),
+                    )
+                    conn.commit()
+            return _json(self, 200, data)
+        except Exception as exc:  # noqa: BLE001
+            print("[api] bookmarks error:", exc)
+            return _json(self, 500, {"error": str(exc)})
+        finally:
+            conn.close()
+
+    def _bookmark_folder(self, conn, body: Dict[str, Any]):
+        """文件夹的增/改名/删。"""
+        bookmarks.init(conn)
+        action = str(body.get("action") or "create").strip()
+        folder_id = body.get("id")
+        try:
+            if action == "create":
+                created = bookmarks.create_folder(conn, str(body.get("name") or ""))
+                return _json(self, 200, {"created": created, "bookmarks": bookmarks.state(conn)})
+            if action == "rename":
+                bookmarks.rename_folder(conn, int(folder_id or 0), str(body.get("name") or ""))
+            elif action == "delete":
+                bookmarks.delete_folder(conn, int(folder_id or 0))
+            else:
+                return _json(self, 400, {"error": "unknown action: %s" % action})
+        except (ValueError, TypeError) as exc:
+            return _json(self, 400, {"error": str(exc)})
+        return _json(self, 200, {"bookmarks": bookmarks.state(conn)})
+
+    def _bookmark_move(self, conn, body: Dict[str, Any]):
+        """把一条收藏移到某个文件夹（folder_id 为空 = 未分类）。"""
+        bookmarks.init(conn)
+        repo = str(body.get("repo") or "").strip()
+        if not repo:
+            return _json(self, 400, {"error": "repo required"})
+        if not bookmarks.move(conn, repo, body.get("folder_id")):
+            return _json(self, 404, {"error": "该仓库不在收藏里"})
+        return _json(self, 200, {"bookmarks": bookmarks.state(conn)})
+
+    def _follow_search(self, parsed):
+        """搜 GitHub 用户/组织，用来加关注（不再局限已有关注列表）。"""
+        query = urllib.parse.parse_qs(parsed.query)
+        q = (query.get("q") or [""])[0].strip()
+        if not q:
+            return _json(self, 200, {"query": "", "candidates": []})
+        try:
+            candidates = github.search_users(q)
+        except Exception as exc:  # noqa: BLE001
+            print("[api] user search error:", exc)
+            return _json(self, 502, {"error": str(exc), "candidates": []})
+        conn = db.connect()
+        try:
+            summary = follows.summary(conn)
+            following = {o.lower() for o in follows.owners(conn)}
+        finally:
+            conn.close()
+        # 搜索结果可能重复（同名用户 + 组织），按 login 去重并标记是否已关注
+        seen = set()
+        out = []
+        for row in candidates:
+            login = row["login"]
+            if login.lower() in seen:
+                continue
+            seen.add(login.lower())
+            out.append({**row, "following": login.lower() in following})
+        return _json(self, 200, {"query": q, "candidates": out,
+                                 "max_follows": summary.get("max_follows")})
 
 
 class Server(ThreadingHTTPServer):
@@ -394,6 +501,7 @@ def _scheduler(stop: threading.Event) -> None:
             try:
                 generated = db.get_meta(conn, "last_generated_date") or ""
                 pushed = db.get_meta(conn, "last_pushed_date") or ""
+                attempted = db.get_meta(conn, "last_push_attempt_date") or ""
                 last_failed = db.get_meta(conn, "last_refresh_failed_at", "") or ""
             finally:
                 conn.close()
@@ -412,7 +520,10 @@ def _scheduler(stop: threading.Event) -> None:
                     pass
 
             # 1) 到点推送：重新生成一次日报并把简报发出去（一天一次）
-            if pushed != today and now.strftime("%H:%M") >= config.REFRESH_TIME:
+            #    推送开关关掉时整段跳过，只走下面的每小时刷新
+            push_state = notify.state()
+            if (push_state["ready"] and attempted != today and pushed != today
+                    and now.strftime("%H:%M") >= config.REFRESH_TIME):
                 print("[schedule] daily push run at", now.isoformat(timespec="seconds"))
                 if digest.refresh_async(push=True):
                     last_refresh = now

@@ -21,6 +21,24 @@ def _err(status: int, message: str) -> Tuple[int, Dict[str, Any]]:
     return status, {"error": message}
 
 
+def _push_public(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """推送开关 + 实际能不能发（密钥是否配好）。"""
+    from . import notify
+
+    enabled = bool((cfg.get("push") or {}).get("enabled", True))
+    state = notify.state()
+    return {
+        "enabled": enabled,
+        # enabled 是开关，ready 才是「开关开着且密钥可用」
+        "ready": bool(state.get("ready")),
+        "configured": bool(state.get("configured")),
+        "reason": state.get("reason") or "",
+        "provider": state.get("provider") or "",
+        "time": state.get("time") or "",
+        "items": state.get("items") or 0,
+    }
+
+
 def _public() -> Dict[str, Any]:
     cfg = ai_settings.load()
     llm = cfg.get("llm") or {}
@@ -63,6 +81,7 @@ def _public() -> Dict[str, Any]:
             "concurrency": int((cfg.get("ai") or {}).get("concurrency") or 1),
             "enable_briefs": bool((cfg.get("ai") or {}).get("enable_briefs", True)),
         },
+        "push": _push_public(cfg),
         "path": str(ai_settings.CONFIG_PATH),
         "secrets_path": str(ai_secrets.SECRETS_PATH),
         "error_log": str(ai_client.ERROR_LOG),
@@ -191,6 +210,12 @@ def _save(body: Dict[str, Any]) -> Dict[str, Any]:
             saved["token_window_hours"] = limits["window_hours"]
         if limits:
             updates["llm"]["token_limits"] = limits
+
+    # 推送开关（存在 app_settings.json → push.enabled，生效逻辑见 core/notify.py）
+    incoming_push = body.get("push") if isinstance(body.get("push"), dict) else {}
+    if "enabled" in incoming_push:
+        updates["push"] = {"enabled": _coerce(incoming_push["enabled"], "bool")}
+        saved["push_enabled"] = updates["push"]["enabled"]
 
     ai_settings.save(updates)
 

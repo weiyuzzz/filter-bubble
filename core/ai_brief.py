@@ -1,11 +1,14 @@
 """GitHub 项目的 AI 解读。
 
-把项目的简介、语言、topics、README 摘要交给全局配置的模型，生成：
-适合谁 / 解决什么问题 / 怎么用 / 完整使用流程 / 典型场景 / 上手门槛 / 局限。
+把项目的简介、语言、topics、README 摘要交给全局配置的模型，让它**真正读一遍项目再写解读**：
+一句话是什么 / 一段解读 / 几条要点 / 局限。
 
 * 结果按 (仓库, 模型, prompt 版本) 缓存，同一个项目不会重复消耗调用；
-* 模型不可用时静默跳过，页面继续显示原有的规则版解读；
+* 模型不可用、调用失败或额度用尽时**静默降级**，页面回退到 GitHub 官方简介
+  （``brief.SOURCE_GITHUB``），并在界面上标明来源；
 * 模型只能读到下面列出的字段，提示词明确禁止编造未出现的事实。
+
+``VERSION`` 参与缓存键：改了提示词或输出结构就要 +1，否则会一直复用旧结构的缓存。
 """
 from __future__ import annotations
 
@@ -16,9 +19,9 @@ import json
 import sqlite3
 from typing import Any, Dict, List, Optional
 
-from . import ai_client, ai_settings, db
+from . import ai_client, ai_settings, brief, db
 
-VERSION = 1
+VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS ai_briefs (
@@ -45,15 +48,11 @@ Topics：{topics}
 官方简介：{description}
 README 摘要：{readme}
 
-请输出 JSON：
+请通读上面的信息，输出对这个项目的解读（严格 JSON）：
 {{
-  "what": "一句话说明它是做什么的（不超过 60 字）",
-  "audience": "适合谁用（不超过 40 字）",
-  "problem": "解决什么问题（不超过 60 字）",
-  "usage": "怎么用：安装/运行方式（不超过 60 字，不确定就写 README 未说明）",
-  "flow": ["上手步骤，3–4 条，每条不超过 30 字"],
-  "scenarios": ["典型场景，2–3 条，每条不超过 30 字"],
-  "difficulty": "上手门槛（不超过 20 字）",
+  "what": "一句话说清它是做什么的（不超过 60 字）",
+  "detail": "一段解读：它解决什么问题、有什么特点、适合什么场景、需要什么前提（150–220 字）",
+  "highlights": ["3–5 条值得注意的信息，例如关键技术、部署方式、依赖要求（每条不超过 30 字）"],
   "limits": "已知局限或需要注意的地方（不超过 60 字，没有就写 README 未说明）"
 }}"""
 
@@ -103,20 +102,16 @@ def _normalize(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if not what:
         return None
 
-    def _list(key: str, limit: int) -> List[str]:
-        raw = data.get(key)
-        if not isinstance(raw, list):
-            return []
-        return [_clean(x, 60) for x in raw[:limit] if _clean(x, 60)]
+    raw = data.get("highlights")
+    highlights = []
+    if isinstance(raw, list):
+        highlights = [_clean(x, 60) for x in raw[:5] if _clean(x, 60)]
 
     return {
+        "source": brief.SOURCE_AI,
         "what": what,
-        "audience": _clean(data.get("audience"), 80),
-        "problem": _clean(data.get("problem"), 120),
-        "usage": _clean(data.get("usage"), 120),
-        "flow": _list("flow", 4),
-        "scenarios": _list("scenarios", 3),
-        "difficulty": _clean(data.get("difficulty"), 40),
+        "detail": _clean(data.get("detail"), 600),
+        "highlights": highlights,
         "limits": _clean(data.get("limits"), 120),
     }
 
@@ -162,13 +157,14 @@ def generate(item: Dict[str, Any], settings: Dict[str, Any]) -> Optional[Dict[st
 
 
 def apply(item: Dict[str, Any], ai: Dict[str, Any], model: str) -> None:
-    """把 AI 结果合并进 item['brief']，保留原规则版字段作为兜底。"""
-    brief = dict(item.get("brief") or {})
-    brief.update({key: value for key, value in ai.items() if value})
-    brief["ai"] = True
-    brief["ai_model"] = model
-    brief["note"] = "由 %s 基于项目简介、语言与 topics 生成；具体命令与限制以 README 为准。" % model
-    item["brief"] = brief
+    """把 AI 结果合并进 item['brief']，并标明来源是大模型。"""
+    brief_data = dict(item.get("brief") or {})
+    brief_data.update({key: value for key, value in ai.items() if value})
+    brief_data["source"] = brief.SOURCE_AI
+    brief_data["ai"] = True
+    brief_data["ai_model"] = model
+    brief_data["note"] = "由 %s 根据项目简介、语言、topics 与 README 摘要解读。" % model
+    item["brief"] = brief_data
 
 
 def enrich(items: List[Dict[str, Any]], settings: Optional[Dict[str, Any]] = None,

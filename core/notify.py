@@ -112,28 +112,28 @@ def render(payload: Dict[str, Any], conn: sqlite3.Connection) -> Dict[str, str]:
         owner = item.get("owner") or item["full_name"].split("/")[0]
         name = item.get("name") or item["full_name"].split("/")[-1]
         what = _clean(brief.get("what") or item.get("summary_zh") or item.get("description") or "暂无简介", 180)
-        problem = _clean(brief.get("problem") or "把一类重复的技术工作变成可复用的工具", 140)
-        audience = _clean(brief.get("audience") or "开发者与技术团队", 120)
-        scenarios = "、".join(_clean(x, 50) for x in (brief.get("scenarios") or [])[:2])
-        flow = [str(x) for x in (brief.get("flow") or []) if x][:4]
-        if not flow:
-            flow = ["按 README 安装并完成最小配置", "运行官方示例确认环境", "接入自己的数据或流程"]
+        detail = _clean(brief.get("detail"), 400)
+        highlights = [_clean(x, 60) for x in (brief.get("highlights") or []) if _clean(x, 60)][:4]
+        limits = _clean(brief.get("limits"), 140)
+        is_ai = (brief.get("source") == "ai") or bool(brief.get("ai"))
 
         lines.append("### %02d · %s/%s　🔥 %s" % (index, owner, name, item.get("heat", "—")))
         lines.append("")
         lines.append("**是什么**：%s" % what)
         lines.append("")
-        lines.append("**解决什么问题**：%s" % problem)
-        lines.append("")
-        lines.append("**适合谁**：%s" % audience)
-        lines.append("")
-        lines.append("**完整使用流程**")
-        for step_index, step in enumerate(flow, 1):
-            lines.append("%d. %s" % (step_index, step))
-        lines.append("")
-        if scenarios:
-            lines.append("**典型场景**：%s" % scenarios)
+        if detail:
+            lines.append(detail)
             lines.append("")
+        for point in highlights:
+            lines.append("- %s" % point)
+        if highlights:
+            lines.append("")
+        if limits:
+            lines.append("**注意**：%s" % limits)
+            lines.append("")
+        # 标明这条解读是模型写的还是 GitHub 原简介
+        lines.append("> %s" % ("AI 解读" if is_ai else "GitHub 简介（未使用大模型）"))
+        lines.append("")
         lines.append("[在 GitHub 查看 →](%s)" % (item.get("url") or "https://github.com/%s" % item["full_name"]))
         lines.append("")
         lines.append("---")
@@ -189,6 +189,44 @@ def _log(conn: sqlite3.Connection, date: str, status: str, title: str,
     conn.commit()
 
 
+def _switch_enabled() -> bool:
+    """全局设置里的推送开关（存在 app_settings.json → push.enabled）。"""
+    try:
+        from . import ai_settings
+
+        return bool((ai_settings.load().get("push") or {}).get("enabled", True))
+    except Exception as exc:  # noqa: BLE001 - 配置读坏了不该让推送崩掉
+        print("[push] settings read failed:", exc)
+        return False
+
+
+def state() -> Dict[str, Any]:
+    """推送能不能发：开关 + SendKey。
+
+    ``ready`` 才是真正决定要不要发的字段；``reason`` 说明为什么发不了，
+    系统状态页直接用这个字段显示。
+    """
+    enabled = _switch_enabled()
+    key = config.SERVERCHAN_SENDKEY
+    configured = bool(key)
+    reason = ""
+    if not enabled:
+        reason = "推送开关已关闭（全局设置 → 推送）"
+    elif not configured:
+        reason = "未配置 SERVERCHAN_SENDKEY"
+    elif key.lower().startswith("sctp"):
+        reason = "当前 key 是 Server酱³（sctp），微信通道需要 SCT 开头的 Turbo SendKey"
+    return {
+        "enabled": enabled,
+        "configured": configured,
+        "ready": enabled and configured and not reason,
+        "reason": reason,
+        "provider": "Server酱 Turbo",
+        "time": config.REFRESH_TIME,
+        "items": config.PUSH_ITEMS,
+    }
+
+
 def status(conn: sqlite3.Connection, date: Optional[str] = None) -> Dict[str, Any]:
     if date:
         row = conn.execute(
@@ -199,22 +237,21 @@ def status(conn: sqlite3.Connection, date: Optional[str] = None) -> Dict[str, An
             "SELECT * FROM push_log WHERE channel=? ORDER BY date DESC LIMIT 1", (CHANNEL,)
         ).fetchone()
     return {
-        "configured": config.PUSH_ENABLED,
+        **state(),
         "date": row["date"] if row else None,
         "status": row["status"] if row else None,
         "detail": row["detail"] if row else None,
         "updated_at": row["updated_at"] if row else None,
-        "provider": "Server酱 Turbo",
+        "last_pushed_date": db.get_meta(conn, "last_pushed_date") or None,
     }
 
 
 def send_daily(payload: Dict[str, Any], conn: Optional[sqlite3.Connection] = None,
                force: bool = False) -> Dict[str, Any]:
-    if not config.SERVERCHAN_SENDKEY:
-        return {"ok": False, "skipped": True, "reason": "未配置 SERVERCHAN_SENDKEY"}
-    if config.SERVERCHAN_SENDKEY.lower().startswith("sctp"):
-        return {"ok": False, "skipped": True,
-                "reason": "这是 Server酱³ 的 key，微信通道请使用 SCT 开头的 Turbo SendKey"}
+    push = state()
+    # 开关是权威的：关掉了就连手动「立即推送」也不发，免得用户以为还在推
+    if not push["ready"]:
+        return {"ok": False, "skipped": True, "reason": push["reason"], "state": push}
 
     own_conn = conn is None
     if conn is None:

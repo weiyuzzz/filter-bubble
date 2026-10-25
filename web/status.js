@@ -44,6 +44,7 @@
     $("#healthDot").className = "live-dot" + (health ? "" : " live");
     $("#healthText").textContent = health ? "服务在线" : "服务不可达";
 
+    const pushState = (github && github.push_state) || push;
     const ghCard = `
       <section class="panel">
         <div class="section-title" style="margin-top:0">GitHub 技术雷达</div>
@@ -51,13 +52,18 @@
           ${stateChip(!!(github && github.today_ready), github && github.today_ready ? "今日已生成" : "今日未生成")}
           ${ghState.running ? `<span class="chip info">正在刷新</span>` : ""}
           ${github && github.latest_date ? `<span class="chip">最新 ${esc(github.latest_date)}</span>` : ""}
+          <span class="chip ${pushState.ready ? "ok" : "warn"}">推送${pushState.enabled ? (pushState.ready ? "已启用" : "已开但不可用") : "已关闭"}</span>
         </div>
         <table class="radar-table">
           <tbody>
             <tr><th>每日刷新</th><td>${esc((github && github.schedule && github.schedule.time) || "08:00")} · ${esc((github && github.schedule && github.schedule.timezone) || "Asia/Shanghai")}</td></tr>
             <tr><th>下次运行</th><td class="mono">${esc(fmt(github && github.schedule && github.schedule.next_run))}</td></tr>
             <tr><th>最近生成</th><td class="mono">${esc(fmt(github && github.latest_generated_at))}</td></tr>
-            <tr><th>微信简报</th><td>${esc(push.status || "未发送")} · ${esc(push.configured ? "已配置" : "未配置")}</td></tr>
+            <tr><th>推送开关</th><td>${esc(pushState.enabled ? "已开启（在「全局设置 → 微信推送」里改）" : "已关闭")}</td></tr>
+            <tr><th>推送通道</th><td>${esc(push.provider || "Server酱 Turbo")} · ${esc(push.configured ? "SendKey 已配置" : "SendKey 未配置")}${push.items ? ` · 每天前 ${esc(push.items)} 个项目` : ""}</td></tr>
+            ${pushState.ready ? "" : `<tr><th>为何不发</th><td class="mono">${esc(pushState.reason || "未知")}</td></tr>`}
+            <tr><th>最近推送</th><td>${esc(push.status || "未发送")}${push.date ? ` · ${esc(push.date)}` : ""}${push.detail ? ` · ${esc(String(push.detail).slice(0, 80))}` : ""}</td></tr>
+            ${pushState.last_pushed_date ? `<tr><th>最近成功日期</th><td class="mono">${esc(pushState.last_pushed_date)}</td></tr>` : ""}
           </tbody>
         </table>
       </section>`;

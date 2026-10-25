@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _bootstrap  # noqa: F401,E402
 
-from core import ai_brief, ai_client, ai_secrets, ai_settings, db  # noqa: E402
+from core import ai_brief, ai_client, ai_secrets, ai_settings, brief, db  # noqa: E402
 
 
 class TestGlobalSettings(unittest.TestCase):
@@ -129,19 +129,23 @@ class TestAiBrief(unittest.TestCase):
         self.assertIsNone(ai_brief._normalize({"what": ""}))
         self.assertIsNone(ai_brief._normalize("not a dict"))
 
-    def test_normalize_trims_lists(self):
+    def test_normalize_keeps_detail_and_caps_highlights(self):
         data = ai_brief._normalize({
-            "what": "一个工具", "audience": "开发者", "problem": "重复劳动",
-            "usage": "pip install", "flow": ["a", "b", "c", "d", "e"],
-            "scenarios": ["s1", "s2", "s3", "s4"], "difficulty": "低", "limits": "无",
+            "what": "一个工具",
+            "detail": "它解决什么问题、有什么特点。" * 60,
+            "highlights": ["a", "b", "c", "d", "e", "f", ""],
+            "limits": "无",
         })
-        self.assertEqual(len(data["flow"]), 4)
-        self.assertEqual(len(data["scenarios"]), 3)
+        self.assertEqual(data["source"], brief.SOURCE_AI)
+        self.assertEqual(data["what"], "一个工具")
+        self.assertEqual([h for h in data["highlights"]], ["a", "b", "c", "d", "e"])
+        self.assertLessEqual(len(data["detail"]), 600)
 
     def test_apply_merges_and_marks_ai(self):
-        item = {"brief": {"what": "规则版", "audience": "旧值"}, "full_name": "a/b"}
-        ai_brief.apply(item, {"what": "AI 版", "audience": "新值"}, "model-x")
+        item = {"brief": {"what": "GitHub 简介版"}, "full_name": "a/b"}
+        ai_brief.apply(item, {"what": "AI 版", "detail": "解读"}, "model-x")
         self.assertEqual(item["brief"]["what"], "AI 版")
+        self.assertEqual(item["brief"]["source"], brief.SOURCE_AI)
         self.assertTrue(item["brief"]["ai"])
         self.assertEqual(item["brief"]["ai_model"], "model-x")
 
@@ -161,8 +165,8 @@ class TestAiBrief(unittest.TestCase):
         conn = ai_brief._conn()
         try:
             ai_brief._save(conn, ai_brief._key(item, "cache-model"), item, "cache-model",
-                           {"what": "缓存里的解读", "audience": "", "problem": "", "usage": "",
-                            "flow": [], "scenarios": [], "difficulty": "", "limits": ""})
+                           {"what": "缓存里的解读", "detail": "缓存里的解读正文",
+                            "highlights": ["要点一"], "limits": ""})
             conn.commit()
         finally:
             conn.close()

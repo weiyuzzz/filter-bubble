@@ -46,6 +46,10 @@ DEFAULTS: Dict[str, Any] = {
         # 是否在生成日报时自动调用模型
         "enable_briefs": True,
     },
+    # 微信简报推送开关（在「全局设置」里改；密钥仍在 .env）
+    "push": {
+        "enabled": True,
+    },
 }
 
 
@@ -116,10 +120,15 @@ def save(updates: Dict[str, Any]) -> Dict[str, Any]:
         if key in incoming_ai:
             ai[key] = incoming_ai[key]
 
+    push = current.setdefault("push", {})
+    incoming_push = updates.get("push") or {}
+    if "enabled" in incoming_push:
+        push["enabled"] = bool(incoming_push["enabled"])
+
     current.setdefault("version", 1)
     CONFIG_PATH.write_text(json.dumps(current, ensure_ascii=False, indent=2) + "\n",
                            encoding="utf-8")
-    return {"llm": llm, "ai": ai}
+    return {"llm": llm, "ai": ai, "push": push}
 
 
 def public() -> Dict[str, Any]:

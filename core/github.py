@@ -250,6 +250,43 @@ def readme_excerpt(markdown: str) -> str:
     return " ".join(lines)[:320].strip()
 
 
+def search_users(query: str, per_page: int = 12) -> List[Dict[str, Any]]:
+    """按关键词搜 GitHub 用户/组织（关注列表用，不再局限于已有列表）。
+
+    ``/search/users`` 只返回 login / avatar / type，没有 bio、粉丝数；
+    补那些人资料要每个用户一次请求，成本高且吃 API 额度，所以这里只返回
+    搜索结果自带字段，够用来「加关注」。
+    """
+    query = (query or "").strip()
+    if not query:
+        return []
+    if RATE_REMAINING is not None and RATE_REMAINING < 2:
+        return []
+    url = (
+        "https://api.github.com/search/users?q=%s&per_page=%d"
+        % (urllib.parse.quote(query), max(1, min(int(per_page), 20)))
+    )
+    raw = http_get(url, api=True)
+    if not raw:
+        return []
+    try:
+        payload = json.loads(raw.decode("utf-8", "replace"))
+    except ValueError:
+        return []
+    out: List[Dict[str, Any]] = []
+    for item in payload.get("items") or []:
+        login = str(item.get("login") or "").strip()
+        if not login:
+            continue
+        out.append({
+            "login": login,
+            "type": "Organization" if item.get("type") == "Organization" else "User",
+            "avatar": item.get("avatar_url") or "https://github.com/%s.png?size=96" % login,
+            "url": item.get("html_url") or "https://github.com/%s" % login,
+        })
+    return out
+
+
 def fetch_owner_repos(owner: str, per_page: int = 10) -> List[Dict[str, Any]]:
     """Newest public repositories for a publisher (used by the follow feed)."""
     if RATE_REMAINING is not None and RATE_REMAINING < 2:

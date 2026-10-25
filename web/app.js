@@ -15,6 +15,8 @@
     followBusy: new Set(),
     follows: { owners: [], events: [], counts: { owners: 0, events: 0 } },
     followRefreshBusy: false,
+    // 关注搜索：直接搜 GitHub 用户/组织，不再局限已有关注列表
+    followSearch: { query: "", hits: [], busy: false, timer: null },
     briefRepo: null,
     poll: null,
     firstPaint: true,
@@ -253,7 +255,7 @@
         <div class="tags">${tags.join("")}</div>
 
         <button class="brief-trigger" data-brief="${esc(item.full_name)}">
-          ${ICONS.spark}<b>项目速读</b><span>适合谁 · 怎么用 · 解决什么</span>${ICONS.arrow}
+          ${ICONS.spark}<b>项目速读</b><span>是什么 · 解读 · 值得注意</span>${ICONS.arrow}
         </button>
 
         <div class="card-stats">
@@ -366,11 +368,101 @@
     cardList.innerHTML = followIntroHTML(owners.length) + body;
   }
 
+  /* ---------------- 关注搜索：搜 GitHub 用户/组织 ---------------- */
+  function renderSearchHit(hit) {
+    const login = hit.login || "";
+    const following = hit.following != null ? !!hit.following : isFollowing(login);
+    const busy = state.followBusy.has(login.toLowerCase());
+    const initials = login.replace(/[^a-zA-Z0-9]/g, "").slice(0, 2).toUpperCase() || "GH";
+    const kind = hit.type === "Organization" ? "组织" : "用户";
+    const url = hit.url || `https://github.com/${login}`;
+    return `<div class="search-hit">
+      <div class="avatar" style="--h:${hueFor(login)}" aria-hidden="true">
+        <span>${esc(initials)}</span>
+        <img src="${esc(hit.avatar || `https://github.com/${login}.png?size=96`)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">
+      </div>
+      <div class="search-hit-main">
+        <b>${esc(login)}</b>
+        <small>${kind}${following ? " · 已关注" : ""}</small>
+      </div>
+      <a class="icon-btn" href="${esc(url)}" target="_blank" rel="noreferrer" title="在 GitHub 打开 ${esc(login)}" aria-label="在 GitHub 打开 ${esc(login)}">${ICONS.open}</a>
+      <button class="follow-chip${following ? " is-on" : ""}" data-follow="${esc(login)}" title="${following ? "取消关注 " + esc(login) : "关注 " + esc(login)}" ${busy ? "disabled" : ""}>${following ? "已关注" : "+ 关注"}</button>
+    </div>`;
+  }
+
+  function renderFollowSearch() {
+    const box = $("#followSearch");
+    if (!box) return;
+    const shown = state.tab === "following";
+    box.hidden = !shown;
+    if (!shown) return;
+    const s = state.followSearch;
+    const hitsEl = $("#followSearchHits");
+    const note = $("#followSearchNote");
+    const setNote = (text) => {
+      note.hidden = !text;
+      note.textContent = text || "";
+    };
+    if (s.busy) {
+      hitsEl.innerHTML = '<p class="pending">正在搜索 GitHub 用户…</p>';
+      setNote("");
+      return;
+    }
+    if (!s.query) {
+      hitsEl.innerHTML = "";
+      setNote("输入关键词，直接搜 GitHub 上的用户或组织并关注，不必先出现在今日榜单里。");
+      return;
+    }
+    if (!s.hits.length) {
+      hitsEl.innerHTML = "";
+      setNote(`没有找到与「${s.query}」匹配的用户；换个关键词，或直接输入完整的 GitHub 用户名。`);
+      return;
+    }
+    setNote("");
+    hitsEl.innerHTML = s.hits.map(renderSearchHit).join("");
+  }
+
+  async function searchFollowUsers(value) {
+    const input = $("#followSearchInput");
+    const query = String(value != null ? value : (input ? input.value : "")).trim();
+    if (state.followSearch.timer) {
+      clearTimeout(state.followSearch.timer);
+      state.followSearch.timer = null;
+    }
+    state.followSearch.query = query;
+    if (!query) {
+      state.followSearch.hits = [];
+      state.followSearch.busy = false;
+      renderFollowSearch();
+      return;
+    }
+    state.followSearch.busy = true;
+    renderFollowSearch();
+    try {
+      const { data } = await api("/api/follows/search?q=" + encodeURIComponent(query));
+      // 请求返回顺序不保证，只认最后一次输入的结果
+      if (state.followSearch.query !== query) return;
+      state.followSearch.hits = data.candidates || [];
+    } catch (err) {
+      if (state.followSearch.query !== query) return;
+      state.followSearch.hits = [];
+      toast(err.message, "error");
+    } finally {
+      if (state.followSearch.query === query) {
+        state.followSearch.busy = false;
+        renderFollowSearch();
+      }
+    }
+  }
+
   function renderCards({ flip = false, learnRepo = null } = {}) {
     if (state.tab === "following") {
       renderFollowFeed();
+      renderFollowSearch();
       return;
     }
+    const searchBox = $("#followSearch");
+    if (searchBox) searchBox.hidden = true;
     cardList.classList.remove("is-follow");
     renderOnboard();
 
@@ -878,6 +970,10 @@
       });
       state.follows = data.follows;
       syncFollowingFlags();
+      // 搜索结果里刚点过的那一条要立刻变成「已关注」，不用再搜一次
+      state.followSearch.hits.forEach((hit) => {
+        if (String(hit.login || "").toLowerCase() === key) hit.following = !!data.following;
+      });
       renderTabs();
       renderFollowRail();
       renderCards();
@@ -909,10 +1005,15 @@
     const initials = owner.replace(/[^a-zA-Z0-9]/g, "").slice(0, 2).toUpperCase() || "GH";
     const description = item.summary_zh || item.description || "这个项目还没有填写简介。";
     const english = item.summary_zh && item.description ? item.description : "";
-    const scenario = (b.scenarios || []).map((x) => `<span class="brief-chip">${esc(x)}</span>`).join("");
-    const flow = (b.flow || []).map((x) => `<li>${esc(x)}</li>`).join("");
+    const isAi = b.source === "ai" || !!b.ai;
+    const what = b.what || description;
+    const highlights = (b.highlights || []).map((x) => `<span class="brief-chip">${esc(x)}</span>`).join("");
     const badge = item.badge ? `<span class="badge ${badgeClass(item.badge)}">${esc(item.badge)}</span>` : "";
     const today = Number(item.stars_today || 0);
+    // 来源标识：这条解读是大模型写的，还是直接用的 GitHub 简介
+    const sourceBadge = isAi
+      ? `<span class="chip ok" title="由 ${esc(b.ai_model || "大模型")} 解读">AI 解读${b.ai_model ? " · " + esc(b.ai_model) : ""}</span>`
+      : `<span class="chip" title="未使用大模型，直接显示 GitHub 上的项目简介">GitHub 简介</span>`;
     $("#briefBody").innerHTML = `
       <div class="brief-head">
         <div class="avatar" style="--h:${hueFor(owner)}" aria-hidden="true"><span>${esc(initials)}</span><img src="${esc(item.avatar || `https://github.com/${owner}.png?size=96`)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()"></div>
@@ -922,38 +1023,24 @@
           <div class="brief-sub">${badge}<span>${esc(item.language || "Unknown")}</span><span>★ ${compact(item.stars)}</span>${today ? `<span>今日 +${exact(today)}</span>` : ""}</div>
         </div>
       </div>
-      <p class="brief-desc">${esc(description)}</p>
-      ${english ? `<p class="brief-desc-en"><span class="en-tag">EN</span> ${esc(english)}</p>` : ""}
-      <div class="brief-grid">
-        <div class="brief-block">
-          <div class="brief-label">适合谁</div>
-          <p>${esc(b.audience || "正在寻找这类工具的开发者与技术团队")}</p>
-        </div>
-        <div class="brief-block usage">
-          <div class="brief-label">怎么用</div>
-          <p>${esc(b.usage || "按 README 安装依赖后运行，通常以 CLI 或本地服务方式使用。")}</p>
-        </div>
-        <div class="brief-block problem wide">
-          <div class="brief-label">解决什么问题</div>
-          <p>${esc(b.problem || "把一类重复的技术工作变成可复用的工具或参考实现。")}</p>
-        </div>
-      </div>
-      ${scenario ? `<div class="brief-scenarios"><h4>典型场景</h4><div class="brief-chips">${scenario}</div></div>` : ""}
-      ${flow ? `<div class="brief-flow"><h4>上手流程</h4><ol>${flow}</ol></div>` : ""}
+      <div class="brief-source">${sourceBadge}</div>
+      <p class="brief-desc">${esc(what)}</p>
+      ${b.detail ? `<div class="brief-block"><div class="brief-label">项目解读</div><p class="brief-detail">${esc(b.detail)}</p></div>` : ""}
+      ${highlights ? `<div class="brief-block"><div class="brief-label">值得注意</div><div class="brief-chips">${highlights}</div></div>` : ""}
       ${b.limits ? `<div class="brief-block"><div class="brief-label">局限与注意</div><p>${esc(b.limits)}</p></div>` : ""}
+      ${english ? `<p class="brief-desc-en"><span class="en-tag">EN</span> ${esc(english)}</p>` : ""}
       <div class="brief-foot">
         <div class="brief-meta">
-          <span>上手门槛 <b>${esc(b.difficulty || "看 README")}</b></span>
           <span>Fork <b>${compact(item.forks)}</b></span>
           <span>${item.age_days != null ? `年龄 <b>${item.age_days} 天</b>` : ""}</span>
         </div>
         <a class="brief-open" href="${esc(item.url)}" target="_blank" rel="noreferrer">打开 GitHub ${ICONS.open}</a>
       </div>
       <div class="brief-foot">
-        ${b.ai
-          ? `<span class="chip ok">AI 解读 · ${esc(b.ai_model || "")}</span>`
-          : `<button class="ghost-btn" type="button" data-ai-brief="${esc(item.full_name)}">用 AI 重新解读</button>`}
-        <span class="brief-note">${esc(b.note || "根据项目简介、语言与 topics 自动归纳，具体命令与限制以 README 为准。")}</span>
+        ${isAi
+          ? `<button class="ghost-btn" type="button" data-ai-brief="${esc(item.full_name)}">重新用 AI 解读</button>`
+          : `<button class="ghost-btn" type="button" data-ai-brief="${esc(item.full_name)}">用 AI 解读</button>`}
+        <span class="brief-note">${esc(b.note || "未使用大模型，这里显示 GitHub 上的项目简介。")}</span>
       </div>`;
     state.briefRepo = repo;
     const modal = $("#briefModal");
@@ -1076,6 +1163,31 @@
       }
     });
     $("#followRefresh").addEventListener("click", () => loadFollows(true));
+    const searchInput = $("#followSearchInput");
+    if (searchInput) {
+      searchInput.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        searchFollowUsers();
+      });
+      // 输入停顿 400ms 后自动搜一次，回车可以立即搜
+      searchInput.addEventListener("input", () => {
+        if (state.followSearch.timer) clearTimeout(state.followSearch.timer);
+        state.followSearch.timer = setTimeout(() => searchFollowUsers(), 400);
+      });
+      searchInput.addEventListener("search", () => searchFollowUsers());
+    }
+    const searchBtn = $("#followSearchBtn");
+    if (searchBtn) searchBtn.addEventListener("click", () => searchFollowUsers());
+    const searchHits = $("#followSearchHits");
+    if (searchHits) {
+      searchHits.addEventListener("click", (event) => {
+        const followBtn = event.target.closest("[data-follow]");
+        if (!followBtn) return;
+        event.preventDefault();
+        toggleFollow(followBtn.dataset.follow);
+      });
+    }
     $("#pushNow").addEventListener("click", sendPush);
 
     $("#briefClose").addEventListener("click", closeBrief);

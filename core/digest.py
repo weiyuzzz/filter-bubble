@@ -296,17 +296,28 @@ def generate(progress: Optional[Callable[[str], None]] = None,
             follows.refresh(conn, max_seconds=15)
         except Exception as exc:  # noqa: BLE001
             print("[digest] follow refresh failed:", exc)
-        if config.PUSH_ENABLED and push:
+        push_state = notify.state()
+        if push and push_state["ready"]:
             said("推送微信简报")
             try:
                 result = notify.send_daily(payload, conn=conn)
+                # 不论成功失败都记一次「今天试过了」：否则推送失败时调度器会每 25 秒
+                # 重新生成一次日报再试，白白烧 GitHub 额度
+                db.set_meta(conn, "last_push_attempt_date", today)
                 if result.get("ok"):
                     db.set_meta(conn, "last_pushed_date", today)
-                    conn.commit()
+                    db.set_meta(conn, "last_push_error", "")
                 else:
+                    db.set_meta(conn, "last_push_error",
+                                str(result.get("reason") or result.get("detail") or "")[:300])
                     print("[push] failed:", result.get("reason") or result.get("detail"))
+                conn.commit()
             except Exception as exc:  # noqa: BLE001
                 print("[push] error:", exc)
+        elif push_state["reason"]:
+            db.set_meta(conn, "last_push_error", push_state["reason"])
+            conn.commit()
+            print("[push] skipped:", push_state["reason"])
         return payload
     finally:
         conn.close()

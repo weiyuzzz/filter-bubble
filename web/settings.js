@@ -159,6 +159,7 @@
     const switchState = llm.switch || {};
     const limits = llm.token_limits || { primary: 0, fallback: 0, window_hours: 24 };
     const usage = llm.usage || { slots: {}, history: [], paused: false };
+    const push = data.push || { enabled: true, ready: false, reason: "", time: "08:00", items: 3 };
 
     $("#aiDot").className = "live-dot" + (llm.available ? "" : " live");
     $("#aiState").textContent = slot.active === "fallback"
@@ -322,6 +323,37 @@
       </section>
 
       <section class="panel">
+        <header class="config-head">
+          <div>
+            <h3>微信推送</h3>
+            <p class="config-sub">每天 ${esc(push.time || "08:00")} 生成日报后，把前 ${esc(push.items || 3)} 个项目推送到微信（Server酱 Turbo）。</p>
+          </div>
+          <div class="config-state">
+            ${push.enabled && push.ready ? chip("已启用", "ok") : chip("已关闭", "warn")}
+          </div>
+        </header>
+        <div class="field-row">
+          <div class="field"><label for="setPushEnabled">推送开关</label>
+            <select id="setPushEnabled">
+              <option value="1" ${push.enabled ? "selected" : ""}>启用</option>
+              <option value="0" ${push.enabled ? "" : "selected"}>关闭</option>
+            </select>
+          </div>
+          <div class="field"><label>实际状态</label>
+            <input type="text" value="${esc(push.enabled ? (push.ready ? "可推送" : "开关已开，但发不出去") : "已关闭")}" readonly>
+          </div>
+        </div>
+        <p class="hint">${push.ready
+          ? `SendKey 已配置（${esc(push.provider || "")}）。关掉开关后连「立即推送」也不会发，调度器也不会再走每日推送。`
+          : `当前发不出去：${esc(push.reason || "原因未知")}`}</p>
+        <div id="pushResult"></div>
+        <div class="config-actions">
+          <button class="primary-btn" id="savePushBtn" type="button">保存设置</button>
+          <button class="ghost-btn" id="pushNowBtn" type="button">立即推送一次</button>
+        </div>
+      </section>
+
+      <section class="panel">
         <h3>最近错误日志 <small>${esc(data.error_log || "")}</small></h3>
         <div id="errorLog"><p class="pending">读取中…</p></div>
       </section>
@@ -343,6 +375,10 @@
     if (saveFallback) saveFallback.addEventListener("click", save);
     const saveAi = $("#saveAiBtn");
     if (saveAi) saveAi.addEventListener("click", save);
+    const savePush = $("#savePushBtn");
+    if (savePush) savePush.addEventListener("click", save);
+    const pushNow = $("#pushNowBtn");
+    if (pushNow) pushNow.addEventListener("click", pushNowSend);
 
     loadErrors();
   }
@@ -414,6 +450,34 @@
     }
   }
 
+  async function pushNowSend() {
+    const box = $("#pushResult");
+    if (!box) return;
+    box.innerHTML = `<p class="pending">正在发送…</p>`;
+    try {
+      // force 只跳过「今天已发过」的判重；开关关掉时依然不发（由后端把关）
+      const data = await api("/api/push", { method: "POST", body: JSON.stringify({ force: true }) });
+      const result = data.result || {};
+      if (result.ok) {
+        box.innerHTML = `<div class="claim">
+          <div class="claim-head"><p class="claim-text">已发送到微信</p>${chip(result.date || "", "ok")}</div>
+          <div class="claim-rationale">${esc(result.title || "")}</div>
+        </div>`;
+      } else if (result.skipped) {
+        box.innerHTML = `<p class="empty">没有发送：${esc(result.reason || "已跳过")}</p>`;
+      } else {
+        box.innerHTML = `<p class="empty">发送失败：${esc(result.detail || result.reason || "未知原因")}</p>`;
+      }
+      const state = data.push || {};
+      if (box && state.status) {
+        box.insertAdjacentHTML("beforeend",
+          `<p class="hint">最近记录：${esc(state.date || "")} · ${esc(state.status)}${state.detail ? " · " + esc(state.detail) : ""}</p>`);
+      }
+    } catch (error) {
+      box.innerHTML = `<p class="empty">发送失败：${esc(error.message)}</p>`;
+    }
+  }
+
   async function save() {
     const bodyData = {
       llm: {
@@ -431,6 +495,9 @@
       ai: {
         enable_briefs: $("#setBriefsEnabled").value === "1",
         concurrency: Number($("#setConcurrency").value),
+      },
+      push: {
+        enabled: $("#setPushEnabled").value === "1",
       },
       fallback: {
         enabled: $("#setFallbackEnabled").value === "1",

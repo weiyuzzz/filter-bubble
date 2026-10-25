@@ -81,6 +81,10 @@
         <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="9" r="3" stroke="currentColor" stroke-width="1.6"/><path d="M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M16 8h4m-2-2v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
         <span class="nav-text">关注动态</span>
       </a>
+      <a class="nav-item" href="/bookmarks.html">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M6 4h12v17l-6-4.2L6 21V4Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span>
+        <span class="nav-text">我的收藏</span>
+      </a>
     </nav>
 
     <div class="sidebar-foot">
@@ -182,6 +186,15 @@
               <div class="feed-tools">
                 <span class="result-count" id="resultCount"></span>
               </div>
+            </div>
+
+            <div class="follow-search" id="followSearch" hidden>
+              <div class="search-row">
+                <input type="search" id="followSearchInput" placeholder="搜索 GitHub 用户或组织，不用先在榜单里碰到他" autocomplete="off" spellcheck="false" aria-label="搜索 GitHub 用户或组织">
+                <button class="ghost-btn" id="followSearchBtn" type="button">搜索</button>
+              </div>
+              <div class="search-hits" id="followSearchHits"></div>
+              <p class="search-note" id="followSearchNote" hidden></p>
             </div>
 
             <div class="onboard" id="onboard">
