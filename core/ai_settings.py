@@ -378,6 +378,7 @@ def save(updates: Dict[str, Any]) -> Dict[str, Any]:
     delete_slots = incoming_llm.get("delete_slots") or updates.get("delete_slots") or []
     if isinstance(delete_slots, str):
         delete_slots = [delete_slots]
+    drop = set()
     if delete_slots:
         drop = {slug(item, "") for item in delete_slots}
         llm["slots"] = [s for s in llm.get("slots", []) if s["id"] not in drop]
@@ -389,6 +390,8 @@ def save(updates: Dict[str, Any]) -> Dict[str, Any]:
                 continue
             raw = dict(raw)
             slot_id = slug(raw.get("id") or "slot-%d" % (index + 1), "slot-%d" % (index + 1))
+            if slot_id in drop:  # 同一次请求里既要改又要删 → 删优先
+                continue
             raw["id"] = slot_id
             raw.setdefault("priority", index + 1)
             base = existing.get(slot_id)
