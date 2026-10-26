@@ -177,8 +177,12 @@ class Handler(BaseHTTPRequestHandler):
                     return _json(self, 409, {"error": reason})
                 result = ai_brief.generate_one(item, settings)
                 if not result:
+                    # 用本次调用自己的原因：STATS["last_error"] 是进程级全局，
+                    # 冷却/暂停这类没真正发请求的情况会显示上一次的旧错误，误导排查。
+                    reason = getattr(ai_brief, "LAST_ERROR", "") or \
+                        ai_client.STATS.get("last_error") or "模型没有返回可用内容"
                     return _json(self, 502, {
-                        "error": ai_client.STATS.get("last_error") or "模型没有返回可用内容",
+                        "error": reason,
                         "log": ai_client.read_errors(limit=5),
                     })
                 # 回写当天日报，刷新页面后仍然能看到这次生成的解读
@@ -570,8 +574,18 @@ def serve() -> None:
         papers_store.init()
         papers_service.start_worker(stop, 2)
         papers_service.start_scheduler(stop)
+        # 启动即补齐积压：以前只有「每天采集之后」才入队，应用一重启（或那次入队失败）
+        # 论文就永远停在「已排队，等待分析…」。这里 + 定时巡检保证它会自己好。
+        try:
+            from core.radar import config as radar_config
+            queued = papers_service.analyze_pending(radar_config.cached())
+            papers_service.log("启动补队列：新入队 %d 篇（队列 %d，待分析 %d）"
+                               % (queued, papers_service.queue_size(),
+                                  papers_service.pending_count()))
+        except Exception as exc:  # noqa: BLE001
+            papers_service.log("启动补队列失败: %s: %s" % (type(exc).__name__, exc))
     except Exception as exc:  # noqa: BLE001
-        print("[papers] scheduler not started:", exc)
+        print("[papers] scheduler not started:", exc, file=sys.stderr, flush=True)
     httpd = Server((config.HOST, config.PORT), Handler)
     for line in _serve_banner(config.HOST, config.PORT):
         print(line)
@@ -765,7 +779,16 @@ def main() -> None:
                 sys.exit(0)
             if action == "analyze":
                 queued = papers_service.analyze_pending(radar_cfg)
-                print("queued:", queued)
+                print("queued: %d（待分析 %d）" % (queued, papers_service.pending_count()))
+                if queued:
+                    stop = threading.Event()
+                    papers_service.start_worker(stop, 2)
+                    for _ in range(1800):
+                        if papers_service.queue_size() == 0:
+                            break
+                        time.sleep(1)
+                    stop.set()
+                print("remaining pending: %d" % papers_service.pending_count())
                 sys.exit(0)
             if action == "status":
                 conn = db.connect()

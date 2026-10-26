@@ -242,13 +242,20 @@
                  placeholder="例如 https://qianfan.baidubce.com/v2">
           <span class="field-hint">支持 <code>/v1</code> <code>/v2</code> <code>/v3</code> <code>/v4</code> 结尾，也支持直接填完整端点；没有版本号时自动补 <code>/v1</code>。</span>
         </div>
+        <div class="field">
+          <label>Key 归属（key_ref）</label>
+          <input data-slot-field="key_ref" type="text" value="${esc(slot.key_ref || slot.id)}"
+                 placeholder="例如 deepseek / qianfan">
+          <span class="field-hint">Key 按这个名字保存，选预设会一起带过来；两个接口填同一个名字就共用一把 Key。
+            <b>换服务商时这里必须一起改</b>，否则会把上一家的 Key 发到新地址上（401）。</span>
+        </div>
         <div class="field config-wide">
-          <label>API Key ${key.configured ? `（已配置 ${esc(key.masked)} · ${esc(key.source)}）` : "（未配置）"}</label>
-          <input data-slot-field="key" type="password" autocomplete="off" spellcheck="false"
+          <label for="key-${esc(slot.id)}">API Key ${key.configured ? `（已配置 ${esc(key.masked)} · ${esc(key.source)}）` : "（未配置）"}</label>
+          <input id="key-${esc(slot.id)}" data-slot-field="key" type="password" autocomplete="off" spellcheck="false"
                  placeholder="${key.configured ? "已保存，留空表示不修改" : "粘贴这家服务商的 Key"}">
-          <span class="field-hint">Key 归属（key_ref）：<code>${esc(slot.key_ref || slot.id)}</code> ·
-            每个服务商的 Key 单独保存，换地址不会把上一家的 Key 带过去。
-            ${key.configured ? `<button class="link-btn" data-act="clear-key" type="button">清除这个 Key</button>` : ""}</span>
+          <span class="field-hint">
+            ${key.configured ? `<button class="link-btn" data-act="clear-key" type="button">清除这个 Key</button>` : "密钥只写本机 data/ai_secrets.json，接口只回掩码。"}
+          </span>
         </div>
         ${quotaFields(slot)}
         <div class="field config-wide">
@@ -376,7 +383,7 @@
               <input id="setTemperature" type="number" min="0" max="1.5" step="0.05" value="${esc(llm.temperature ?? 0.2)}"></div>
             <div class="field"><label for="setMaxTokens">最大输出 token</label>
               <input id="setMaxTokens" type="number" min="50" max="8000" step="50" value="${esc(llm.max_tokens || 1500)}">
-              <span class="field-hint">推理模型容易被思考过程吃掉预算。</span></div>
+              <span class="field-hint">推理模型（deepseek-v4.1、glm-5.x 这类会先「思考」）建议 <b>3000 以上</b>，否则预算会被思考过程吃光、正文为空。</span></div>
             <div class="field"><label for="setQuotaWindow">额度窗口 / 暂停时长（小时）</label>
               <input id="setQuotaWindow" type="number" min="1" max="168" value="${esc(llm.quota_window_hours || 24)}">
               <span class="field-hint">所有接口都用尽后暂停多久再恢复计数。</span></div>

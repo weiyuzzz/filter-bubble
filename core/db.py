@@ -2,11 +2,20 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+import sys
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from .config import DB_PATH
+
+# SQLite 排序/连接会用临时文件，默认落在系统的 %TEMP%；在受限环境里那里可能写不进去，
+# 于是大查询直接报 "unable to open database file"（SQLITE_CANTOPEN）。
+# 把临时目录指到我们自己的 data 目录（再配合 temp_store=MEMORY）。
+os.environ.setdefault("SQLITE_TMPDIR", str(DB_PATH.parent))
+os.environ.setdefault("SQLITE_TEMP_STORE", "2")
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -111,18 +120,102 @@ CREATE TABLE IF NOT EXISTS meta (
 
 
 def connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH), timeout=15)
-    conn.row_factory = sqlite3.Row
-    return conn
+    """打开数据库连接。
+
+    Windows + WAL 下，多进程/多线程同时读写时，新建连接偶尔会拿到
+    ``unable to open database file``（SQLITE_CANTOPEN：抢不到 -wal/-shm 或回滚日志），
+    它**不受 busy_timeout 影响、会立刻失败**，所以这里做几次短重试。
+    """
+    last: Optional[Exception] = None
+    for attempt in range(4):
+        try:
+            conn = sqlite3.connect(str(DB_PATH), timeout=15)
+            conn.row_factory = sqlite3.Row
+            # 关键：CANTOPEN 往往发生在「第一条语句」——那时 SQLite 才去打开 -wal/-shm、
+            # 回滚日志或**临时文件**。先在这里跑几句，把它纳入重试范围，
+            # 否则调用方第一次 execute 就炸（例如 pending_papers 的大排序）。
+            conn.execute("PRAGMA temp_store=MEMORY")   # 排序/连接全在内存里，不碰 %TEMP%
+            conn.execute("PRAGMA busy_timeout=15000")
+            conn.execute("SELECT 1").fetchone()
+            return conn
+        except sqlite3.OperationalError as exc:
+            last = exc
+            message = str(exc).lower()
+            if ("unable to open database file" not in message
+                    and "database is locked" not in message
+                    and "database table is locked" not in message):
+                raise
+            time.sleep(0.2 * (attempt + 1))
+    if last:
+        raise last
+    raise sqlite3.OperationalError("cannot open database")
 
 
 def init() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
+    keep_alive()
+
+
+_KEEPER: Optional[sqlite3.Connection] = None
+
+
+def keep_alive() -> Optional[sqlite3.Connection]:
+    """常驻一条空闲连接。
+
+    WAL 模式下，**最后一个连接关闭时 SQLite 会删掉 -wal/-shm**；此时若有别的线程/进程
+    正好在新建连接，就会偶发 ``unable to open database file``（SQLITE_CANTOPEN）。
+    这在「多线程 worker + 每个请求新建连接」的用法里非常致命：一次失败就可能让
+    入队/查询整段跳过。留一条常驻连接，文件就不会被删。
+    """
+    global _KEEPER
+    if _KEEPER is not None:
+        try:
+            _KEEPER.execute("SELECT 1").fetchone()
+            return _KEEPER
+        except Exception:  # noqa: BLE001 - 连接已失效就重建
+            try:
+                _KEEPER.close()
+            except Exception:  # noqa: BLE001
+                pass
+            _KEEPER = None
+    try:
+        _KEEPER = connect()
+        _KEEPER.execute("PRAGMA busy_timeout=15000")
+    except Exception as exc:  # noqa: BLE001
+        print("[db] keep-alive connection failed:", exc, file=sys.stderr, flush=True)
+        _KEEPER = None
+    return _KEEPER
 
 
 def now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+_RETRY_MARKERS = ("unable to open database file", "database is locked",
+                  "database table is locked")
+
+
+def retry(fn, attempts: int = 4, delay: float = 0.2):
+    """对 SQLite 的 CANTOPEN/锁错误做**整段重试**。
+
+    新建连接的预热只能挡住「连接时」的失败；在连接建立之后、下一条语句执行时，
+    仍可能在 WAL 文件被别的连接重建的瞬间拿到 CANTOPEN。所以对「打开→查询→关闭」
+    这类短操作整体重试一次比逐个语句补救简单可靠。fn 自己负责连接开关。
+    """
+    last: Optional[Exception] = None
+    for index in range(max(1, attempts)):
+        try:
+            return fn()
+        except sqlite3.OperationalError as exc:
+            message = str(exc).lower()
+            if not any(marker in message for marker in _RETRY_MARKERS):
+                raise
+            last = exc
+            time.sleep(delay * (index + 1))
+    if last:
+        raise last
+    raise sqlite3.OperationalError("database unavailable")
 
 
 def get_meta(conn: sqlite3.Connection, key: str, default: Optional[str] = None) -> Optional[str]:

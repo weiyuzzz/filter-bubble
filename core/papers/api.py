@@ -61,7 +61,13 @@ def handle_post(path: str, body: Dict[str, Any], cfg: Dict[str, Any]) -> Tuple[i
             queued = sum(1 for row in rows if service.retry_one(row["paper_id"]))
             return _ok({"queued": queued})
         if path == "/api/radar/papers/analyze":
-            return _ok({"queued": service.analyze_pending(cfg)})
+            queued = service.analyze_pending(cfg)
+            return _ok({"queued": queued, "pending": service.pending_count()})
+        if path == "/api/radar/papers/analyze-pending":
+            # 把还没出概况的论文一次性排进队列（不限条数，成本由全局 token 限额控制）
+            queued = service.analyze_pending(cfg)
+            return _ok({"queued": queued, "queue": service.queue_size(),
+                        "pending": service.pending_count()})
         if path == "/api/radar/papers/test-sources":
             result = probe.run(cfg)
             return _ok(result)

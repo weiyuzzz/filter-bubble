@@ -294,6 +294,18 @@ def _save(body: Dict[str, Any]) -> Dict[str, Any]:
         if slot_updates:
             updates["llm"]["slots"] = slot_updates
             saved["slots"] = [item["id"] for item in slot_updates]
+            # 安全网：Key 归属被改动、而新归属下没有存 Key → 提醒（这是 401 的经典成因）
+            for item in slot_updates:
+                slot_id = item["id"]
+                old = current_slots.get(slot_id) or {}
+                old_ref = ai_secrets.normalize_ref(old.get("key_ref") or slot_id)
+                new_ref = ai_secrets.normalize_ref(item.get("key_ref") or old_ref or slot_id)
+                if old and new_ref != old_ref and not ai_secrets.has_api_key(new_ref) \
+                        and ai_secrets.has_api_key(old_ref):
+                    warnings.append(
+                        "「%s」的 Key 归属从 %s 改成了 %s，但 %s 下没有存过 Key —— "
+                        "保存后会拿不到 Key（401）。请在新归属下重填 Key，或把归属改回 %s。"
+                        % (item.get("name") or slot_id, old_ref, new_ref, new_ref, old_ref))
 
     delete_slots = body.get("delete_slots")
     if isinstance(delete_slots, (list, str)):

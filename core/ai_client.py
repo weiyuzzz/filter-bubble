@@ -855,8 +855,9 @@ def _extract(llm: Dict[str, Any], data: Dict[str, Any]) -> Optional[str]:
         if isinstance(content, list):  # 有些网关返回分块内容
             content = "\n".join(str((part or {}).get("text") or "") for part in content
                                 if isinstance(part, dict))
-        text = content or message.get("reasoning_content") or ""
-        return text or None
+        # 注意：不要把 reasoning_content 当成正文返回。推理模型预算不够时 content 为空、
+        # 思考过程却很长，把它当答案会让 JSON 解析失败并掩盖真正的原因（预算被吃掉了）。
+        return (content or "").strip() or None
     return None
 
 
@@ -926,8 +927,12 @@ def _attempt(llm: Dict[str, Any], messages: List[Dict[str, str]], json_mode: boo
             finish = choice.get("finish_reason")
             reasoning_tokens = ((data.get("usage") or {}).get("completion_tokens_details") or {}
                                 ).get("reasoning_tokens") or 0
-            truncated = finish == "length"
-            message = ("模型输出被长度上限截断，正文为空" if truncated else "模型返回了空内容")
+            # 正文空 + 有思考 token = 预算被思考吃光（即使 finish_reason 不是 length），
+            # 也必须放大上限重试，否则永远拿不到答案。
+            truncated = finish == "length" or bool(reasoning_tokens)
+            message = ("模型输出被长度上限截断，正文为空" if finish == "length"
+                       else "思考过程吃掉了输出预算，正文为空" if reasoning_tokens
+                       else "模型返回了空内容")
             last_error = {
                 "status": 0,
                 "code": "truncated" if truncated else "empty",
@@ -936,7 +941,7 @@ def _attempt(llm: Dict[str, Any], messages: List[Dict[str, str]], json_mode: boo
                 "detail": "finish_reason=%s, completion_tokens=%s, reasoning_tokens=%s"
                           % (finish, completion_tokens, reasoning_tokens),
                 "hint": ("这个模型很可能是推理模型，思考过程吃掉了输出预算。"
-                         "提高「最大输出 token」后重试，或换用非推理模型。"
+                         "把「最大输出 token」提到 3000 以上后重试，或换用非推理模型。"
                          if reasoning_tokens or truncated else "模型没有返回正文，稍后重试。"),
                 "suggested_model": "",
                 "retryable": truncated,
@@ -996,6 +1001,7 @@ def chat_result_full(messages: List[Dict[str, str]], settings: Any,
 
     until = ai_usage.pause_until()
     if until:
+        STATS["last_error"] = "AI 已暂停：所有接口的 token 额度都用完了（%s 后恢复）" % until
         return None, {
             "status": 0, "code": "paused", "kind": "quota",
             "message": "AI 已暂停：所有接口的 token 额度都用完了",
@@ -1038,6 +1044,7 @@ def chat_result_full(messages: List[Dict[str, str]], settings: Any,
             names = "；".join("%s %s（%s 后恢复）" % (item["name"], item["reason"] or "失败",
                                                     item["cooldown_until"] or "稍")
                              for item in blocked)
+            STATS["last_error"] = ("所有接口都在冷却中（%s）" % names)[:300]
             return None, {
                 "status": 0, "code": "cooldown", "kind": "config",
                 "message": "所有接口都在冷却中，本次不发起请求",
@@ -1049,6 +1056,7 @@ def chat_result_full(messages: List[Dict[str, str]], settings: Any,
             until = ai_usage.pause(window_hours)
             detail = "；".join("%s：%s" % (item["name"], item.get("reset_at") or "额度重置后")
                               for item in exhausted)
+            STATS["last_error"] = ("所有接口的 token 额度都用完了，AI 暂停到 %s" % until)[:300]
             return None, {
                 "status": 0, "code": "paused", "kind": "quota",
                 "message": "所有接口的 token 额度都用完了，AI 先暂停",

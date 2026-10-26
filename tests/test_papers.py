@@ -95,6 +95,65 @@ class TestClassification(unittest.TestCase):
         self.assertEqual(classify.normalize_discipline(""), "all")
 
 
+class TestQueueVisibility(Base):
+    """论文「已排队，等待分析…」的两条保障：能被数出来 + 失败一定要留痕。"""
+
+    def test_missing_overview_counts_as_pending(self):
+        from core.papers import service
+
+        conn = self.conn()
+        try:
+            store.upsert_papers(conn, [_paper(source_id="p1", doi="10.1/p1")])
+        finally:
+            conn.close()
+        self.assertGreaterEqual(service.pending_count(), 1)
+
+    def test_large_pending_query_works(self):
+        """limit 大时 SQLite 要建临时文件排序；受限环境里 %TEMP% 可能不可写，
+        以前会抛 unable to open database file，让整个论文队列静默停摆。"""
+        from core.papers import service
+
+        conn = self.conn()
+        try:
+            store.upsert_papers(conn, [_paper(source_id="m%d" % i, doi="10.1/m%d" % i,
+                                              title="Paper %d" % i) for i in range(400)])
+            papers = store.pending_papers(conn, 5000, paper_ai.PROMPT_VERSION)
+        finally:
+            conn.close()
+        self.assertGreaterEqual(len(papers), 400)
+        self.assertGreaterEqual(service.pending_count(), 400)
+        self.assertGreaterEqual(service.status({}).get("pending"), 400)
+
+    def test_analysis_exception_writes_failed_row(self):
+        from core.papers import service
+
+        conn = self.conn()
+        try:
+            store.upsert_papers(conn, [_paper(source_id="p2", doi="10.1/p2")])
+            paper_id = conn.execute("SELECT id FROM paper_items LIMIT 1").fetchone()["id"]
+        finally:
+            conn.close()
+
+        def boom(_paper, _settings):
+            raise RuntimeError("boom")
+
+        original = paper_ai.analyze
+        paper_ai.analyze = boom
+        try:
+            service._analyze_one(paper_id)
+        finally:
+            paper_ai.analyze = original
+
+        conn = self.conn()
+        try:
+            overview = store.get_overview(conn, paper_id)
+        finally:
+            conn.close()
+        self.assertIsNotNone(overview, "失败也必须写一行，否则界面永远显示「已排队」")
+        self.assertEqual(overview["status"], "failed")
+        self.assertIn("boom", overview["error"] or "")
+
+
 class TestDedupe(Base):
     def test_same_doi_merges(self):
         conn = self.conn()

@@ -12,6 +12,7 @@ import concurrent.futures as cf
 import datetime as dt
 import os
 import queue
+import sys
 import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -26,6 +27,29 @@ _WORKER_LOCK = threading.Lock()
 _STATE_LOCK = threading.Lock()
 _STATE: Dict[str, Any] = {"running": False, "stage": "idle", "started_at": None,
                           "finished_at": None, "last_error": None, "last_result": None}
+_STORE_READY = False
+_SWEEP_INTERVAL = float(os.environ.get("PAPERS_SWEEP_SECONDS", "300") or 300)
+
+
+def log(message: str) -> None:
+    """论文模块的关键事件写 stderr（stdout 被重定向后是块缓冲的，会看不见）。"""
+    try:
+        print("[papers] %s" % message, file=sys.stderr, flush=True)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def ensure_store() -> None:
+    """建表只做一次：以前每次请求都 executescript（含 PRAGMA journal_mode=WAL），
+    在别的进程正在写时很容易撞出 unable to open database file。"""
+    global _STORE_READY
+    if _STORE_READY:
+        return
+    try:
+        store.init()
+        _STORE_READY = True
+    except Exception as exc:  # noqa: BLE001
+        log("store init failed: %s" % exc)
 
 
 def _set(stage: str, **kwargs: Any) -> None:
@@ -186,17 +210,27 @@ def _analyze_one(paper_id: str) -> None:
         paper = store.get_paper(conn, paper_id)
         if not paper:
             return
-        store.save_overview(conn, paper_id, "pending", None, "", paper_ai.PROMPT_VERSION,
-                            content_hash_value=store.content_hash(paper))
-        overview, error, model = paper_ai.analyze(paper, settings)
-        if overview:
-            store.save_overview(conn, paper_id, "done", overview, model,
-                                paper_ai.PROMPT_VERSION,
+        try:
+            store.save_overview(conn, paper_id, "pending", None, "", paper_ai.PROMPT_VERSION,
                                 content_hash_value=store.content_hash(paper))
-        else:
-            store.save_overview(conn, paper_id, "failed", None, model,
-                                paper_ai.PROMPT_VERSION, error=error or "未知错误",
-                                content_hash_value=store.content_hash(paper))
+            overview, error, model = paper_ai.analyze(paper, settings)
+            if overview:
+                store.save_overview(conn, paper_id, "done", overview, model,
+                                    paper_ai.PROMPT_VERSION,
+                                    content_hash_value=store.content_hash(paper))
+            else:
+                store.save_overview(conn, paper_id, "failed", None, model,
+                                    paper_ai.PROMPT_VERSION, error=error or "未知错误",
+                                    content_hash_value=store.content_hash(paper))
+                log("分析失败 %s: %s" % (paper_id[:40], error or "未知错误"))
+        except Exception as exc:  # noqa: BLE001 - 单篇失败不能拖死队列
+            detail = "%s: %s" % (type(exc).__name__, exc)
+            log("分析异常 %s: %s" % (paper_id[:40], detail))
+            try:
+                store.save_overview(conn, paper_id, "failed", None, "", paper_ai.PROMPT_VERSION,
+                                    error=detail, content_hash_value=store.content_hash(paper))
+            except Exception:  # noqa: BLE001 - 连失败也写不进去就只记日志
+                pass
     finally:
         conn.close()
 
@@ -213,6 +247,34 @@ def start_worker(stop: threading.Event, concurrency: int = 2) -> None:
                                       name="papers-ai-%d" % idx)
             thread.start()
             _WORKERS.append(thread)
+        sweeper = threading.Thread(target=_sweeper, args=(stop,), daemon=True,
+                                   name="papers-ai-sweeper")
+        sweeper.start()
+        _WORKERS.append(sweeper)
+
+
+def _sweeper(stop: threading.Event) -> None:
+    """定时补齐待分析队列。
+
+    以前只有「每天采集一次」之后才会入队，一旦那次入队失败（或应用重启、队列丢在内存里），
+    论文就永远停在「已排队，等待分析…」。现在每 5 分钟自己扫一遍，自己会好。
+    """
+    first = True
+    while not stop.is_set():
+        delay = 20.0 if first else _SWEEP_INTERVAL
+        first = False
+        if stop.wait(delay):
+            break
+        try:
+            cfg = _current_cfg()
+            block = _cfg_block(cfg)
+            if not block.get("enabled", True) or not (block.get("ai") or {}).get("enabled", True):
+                continue
+            queued = analyze_pending(cfg, limit=120)
+            if queued:
+                log("补队列：%d 篇待分析（队列 %d）" % (queued, queue_size()))
+        except Exception as exc:  # noqa: BLE001 - 巡检线程不能死
+            log("sweeper error: %s: %s" % (type(exc).__name__, exc))
 
 
 def enqueue(papers: List[Dict[str, Any]], limit: int) -> int:
@@ -223,6 +285,22 @@ def enqueue(papers: List[Dict[str, Any]], limit: int) -> int:
         _QUEUE.put(paper["id"])
         added += 1
     return added
+
+
+def pending_count(limit: int = 5000) -> int:
+    def _read() -> int:
+        conn = db.connect()
+        try:
+            ensure_store()
+            return len(store.pending_papers(conn, limit, paper_ai.PROMPT_VERSION))
+        finally:
+            conn.close()
+
+    try:
+        return db.retry(_read)
+    except Exception as exc:  # noqa: BLE001
+        log("pending_count failed: %s: %s" % (type(exc).__name__, exc))
+        return -1
 
 
 def analyze_pending(cfg: Dict[str, Any], limit: Optional[int] = None) -> int:
@@ -236,11 +314,19 @@ def analyze_pending(cfg: Dict[str, Any], limit: Optional[int] = None) -> int:
     if not ai_cfg.get("enabled", True):
         return 0
 
-    conn = db.connect()
+    def _read() -> List[Dict[str, Any]]:
+        conn = db.connect()
+        try:
+            ensure_store()
+            return store.pending_papers(conn, int(limit or 500), paper_ai.PROMPT_VERSION)
+        finally:
+            conn.close()
+
     try:
-        papers = store.pending_papers(conn, int(limit or 500), paper_ai.PROMPT_VERSION)
-    finally:
-        conn.close()
+        papers = db.retry(_read)
+    except Exception as exc:  # noqa: BLE001 - 入队失败要留下痕迹，不能静默
+        log("analyze_pending failed: %s: %s" % (type(exc).__name__, exc))
+        return 0
     return enqueue(papers, len(papers))
 
 
@@ -294,23 +380,43 @@ def status(cfg: Dict[str, Any]) -> Dict[str, Any]:
     ai_cfg = block.get("ai") or {}
     conn = db.connect()
     try:
-        store.init()
+        ensure_store()
         runs = store.latest_runs(conn)
         stats = store.stats(conn)
         counts = store.discipline_counts(conn)
         last_run = conn.execute("SELECT MAX(finished_at) t FROM paper_source_runs").fetchone()["t"]
+        pending = len(store.pending_papers(conn, 5000, paper_ai.PROMPT_VERSION))
+    except Exception as exc:  # noqa: BLE001
+        log("status failed: %s: %s" % (type(exc).__name__, exc))
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+        conn = db.connect()  # 换一条连接再试一次（CANTOPEN 往往是瞬时的）
+        try:
+            runs = store.latest_runs(conn)
+            stats = store.stats(conn)
+            counts = store.discipline_counts(conn)
+            last_run = conn.execute("SELECT MAX(finished_at) t FROM paper_source_runs").fetchone()["t"]
+            pending = len(store.pending_papers(conn, 5000, paper_ai.PROMPT_VERSION))
+            log("status recovered on retry")
+        except Exception as exc2:  # noqa: BLE001
+            log("status retry failed: %s: %s" % (type(exc2).__name__, exc2))
+            runs, stats, counts, last_run, pending = [], {}, {}, "", -1
     finally:
         conn.close()
     # AI 成本由全局 token 限额控制，这里只回报限额本身，方便页面提示
     try:
         from .. import ai_client, ai_settings
         usage = ai_client.status(ai_settings.load()).get("usage") or {}
+        ai_state = ai_client.status(ai_settings.load())
     except Exception:  # noqa: BLE001
-        usage = {}
+        usage, ai_state = {}, {}
     return {
         "enabled": bool(block.get("enabled", True)),
         "state": get_state(),
         "queue": queue_size(),
+        "pending": pending,          # 还没出概况、也没排队的篇数（界面显示「已排队」的就是这些）
         "schedule": {"daily_time": block.get("daily_time"),
                      "interval_hours": block.get("interval_hours"),
                      "lookback_days": block.get("lookback_days"),
@@ -319,7 +425,12 @@ def status(cfg: Dict[str, Any]) -> Dict[str, Any]:
                    "fetch_per_source": block.get("fetch_per_source")},
         "ai": {"enabled": bool(ai_cfg.get("enabled", True)),
                "paused": bool(usage.get("paused")),
-               "paused_until": usage.get("paused_until") or ""},
+               "paused_until": usage.get("paused_until") or "",
+               "available": bool(ai_state.get("available")),
+               "reason": ai_state.get("reason") or "",
+               "active_slot": ai_state.get("active_slot") or "",
+               "last_error": ai_state.get("last_error") or "",
+               "warnings": ai_state.get("warnings") or []},
         "stats": stats,
         "counts": counts,
         "sources": runs,
@@ -350,7 +461,7 @@ def scheduler_loop(stop: threading.Event) -> None:
     频率由 ``papers.interval_hours``（默认 24）控制，与雷达的每小时采集完全独立；
     这样既不会反复抓取，也不会反复调用模型。失败不影响其他模块。
     """
-    print("[papers] scheduler started")
+    log("scheduler started")
     while not stop.wait(60):
         try:
             cfg = _current_cfg()
@@ -364,7 +475,7 @@ def scheduler_loop(stop: threading.Event) -> None:
                 continue
             conn = db.connect()
             try:
-                store.init()
+                ensure_store()
                 last = conn.execute("SELECT MAX(finished_at) t FROM paper_source_runs").fetchone()["t"]
             finally:
                 conn.close()
@@ -372,14 +483,14 @@ def scheduler_loop(stop: threading.Event) -> None:
                 continue
             if get_state().get("running"):
                 continue
-            print("[papers] daily collect at", now.isoformat(timespec="seconds"))
+            log("daily collect at %s" % now.isoformat(timespec="seconds"))
             summary = collect(cfg)
             _set("idle", last_result=summary)
             queued = analyze_pending(cfg)
             if queued:
-                print("[papers] queued %d papers for AI (daily budget)" % queued)
+                log("采集后入队 %d 篇待分析" % queued)
         except Exception as exc:  # noqa: BLE001 - 调度线程不能死
-            print("[papers] scheduler error:", exc)
+            log("scheduler error: %s: %s" % (type(exc).__name__, exc))
 
 
 def _current_cfg() -> Dict[str, Any]:

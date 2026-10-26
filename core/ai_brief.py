@@ -116,9 +116,14 @@ def _normalize(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     }
 
 
+LAST_ERROR = ""
+
+
 def generate(item: Dict[str, Any], settings: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    ok, _reason, llm = ai_client.resolve(settings)
+    global LAST_ERROR
+    ok, reason, llm = ai_client.resolve(settings)
     if not ok:
+        LAST_ERROR = reason
         return None
     prompt = USER.format(
         full_name=item.get("full_name", ""),
@@ -133,6 +138,8 @@ def generate(item: Dict[str, Any], settings: Dict[str, Any]) -> Optional[Dict[st
         [{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}],
         settings, json_mode=True)
     if not text:
+        LAST_ERROR = ((error or {}).get("message") or (error or {}).get("hint")
+                      or "模型没有返回内容")
         return None
     used_model = used_info.get("model") or ""
     data = ai_client.extract_json(text)
@@ -248,9 +255,11 @@ def cached_only(items: List[Dict[str, Any]], settings: Optional[Dict[str, Any]] 
 
 def generate_one(item: Dict[str, Any], settings: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """单项目生成（供「立即生成」按钮使用）：先查缓存，命中就不再调用模型。"""
+    global LAST_ERROR
     settings = settings or ai_settings.load()
-    ok, _reason, llm = ai_client.resolve(settings)
+    ok, reason, llm = ai_client.resolve(settings)
     if not ok:
+        LAST_ERROR = reason
         return None
     model = llm["model"]
     conn = _conn()

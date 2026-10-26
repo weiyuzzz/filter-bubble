@@ -123,7 +123,8 @@ class TestScriptContracts(unittest.TestCase):
         # 接口是 1..N 个卡片：字段用 data-slot-field，操作用 data-act
         for marker in ('id="setEnabled"', 'id="errorLog"', 'id="setConcurrency"',
                        'data-slot-field="base_url"', 'data-slot-field="model"',
-                       'data-slot-field="key"', 'data-slot-field="preset"',
+                       'data-slot-field="key"', 'data-slot-field="key_ref"',
+                       'data-slot-field="preset"',
                        'data-act="save"', 'data-act="test"', 'data-act="add"'):
             self.assertIn(marker, js, "全局设置页应渲染 %s" % marker)
 
