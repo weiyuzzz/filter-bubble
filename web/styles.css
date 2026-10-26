@@ -2217,3 +2217,41 @@ textarea { min-height: 68px; resize: vertical; line-height: 1.6; }
 @media (prefers-reduced-motion: reduce) {
   .intel-btn, .intel-card, .intel-dot circle { transition: none; }
 }
+
+/* ---------- 模型接口列表（全局设置） ---------- */
+.slot-list { display: flex; flex-direction: column; gap: var(--fb-sp-4); }
+.slot-card { border-left: 3px solid var(--slot-accent, var(--fb-accent)); }
+.slot-card.is-off { border-left-color: var(--fb-border); opacity: .82; }
+.slot-head { display: flex; gap: 10px; align-items: center; margin: 0 0 4px; }
+.slot-rank {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 22px; border-radius: 999px; font-size: 11.5px;
+  background: var(--fb-surface-3); color: var(--fb-text-2); font-family: var(--fb-mono);
+}
+.slot-card[data-active="1"] .slot-rank { background: var(--fb-accent); color: var(--fb-accent-ink); }
+.slot-name {
+  border: 1px solid transparent; background: transparent; font-weight: 600;
+  font-size: var(--fb-fs-md); color: var(--fb-text); padding: 2px 6px; border-radius: 6px;
+  min-width: 8ch; max-width: 24ch;
+}
+.slot-name:hover, .slot-name:focus { border-color: var(--fb-border); background: var(--fb-surface-2); }
+.slot-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.slot-actions .ghost-btn, .slot-actions .danger-btn { padding: 5px 10px; font-size: var(--fb-fs-xs); }
+.slot-health { display: grid; gap: 4px; font-size: var(--fb-fs-xs); color: var(--fb-text-3); line-height: 1.7; }
+.slot-health code { font-family: var(--fb-mono); color: var(--fb-text-2); word-break: break-all; }
+.warn-list { margin: 0 0 var(--fb-sp-3); padding-left: 18px; font-size: var(--fb-fs-sm); color: var(--fb-warn); }
+.warn-list li { margin: 2px 0; line-height: 1.7; }
+.config-summary {
+  cursor: pointer; font-size: var(--fb-fs-sm); color: var(--fb-text-2);
+  font-weight: 500; list-style: none; display: flex; align-items: center; gap: 6px;
+}
+.config-summary::-webkit-details-marker { display: none; }
+.config-summary::before { content: "\25B8"; font-size: 10px; color: var(--fb-text-3); }
+details[open] > .config-summary::before { content: "\25BE"; }
+.slot-usage-line { font-family: var(--fb-mono); font-size: 11.5px; color: var(--fb-text-3); line-height: 1.9; }
+.usage-fill.slot-c1 { background: var(--fb-accent); }
+.usage-fill.slot-c2 { background: var(--fb-warn); }
+.usage-fill.slot-c3 { background: #7c5cff; }
+.usage-fill.slot-c4 { background: #0ea5a4; }
+.usage-fill.slot-c5 { background: #e0679b; }
+.usage-fill.slot-c6 { background: #c98a00; }

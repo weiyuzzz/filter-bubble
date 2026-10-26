@@ -120,10 +120,12 @@ class TestScriptContracts(unittest.TestCase):
         for element_id in ("settingsBody", "themeToggle", "navToggle"):
             self.assertIn('id="%s"' % element_id, html, "全局设置页缺少 %s" % element_id)
         js = _read("settings.js")
-        for element_id in ("setEnabled", "setProvider", "setBaseUrl", "setModel",
-                           "setApiKey", "testBtn", "saveBtn", "errorLog"):
-            self.assertIn('id="%s"' % element_id, js,
-                          "全局设置页应渲染 %s" % element_id)
+        # 接口是 1..N 个卡片：字段用 data-slot-field，操作用 data-act
+        for marker in ('id="setEnabled"', 'id="errorLog"', 'id="setConcurrency"',
+                       'data-slot-field="base_url"', 'data-slot-field="model"',
+                       'data-slot-field="key"', 'data-slot-field="preset"',
+                       'data-act="save"', 'data-act="test"', 'data-act="add"'):
+            self.assertIn(marker, js, "全局设置页应渲染 %s" % marker)
 
     def test_global_settings_uses_global_ai_endpoints(self):
         js = _read("settings.js")

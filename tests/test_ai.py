@@ -456,7 +456,8 @@ class TestProviders(unittest.TestCase):
     def test_chat_result_ex_reports_serving_model(self):
         """主备切换后，调用方要能拿到真正服务的模型名。"""
         original = ai_client._attempt
-        ai_client._attempt = lambda llm, messages, json_mode: ("ok-text", None)
+        ai_client._attempt = lambda llm, messages, json_mode, count=True: (
+            "ok-text", None, {"prompt": 1, "completion": 1, "calls": 1, "latency_ms": 1})
         try:
             cfg = {"llm": {"enabled": True, "provider": "openai",
                            "base_url": "http://127.0.0.1:9/v1", "model": "primary-model",
@@ -468,6 +469,308 @@ class TestProviders(unittest.TestCase):
         self.assertIsNone(error)
         self.assertEqual(used.get("model"), "primary-model")
         self.assertEqual(used.get("slot"), "primary")
+
+
+class TestEndpointJoining(unittest.TestCase):
+    """接口地址拼接：/v1 /v2 /v3 /v4 与完整端点都要能用（千帆、方舟、智谱）。"""
+
+    def test_versioned_base_urls(self):
+        join = ai_client._join_endpoint
+        self.assertEqual(join("https://qianfan.baidubce.com/v2", "openai", "/chat/completions"),
+                         "https://qianfan.baidubce.com/v2/chat/completions")
+        self.assertEqual(join("https://ark.cn-beijing.volces.com/api/v3", "openai",
+                              "/chat/completions"),
+                         "https://ark.cn-beijing.volces.com/api/v3/chat/completions")
+        self.assertEqual(join("https://open.bigmodel.cn/api/paas/v4", "openai",
+                              "/chat/completions"),
+                         "https://open.bigmodel.cn/api/paas/v4/chat/completions")
+
+    def test_plain_and_v1_base_urls(self):
+        join = ai_client._join_endpoint
+        self.assertEqual(join("https://api.deepseek.com", "openai", "/chat/completions"),
+                         "https://api.deepseek.com/v1/chat/completions")
+        self.assertEqual(join("https://api.deepseek.com/v1", "openai", "/chat/completions"),
+                         "https://api.deepseek.com/v1/chat/completions")
+        self.assertEqual(join("https://openrouter.ai/api/v1", "openai", "/chat/completions"),
+                         "https://openrouter.ai/api/v1/chat/completions")
+
+    def test_full_endpoint_is_used_as_is(self):
+        self.assertEqual(
+            ai_client._join_endpoint("https://qianfan.baidubce.com/v2/chat/completions",
+                                     "openai", "/chat/completions"),
+            "https://qianfan.baidubce.com/v2/chat/completions")
+
+    def test_qianfan_request_shape(self):
+        llm = {"provider": "openai", "model": "ernie-5.1", "preset": "qianfan",
+               "base_url": "https://qianfan.baidubce.com/v2", "max_tokens": 500,
+               "temperature": 0.2, "slot": "primary", "key_ref": "qianfan", "api_key_env": "X"}
+        url, payload, _headers = ai_client._build_request(
+            llm, [{"role": "user", "content": "hi"}], True)
+        self.assertEqual(url, "https://qianfan.baidubce.com/v2/chat/completions")
+        self.assertEqual(payload["response_format"], {"type": "json_object"})
+
+
+class TestErrorKinds(unittest.TestCase):
+    """把「瞬时限流」「额度用尽」「配置错误」分开——决定切接口还是冷却。"""
+
+    def test_qianfan_overdue_is_quota(self):
+        body = json.dumps({"error": {"code": "account_overdue", "type": "access_denied",
+                                     "message": "Access denied due to overdue account"},
+                           "id": "as-xxx"})
+        info = ai_client._classify(403, body, "ernie-5.1", "openai", "qianfan")
+        self.assertEqual(info["code"], "account_overdue")
+        self.assertEqual(info["request_id"], "as-xxx")
+        self.assertEqual(info["kind"], "quota")
+        self.assertIn("欠费", info["hint"])
+
+    def test_qianfan_rpm_is_rate_limit(self):
+        body = json.dumps({"error": {"code": "rpm_rate_limit_exceeded",
+                                     "type": "rate_limit_exceeded",
+                                     "message": "Rate limit reached for RPM"}})
+        info = ai_client._classify(429, body, "ernie-5.1", "openai", "qianfan")
+        self.assertEqual(info["kind"], "rate_limit")
+
+    def test_qianfan_plan_quota_is_quota(self):
+        body = json.dumps({"error": {"code": "coding_plan_month_quota_exceeded",
+                                     "type": "quota_exceeded",
+                                     "message": "month quota has been exceeded"}})
+        info = ai_client._classify(429, body, "ernie-5.1", "openai", "qianfan")
+        self.assertEqual(info["kind"], "quota")
+
+    def test_auth_failure_is_config(self):
+        info = ai_client._classify(
+            401, '{"error":{"message":"Authentication Fails, Your api key: ****8416 is invalid"}}',
+            "deepseek-chat", "openai", "deepseek")
+        self.assertEqual(info["kind"], "config")
+        self.assertEqual(ai_client.error_kind(info), "config")
+
+    def test_content_policy_403_is_not_config(self):
+        body = json.dumps({"error": {"code": "system_unsafe", "type": "unsafe_request",
+                                     "message": "the content of system field is invalid"}})
+        info = ai_client._classify(403, body, "m", "openai", "qianfan")
+        self.assertNotEqual(info["kind"], "config")
+
+
+class TestKeyRefsAndWarnings(unittest.TestCase):
+    """Key 按服务商隔离，并对「Key 与地址不匹配」给出提醒。"""
+
+    def setUp(self):
+        for ref in ("openrouter", "qianfan", "deepseek", "primary", "fallback"):
+            ai_secrets.set_api_key(None, ref)
+
+    def tearDown(self):
+        for ref in ("openrouter", "qianfan", "deepseek", "primary", "fallback"):
+            ai_secrets.set_api_key(None, ref)
+
+    def test_keys_are_isolated_per_provider(self):
+        ai_secrets.set_api_key("sk-or-v1-aaaa1111", "openrouter")
+        ai_secrets.set_api_key("bce-v3/ALTAK-x/yyy", "qianfan")
+        self.assertEqual(ai_secrets.get_api_key(None, "openrouter")[0], "sk-or-v1-aaaa1111")
+        self.assertEqual(ai_secrets.get_api_key(None, "qianfan")[0], "bce-v3/ALTAK-x/yyy")
+        self.assertEqual(ai_secrets.env_name_for("qianfan"), "RADAR_LLM_API_KEY_QIANFAN")
+        self.assertTrue(ai_secrets.has_api_key("qianfan"))
+
+    def test_mismatched_key_is_flagged(self):
+        from core import ai_api
+
+        warn = ai_api._key_warning("sk-or-v1-abcdefgh", {"preset": "deepseek"})
+        self.assertIn("OpenRouter", warn)
+        warn = ai_api._key_warning("bce-v3/ALTAK-x/yyy", {"preset": "deepseek"})
+        self.assertIn("千帆", warn)
+        self.assertEqual(ai_api._key_warning("sk-abcdefgh", {"preset": "deepseek"}), "")
+        self.assertIn("bce-v3/", ai_api._key_warning("sk-abcdefgh", {"preset": "qianfan"}))
+
+
+class TestSlots(unittest.TestCase):
+    """1..N 个接口：迁移、增删、失败穿透、冷却。"""
+
+    def setUp(self):
+        ai_client.reset_slot()
+        ai_client.clear_slot_health()
+        from core import ai_usage
+
+        ai_usage.resume()
+
+    def test_legacy_config_migrates_to_slots(self):
+        cfg = {"llm": {
+            "enabled": True, "provider": "openai", "base_url": "https://api.deepseek.com",
+            "model": "deepseek-chat", "api_key_env": "RADAR_LLM_API_KEY",
+            "fallback": {"enabled": True, "provider": "openai",
+                         "base_url": "https://openrouter.ai/api/v1", "model": "x/y:free"},
+            "token_limits": {"primary": 100, "fallback": 200, "window_hours": 12},
+        }}
+        slots = ai_settings.slots_of(cfg)
+        self.assertEqual([s["id"] for s in slots], ["primary", "fallback"])
+        self.assertEqual(slots[0]["quota"]["limit"], 100)
+        self.assertEqual(slots[0]["key_ref"], "primary")
+        self.assertEqual(slots[1]["quota"]["limit"], 200)
+        self.assertEqual(slots[1]["model"], "x/y:free")
+        self.assertEqual(slots[1]["provider"], "openai")
+
+    def test_three_slots_save_and_delete(self):
+        if ai_settings.CONFIG_PATH.exists():
+            ai_settings.CONFIG_PATH.unlink()
+        ai_settings.save({"llm": {"enabled": True, "slots": [
+            {"id": "primary", "name": "主接口", "enabled": True, "preset": "deepseek",
+             "provider": "openai", "base_url": "https://api.deepseek.com",
+             "model": "deepseek-chat", "key_ref": "deepseek", "priority": 1,
+             "quota": {"mode": "daily", "limit": 500000}},
+            {"id": "qianfan", "name": "千帆 Token Plan", "enabled": True, "preset": "qianfan",
+             "provider": "openai", "base_url": "https://qianfan.baidubce.com/v2",
+             "model": "ernie-5.1", "key_ref": "qianfan", "priority": 2,
+             "quota": {"mode": "window", "limit": 100000000, "window_hours": 5}},
+        ]}})
+        cfg = ai_settings.load()
+        ids = [s["id"] for s in cfg["llm"]["slots"]]
+        self.assertEqual(ids[:2], ["primary", "qianfan"])
+        quota = next(s for s in cfg["llm"]["slots"] if s["id"] == "qianfan")["quota"]
+        self.assertEqual(quota["mode"], "window")
+        self.assertEqual(quota["window_hours"], 5)
+        # 兼容镜像仍然是主接口
+        self.assertEqual(cfg["llm"]["model"], "deepseek-chat")
+        raw = ai_settings.CONFIG_PATH.read_text(encoding="utf-8")
+        self.assertNotIn("api_key", raw)
+
+        ai_settings.save({"llm": {"delete_slots": ["fallback"]}})
+        self.assertNotIn("fallback", [s["id"] for s in ai_settings.load()["llm"]["slots"]])
+        self.assertIn("qianfan", [s["id"] for s in ai_settings.load()["llm"]["slots"]])
+        if ai_settings.CONFIG_PATH.exists():
+            ai_settings.CONFIG_PATH.unlink()
+
+    def _cfg(self):
+        return {"llm": {"enabled": True, "max_attempts": 1, "timeout_seconds": 2, "slots": [
+            {"id": "primary", "name": "主", "enabled": True, "preset": "deepseek",
+             "provider": "openai", "base_url": "http://127.0.0.1:9/v1", "model": "model-a",
+             "key_ref": "k1", "priority": 1, "quota": {"mode": "daily", "limit": 0}},
+            {"id": "backup", "name": "备", "enabled": True, "preset": "qianfan",
+             "provider": "openai", "base_url": "http://127.0.0.1:9/v2", "model": "model-b",
+             "key_ref": "k2", "priority": 2, "quota": {"mode": "total", "limit": 0}},
+        ]}}
+
+    def test_hard_error_falls_through_and_then_cools_down(self):
+        seen = []
+
+        def fake(llm, messages, json_mode, count=True):
+            seen.append(llm["slot"])
+            if llm["slot"] == "primary":
+                return None, {"status": 401, "message": "Authentication Fails", "detail": "",
+                              "hint": "", "retryable": False, "code": "", "kind": "config",
+                              "model": llm["model"]}, {"prompt": 0, "completion": 0,
+                                                       "calls": 0, "latency_ms": 1}
+            return "ok-text", None, {"prompt": 10, "completion": 5, "calls": 1, "latency_ms": 1}
+
+        original = ai_client._attempt
+        ai_client._attempt = fake
+        try:
+            text, error, used = ai_client.chat_result_ex([{"role": "user", "content": "x"}],
+                                                         self._cfg())
+            self.assertEqual(text, "ok-text")
+            self.assertIsNone(error)
+            self.assertEqual(used["slot"], "backup")
+            self.assertEqual(seen, ["primary", "backup"])
+            self.assertTrue(ai_client.slot_blocked("primary"))
+            # 第二次：坏的接口在冷却里，不再白跑那条 401
+            seen.clear()
+            text, _error, used = ai_client.chat_result_ex([{"role": "user", "content": "x"}],
+                                                          self._cfg())
+            self.assertEqual(seen, ["backup"])
+            self.assertEqual(used["slot"], "backup")
+        finally:
+            ai_client._attempt = original
+            ai_client.clear_slot_health()
+
+    def test_all_slots_blocked_does_not_call_model(self):
+        cfg = {"llm": {"enabled": True, "slots": [
+            {"id": "only", "name": "唯一", "enabled": True, "provider": "openai",
+             "base_url": "http://127.0.0.1:9/v1", "model": "m", "key_ref": "k",
+             "priority": 1, "quota": {"mode": "daily", "limit": 0}}]}}
+        ai_client.mark_slot_error("only", {"status": 401, "message": "bad key"})
+        called = []
+        original = ai_client._attempt
+        ai_client._attempt = lambda *a, **k: called.append(1) or ("x", None, {})
+        try:
+            text, error, _used = ai_client.chat_result_full([{"role": "user", "content": "x"}],
+                                                            cfg)
+        finally:
+            ai_client._attempt = original
+            ai_client.clear_slot_health()
+        self.assertIsNone(text)
+        self.assertEqual((error or {}).get("code"), "cooldown")
+        self.assertEqual(called, [])
+
+    def test_quota_view_and_duplicate_warning(self):
+        info = ai_client.describe({"llm": {"enabled": True, "slots": [
+            {"id": "primary", "name": "A", "enabled": True, "provider": "openai",
+             "base_url": "https://api.deepseek.com", "model": "deepseek-chat", "key_ref": "a",
+             "priority": 1},
+            {"id": "second", "name": "B", "enabled": True, "provider": "openai",
+             "base_url": "https://api.deepseek.com", "model": "deepseek-chat", "key_ref": "b",
+             "priority": 2},
+        ]}})
+        self.assertTrue(any("完全相同" in w for w in info["warnings"]))
+        self.assertEqual([slot["id"] for slot in info["slots"]], ["primary", "second"])
+
+
+class TestQuotaModes(unittest.TestCase):
+    """三种额度模式：自然日 / 每 N 小时窗口 / 总量。"""
+
+    def setUp(self):
+        from core import ai_usage
+
+        ai_usage.resume()
+
+    def test_window_quota_resets_when_window_passes(self):
+        import datetime as dt
+
+        from core import ai_usage
+
+        quota = {"mode": "window", "limit": 100, "window_hours": 5}
+        ai_usage.record("w", 120, 0, 1, quota=quota)
+        self.assertTrue(ai_usage.exhausted_quota("w", quota))
+        data = ai_usage.load()
+        data["windows"]["w"] = (dt.datetime.now().astimezone() -
+                                dt.timedelta(hours=6)).isoformat(timespec="seconds")
+        ai_usage._write(data)
+        self.assertFalse(ai_usage.exhausted_quota("w", quota))
+        self.assertEqual(ai_usage.quota_view("w", quota)["mode"], "window")
+
+    def test_total_quota_uses_cumulative_usage(self):
+        from core import ai_usage
+
+        quota = {"mode": "total", "limit": 100, "window_hours": 24, "reset_days": 0}
+        ai_usage.record("t", 120, 0, 1, quota=quota)
+        self.assertTrue(ai_usage.exhausted_quota("t", quota))
+        # 窗口清零（跨天）也不影响总量型额度
+        data = ai_usage.load()
+        data["slots"]["t"] = {"prompt": 0, "completion": 0, "calls": 0}
+        ai_usage._write(data)
+        self.assertEqual(ai_usage.used("t"), 0)
+        self.assertEqual(ai_usage.used_total("t"), 120)
+        self.assertTrue(ai_usage.exhausted_quota("t", quota))
+        self.assertEqual(ai_usage.quota_view("t", quota)["tokens"], 120)
+
+    def test_api_save_reports_key_mismatch(self):
+        from core import ai_api
+
+        if ai_settings.CONFIG_PATH.exists():
+            ai_settings.CONFIG_PATH.unlink()
+        try:
+            out = ai_api._save({"slots": [{
+                "id": "primary", "name": "主接口", "preset": "deepseek", "provider": "openai",
+                "base_url": "https://api.deepseek.com", "model": "deepseek-chat",
+                "key_ref": "deepseek", "key": "sk-or-v1-abcdefgh12345678", "priority": 1}]})
+            self.assertEqual(out["api_key_slots"], ["primary"])
+            self.assertTrue(out["warnings"])
+            self.assertIn("OpenRouter", out["warnings"][0])
+            self.assertTrue(ai_secrets.has_api_key("deepseek"))
+            slots = out["settings"]["llm"]["slots"]
+            self.assertEqual(slots[0]["key"]["ref"], "deepseek")
+            self.assertTrue(slots[0]["key"]["configured"])
+            self.assertNotIn("abcdefgh", slots[0]["key"]["masked"])
+        finally:
+            ai_secrets.set_api_key(None, "deepseek")
+            if ai_settings.CONFIG_PATH.exists():
+                ai_settings.CONFIG_PATH.unlink()
 
 
 if __name__ == "__main__":
