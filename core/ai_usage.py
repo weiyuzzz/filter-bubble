@@ -294,11 +294,13 @@ def exhausted(slot: str, limit: int) -> bool:
 
 
 def reset_at(slot: str, quota: Any, data: Optional[Dict[str, Any]] = None) -> str:
-    """这个槽位的额度什么时候回满（ISO 字符串，空表示不会自动回）。"""
+    """这个槽位的额度什么时候回满（ISO 字符串，空表示不会自动回）。
+
+    注意：即使本地没设上限（limit=0），窗口型/每日型也有「回满时刻」——
+    上游报额度用尽时就是按这个时间冷却的。
+    """
     quota = _as_quota(quota)
     data = data if data is not None else load({slot: quota})
-    if int(quota["limit"]) <= 0:
-        return ""
     mode = quota["mode"]
     if mode == "daily":
         return (_midnight() + dt.timedelta(days=1)).isoformat(timespec="seconds")

@@ -183,25 +183,28 @@ def _key_warning(key: str, slot: Dict[str, Any]) -> str:
     key = str(key or "")
     if not key:
         return ""
-    hits: List[Tuple[str, str]] = []
-    for preset_id, preset in ai_client.PRESETS.items():
-        for hint in preset.get("key_hints") or []:
-            if key.startswith(hint):
-                hits.append((preset_id, hint))
-    if hits:
-        longest = max(len(hint) for _pid, hint in hits)
-        top = {pid for pid, hint in hits if len(hint) == longest}
-        preset = str(slot.get("preset") or "")
-        if len(top) == 1 and preset not in top:
-            other = top.pop()
-            return "这把 Key 看起来是「%s」的（以 %s 开头），当前接口是「%s」——多半会 401。" % (
-                ai_client.PRESETS[other]["label"], hits[0][1],
-                ai_client.PRESETS.get(preset, {}).get("label") or "自定义")
     preset = str(slot.get("preset") or "")
-    expect = (ai_client.PRESETS.get(preset) or {}).get("key_hints") or []
-    if expect and not any(key.startswith(hint) for hint in expect):
+    own = (ai_client.PRESETS.get(preset) or {}).get("key_hints") or []
+    # 找出所有命中的前缀，取最长的那个（sk-or- 比 sk- 更具体）
+    hits = [(hint, preset_id)
+            for preset_id, item in ai_client.PRESETS.items()
+            for hint in (item.get("key_hints") or [])
+            if key.startswith(hint)]
+    if hits:
+        longest = max(len(hint) for hint, _pid in hits)
+        labels = " / ".join(sorted({ai_client.PRESETS[pid]["label"]
+                                    for hint, pid in hits if len(hint) == longest}))
+        hint = next(hint for hint, _pid in hits if len(hint) == longest)
+        if any(hint == own_hint for own_hint in own):
+            return ""  # 命中的最长前缀就是当前服务商自己的前缀，放心
+        message = "这把 Key 看起来是「%s」的（以 %s 开头），当前接口是「%s」——多半会 401。" % (
+            labels, hint, ai_client.PRESETS.get(preset, {}).get("label") or "自定义")
+        if own:
+            message += "（这家的 Key 通常以 %s 开头）" % " / ".join(own)
+        return message
+    if own:
         return "「%s」的 Key 通常以 %s 开头，请确认没有填错服务商。" % (
-            ai_client.PRESETS[preset]["label"], " / ".join(expect))
+            ai_client.PRESETS[preset]["label"], " / ".join(own))
     return ""
 
 

@@ -500,6 +500,28 @@ class TestEndpointJoining(unittest.TestCase):
                                      "openai", "/chat/completions"),
             "https://qianfan.baidubce.com/v2/chat/completions")
 
+    def test_version_segment_in_the_middle_of_the_path(self):
+        """千帆 Token Plan 的地址是 /v2/tokenplan/personal，版本号在中间。"""
+        join = ai_client._join_endpoint
+        self.assertEqual(join("https://qianfan.baidubce.com/v2/tokenplan/personal", "openai",
+                              "/chat/completions"),
+                         "https://qianfan.baidubce.com/v2/tokenplan/personal/chat/completions")
+        self.assertEqual(join("https://qianfan.baidubce.com/v2/tokenplan/personal/chat/completions",
+                              "openai", "/chat/completions"),
+                         "https://qianfan.baidubce.com/v2/tokenplan/personal/chat/completions")
+
+    def test_qianfan_presets(self):
+        presets = {item["id"]: item for item in ai_client.preset_list()}
+        self.assertIn("qianfan", presets)
+        self.assertIn("qianfan_pay", presets)
+        plan = presets["qianfan"]
+        self.assertEqual(plan["protocol"], "openai")  # 接口协议选 OpenAI 兼容即可
+        self.assertEqual(plan["base_url"], "https://qianfan.baidubce.com/v2/tokenplan/personal")
+        self.assertIn("deepseek-v4.1-flash", plan["models"])
+        self.assertIn("bce-v3/", plan["key_hints"])
+        self.assertEqual(plan["quota"]["mode"], "window")
+        self.assertIn("ERNIE", plan["note"])
+
     def test_qianfan_request_shape(self):
         llm = {"provider": "openai", "model": "ernie-5.1", "preset": "qianfan",
                "base_url": "https://qianfan.baidubce.com/v2", "max_tokens": 500,

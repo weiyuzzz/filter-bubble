@@ -50,15 +50,28 @@ PRESETS: Dict[str, Dict[str, Any]] = {
         "note": "官方按量计费，地址支持 /v1 前缀，直接填域名即可。",
     },
     "qianfan": {
-        "label": "百度千帆（v2 OpenAI 兼容）",
+        "label": "百度千帆 Token Plan（个人版）",
         "protocol": "openai",
-        "base_url": "https://qianfan.baidubce.com/v2",
-        "models": ["ernie-5.1", "ernie-4.5-turbo-128k", "deepseek-v3"],
+        "base_url": "https://qianfan.baidubce.com/v2/tokenplan/personal",
+        "models": ["deepseek-v4.1-flash", "deepseek-v4.1-flash-1017", "deepseek-v4-pro",
+                   "deepseek-v4-flash-0731", "glm-5.3", "glm-5.2", "glm-5.3-flash"],
         "key_hints": ["bce-v3/"],
         "key_ref": "qianfan",
         "quota": {"mode": "window", "limit": 0, "window_hours": 5},
-        "note": ("控制台创建 API Key（形如 bce-v3/ALTAK-.../...），请求头需带 Bearer 前缀。"
-                 "Token Plan 套餐是「总量型 + 窗口刷新」，把额度模式设成窗口或总量。"),
+        "note": ("Token Plan 专属 Key（形如 bce-v3/ALTAK.../...），地址带 /v2/tokenplan/personal，"
+                 "请求头自动带 Bearer。套餐是多模型共享 Token 池，额度模式建议「窗口（5 小时）」"
+                 "或「总量」；个人版只支持 GLM 与 DeepSeek 系列，ERNIE / Qwen 会返回 "
+                 "token_plan_person_model_not_supported。"),
+    },
+    "qianfan_pay": {
+        "label": "百度千帆（按量计费 v2）",
+        "protocol": "openai",
+        "base_url": "https://qianfan.baidubce.com/v2",
+        "models": ["ernie-5.1", "ernie-4.5-turbo-128k", "deepseek-v4-pro", "glm-5.3"],
+        "key_hints": ["bce-v3/"],
+        "key_ref": "qianfan_pay",
+        "quota": {"mode": "daily", "limit": 0, "window_hours": 24},
+        "note": "按量计费的 API Key，和 Token Plan 专属 Key 是两套独立体系，互不通用。",
     },
     "openrouter": {
         "label": "OpenRouter",
@@ -169,6 +182,8 @@ def normalize_provider(value: str) -> str:
 
 
 ANTHROPIC_VERSION = "2023-06-01"
+# 地址里已经带了版本段（/v1、/v2/tokenplan/personal 这类）就不再额外补 /v1
+_VERSION_IN_PATH = re.compile(r"/v[0-9]+[a-z]*(/|$)", re.I)
 ERROR_LOG = Path(os.environ.get("AI_ERROR_LOG", str(DATA_DIR / "llm-errors.log")))
 STATE_PATH = Path(os.environ.get("AI_STATE", str(DATA_DIR / "ai_state.json")))
 
@@ -713,7 +728,8 @@ def describe(settings: Any) -> Dict[str, Any]:
 # ---------------- 请求 ----------------
 
 def _join_endpoint(base: str, provider: str, suffix: str) -> str:
-    """拼接接口地址：支持 /v1 /v2 /v3 /v4 结尾、也支持直接填完整端点。"""
+    """拼接接口地址：支持 /v1 /v2 /v3 /v4（可以在结尾，也可以是路径中的一段，例如
+    千帆 Token Plan 的 ``/v2/tokenplan/personal``），也支持直接填完整端点。"""
     base = str(base or "").rstrip("/")
     if not base:
         return suffix
@@ -721,7 +737,7 @@ def _join_endpoint(base: str, provider: str, suffix: str) -> str:
         return base
     if provider == "anthropic" and base.endswith("/messages"):
         return base
-    if re.search(r"/v[0-9]+[a-z]*$", base, re.I):
+    if _VERSION_IN_PATH.search(base):
         return base + suffix
     return base + "/v1" + suffix
 
