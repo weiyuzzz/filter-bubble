@@ -199,6 +199,24 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             conn.close()
 
+    # ---------- 采集监控（只读；任何异常都不影响采集本身） ----------
+    def _monitor(self, path: str, parsed, body: Optional[Dict[str, Any]]):
+        try:
+            from core import monitor
+        except Exception as exc:  # noqa: BLE001
+            print("[monitor] unavailable:", exc)
+            return _json(self, 503, {"error": "monitor module unavailable: %s" % exc})
+        try:
+            if body is None:
+                query = {k: v[0] for k, v in urllib.parse.parse_qs(parsed.query).items()}
+                status, payload = monitor.api.handle_get(path, query)
+            else:
+                status, payload = monitor.api.handle_post(path, body)
+        except Exception as exc:  # noqa: BLE001
+            print("[monitor] handler error:", exc)
+            status, payload = 500, {"error": str(exc)}
+        return _json(self, status, payload)
+
     # ---------- radar (independent module; failures never touch the GitHub flow) ----------
     def _radar(self, path: str, parsed, body: Optional[Dict[str, Any]]):
         try:
@@ -225,6 +243,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._ai(path, parsed, None)
         if path == "/api/radar" or path.startswith("/api/radar/"):
             return self._radar(path, parsed, None)
+        if path == "/api/monitor" or path.startswith("/api/monitor/"):
+            return self._monitor(path, parsed, None)
         if path == "/api/health":
             return _json(self, 200, {"ok": True, "time": db.now_iso()})
         if path == "/api/status":
@@ -284,6 +304,8 @@ class Handler(BaseHTTPRequestHandler):
         body = _read_body(self)
         if path == "/api/brief":
             return self._ai_brief(body)
+        if path == "/api/monitor" or path.startswith("/api/monitor/"):
+            return self._monitor(path, parsed, body)
         if path.startswith("/api/ai/"):
             return self._ai(path, parsed, body)
         if path.startswith("/api/radar/"):
@@ -291,7 +313,7 @@ class Handler(BaseHTTPRequestHandler):
         conn = db.connect()
         try:
             if path == "/api/refresh":
-                started = digest.refresh_async()
+                started = digest.refresh_async(trigger="api")
                 return _json(self, 202 if started else 200, {"started": started, "status": _status_payload()})
             if path == "/api/feedback":
                 return self._feedback(conn, body)
@@ -315,7 +337,8 @@ class Handler(BaseHTTPRequestHandler):
                 payload = digest.latest(conn)
                 if not payload:
                     return _json(self, 409, {"error": "digest not ready"})
-                result = notify.send_daily(payload, conn=conn, force=bool(body.get("force")))
+                result = notify.send_daily(payload, conn=conn, force=bool(body.get("force")),
+                                           trigger="api")
                 return _json(self, 200, {"result": result, "push": notify.status(conn)})
             if path == "/api/seen":
                 from core import seen as seen_store
@@ -529,7 +552,7 @@ def _scheduler(stop: threading.Event) -> None:
             if (push_state["ready"] and attempted != today and pushed != today
                     and now.strftime("%H:%M") >= config.REFRESH_TIME):
                 print("[schedule] daily push run at", now.isoformat(timespec="seconds"))
-                if digest.refresh_async(push=True):
+                if digest.refresh_async(push=True, trigger="schedule"):
                     last_refresh = now
                 continue
 
@@ -541,7 +564,7 @@ def _scheduler(stop: threading.Event) -> None:
             if (now - last_refresh).total_seconds() < interval_minutes * 60:
                 continue
             print("[schedule] hourly refresh at", now.isoformat(timespec="seconds"))
-            if digest.refresh_async(push=False):
+            if digest.refresh_async(push=False, trigger="schedule"):
                 last_refresh = now
         except Exception as exc:  # noqa: BLE001
             print("[schedule] error:", exc)
@@ -556,9 +579,15 @@ def serve() -> None:
         conn.close()
     if not ready:
         print("[startup] no digest for today — generating in the background")
-        digest.refresh_async()
+        digest.refresh_async(trigger="startup")
     stop = threading.Event()
     threading.Thread(target=_scheduler, args=(stop,), daemon=True, name="filter-bubble-scheduler").start()
+    # 采集监控：建表 + 一次性导入既有真实历史（不触发任何采集）
+    try:
+        from core import monitor as monitor_module
+        monitor_module.store.init()
+    except Exception as exc:  # noqa: BLE001
+        print("[monitor] init skipped:", exc)
     # 全球热点雷达：独立线程、独立表、独立时间表。这里的任何异常都不能影响 GitHub 服务启动。
     try:
         from core.radar import service as radar_service
@@ -681,7 +710,8 @@ def main() -> None:
         serve()
     elif cmd == "refresh":
         try:
-            payload = digest.generate(progress=lambda m: print("»", m, flush=True))
+            payload = digest.generate(progress=lambda m: print("»", m, flush=True),
+                                      trigger="cli")
         except Exception as exc:  # noqa: BLE001
             print("✗ 生成失败：%s" % exc, file=sys.stderr)
             sys.exit(1)
@@ -708,7 +738,8 @@ def main() -> None:
                 print()
                 print("(dry-run: 未发送，也未消耗 Server酱额度)")
             else:
-                result = notify.send_daily(payload, conn=conn, force="--force" in sys.argv)
+                result = notify.send_daily(payload, conn=conn, force="--force" in sys.argv,
+                                           trigger="cli")
                 print(result)
         finally:
             conn.close()
@@ -764,7 +795,7 @@ def main() -> None:
                 print(json.dumps(report, ensure_ascii=False, indent=2)[:6000])
                 sys.exit(0 if report.get("usable") else 1)
             if action == "collect":
-                summary = papers_service.collect(radar_cfg)
+                summary = papers_service.collect(radar_cfg, trigger="cli")
                 print(json.dumps(summary, ensure_ascii=False, indent=2, default=str)[:4000])
                 queued = papers_service.analyze_pending(radar_cfg)
                 if queued:

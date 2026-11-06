@@ -271,7 +271,10 @@ class TestThreatTimeline(unittest.TestCase):
     def test_observed_activity_marks_partial_legacy_basis(self):
         conn = db.connect()
         try:
-            _snapshot(conn, "ev-a", "2026-10-25", item_count=80, platform_count=3, heat=70.0)
+            # 用「昨天」而不是写死日期：战略概览只看最近 7 天，写死日期会随日历过期
+            date = (dt.date.fromisoformat(intel.today(self.cfg))
+                    - dt.timedelta(days=1)).isoformat()
+            _snapshot(conn, "ev-a", date, item_count=80, platform_count=3, heat=70.0)
             conn.commit()
             strategic = intel.strategic_overview(conn, cfg=self.cfg)
         finally:
@@ -279,7 +282,7 @@ class TestThreatTimeline(unittest.TestCase):
         observed = strategic["observed_activity"]
         self.assertEqual(observed["basis"], "legacy_caliber")
         self.assertTrue(observed["partial"])
-        self.assertEqual(observed["date"], "2026-10-25")
+        self.assertEqual(observed["date"], date)
 
     def test_history_confidence_and_no_interpolation(self):
         conn = db.connect()

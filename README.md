@@ -1,154 +1,131 @@
-# Filter Bubble · 今日 GitHub 信号
+# Filter Bubble · 本地信息雷达
 
-一个**完全本地运行**的 GitHub 每日热榜，重点覆盖四件事：
+一个**完全本地运行**的信息聚合台，包含四个互相独立的模块，共用一套界面、一套大模型配置和一份 SQLite 数据库：
 
-1. 不只复述 Trending 排名，而是把「今天很热」「涨得很快」「刚冒出来」三种信号分开，再给出热度分、中文简介与项目速读。
-2. 它会学习你的口味。每个项目都可以点 **👍 喜欢 / 👎 不喜欢**，模型立即重排今日榜单，并把这些反馈沉淀成一份可解释的偏好画像。
-3. 你可以关注喜欢的发布者。他们之后的新 release / 新仓库会进入独立的「关注」视图，不混进每日热榜。
-4. 每个项目都有「项目速读」：适合谁、怎么用、解决什么问题、典型场景。
+| 模块 | 入口 | 做什么 |
+|---|---|---|
+| **GitHub 技术雷达** | `/` | 每日热榜、口味学习、关注发布者、AI 项目速读、收藏夹、微信简报 |
+| **全球热点雷达** | `/radar.html` | 33 个数据源的中外新闻聚合、事件聚类、事实核验、交互式世界地图、每日推送 |
+| **学术论文** | `/papers.html` | 7 个公开来源的论文抓取与 AI 中文概况 |
+| **采集监控** | `/monitor.html` | 后台任务的运行时间线、逐来源结果、逐条流转原因、结构化日志 |
 
-无需登录，无需 API Key，无第三方 Python 依赖。数据与口味模型都只写在本机的 `data/filter-bubble.db`。
-
-> 同一个应用里还有三个独立模块：**全球热点雷达**（含 7 天威胁时间线、战略风险、国家指数、情报流、实时新闻，以及一张**交互式世界地图**）、**国际灾害地图图层**（地震 / 火山 / 野火 / 洪水 / 风暴）和**学术论文雷达**。三个模块共用一套本地界面、一套全局大模型配置和一套 SQLite 存储，任何一个模块出问题都不会影响其它模块。
+无需登录，无需 API Key，无第三方 Python 依赖。数据只写在本机 `data/filter-bubble.db`。
 
 ![Filter Bubble 桌面端](docs/desktop.png)
 
 <p align="center"><img src="docs/mobile.png" width="360" alt="移动端"></p>
-
-> 截图中的关注与评价仅作界面展示，实际数据以本机为准。
 
 ---
 
 ## 快速开始
 
 ```bash
-cd filter-bubble
-python3 app.py refresh     # 首次生成今日日报（约 1–2 分钟）
-./run.sh                   # 启动界面
+./run.sh                    # 启动界面（首次会自动生成今日日报）
+python3 app.py serve        # 等价写法
 ```
 
 打开 <http://127.0.0.1:8791>。
 
-也可以直接 `./run.sh`：如果今天还没有日报，它会在后台生成，页面会自动轮询进度。
+**环境要求**：Python 3.9+，macOS / Linux / Windows。前端是原生 HTML/CSS/JS，不需要 Node、npm 或构建步骤。
 
-**环境要求**：Python 3.9+（macOS 自带的 3.9 即可），macOS / Linux / Windows。前端是原生 HTML/CSS/JS，不需要 Node、npm 或构建步骤。
+### Windows：开关控制台（`fb.bat`）
+
+双击项目根目录的 **`fb.bat`** 会出来一个菜单：
+
+```
+     状态：运行中    PID 34800
+     地址：http://127.0.0.1:8791
+
+     [1] 启动            [2] 停止
+     [3] 重启            [4] 打开界面
+     [5] 看日志          [6] 打开数据目录
+     [7] 生成今日日报    [8] 创建桌面快捷方式
+     [0] 退出
+```
+
+- 菜单顶部实时显示状态；**[1] 启动**会后台拉起服务并打开界面，**[2] 停止**只结束「占用本项目端口 + 是本项目 `runtime\python` 的进程」。
+- **[8]** 在桌面创建快捷方式，以后双击桌面图标即可。
+- 每次启动会把上一轮日志轮换成 `data\serve.prev.*.log`，当前日志是 `data\serve.*.log`。
+
+也可以带参数调用（适合做快捷方式 / 开机自启）：
+
+```bat
+fb.bat start      :: 启动并打开界面（加 -NoBrowser 则不开浏览器）
+fb.bat stop       :: 停止
+fb.bat restart    :: 重启
+fb.bat status     :: 状态（运行中退出码 0，已停止 1）
+fb.bat open       :: 只打开界面
+fb.bat log        :: 看最近日志
+```
+
+> 端口按 `.env` 的 `GITPULSE_PORT`（默认 `8791`）识别；脚本优先用 `pwsh`，没有则退回 Windows PowerShell 5.1。
+> 根目录的 `start.bat` 仍然可用：前台运行，关掉窗口即停，适合看实时输出。
 
 ### 从其它设备访问（Tailscale）
 
-默认只监听 `127.0.0.1`，别的机器访问不到。两台设备都在同一个 tailnet 时，按下面两步开：
-
-**1. 用可被外部访问的地址启动**
+默认只监听 `127.0.0.1`。两台设备在同一 tailnet 时：
 
 ```bash
 python app.py serve --host 0.0.0.0
-# 或者写进 .env 长期生效：GITPULSE_HOST=0.0.0.0
+# 或写进 .env 长期生效：GITPULSE_HOST=0.0.0.0
 ```
 
-启动日志会直接列出可用地址：
-
-```
-  监听 0.0.0.0:8791 —— 同网络/同 tailnet 的设备可访问
-    Tailscale  http://100.x.y.z:8791
-    局域网      http://192.168.x.z:8791
-```
-
-**2. 放行 Windows 防火墙（只对 tailnet）**
-
-Windows 默认拦截入站，需要以管理员身份加一条只允许 Tailscale 网段的规则：
+Windows 还需要放行防火墙（只对 tailnet）：
 
 ```powershell
-# 双击即可（会弹 UAC）
-scripts\open-tailnet.cmd
-
-# 或者用管理员 PowerShell 直接跑
-powershell -ExecutionPolicy Bypass -File scripts\open-tailnet.ps1
-
-# 只看当前规则，什么都不改（不需要管理员）
-powershell -ExecutionPolicy Bypass -File scripts\open-tailnet.ps1 -Check
+scripts\open-tailnet.cmd                                   # 双击，会弹 UAC
+powershell -ExecutionPolicy Bypass -File scripts\open-tailnet.ps1 -Check   # 只查看，不改
+powershell -ExecutionPolicy Bypass -File scripts\open-tailnet.ps1 -Remove  # 撤销
 ```
 
-它只放行 `100.64.0.0/10`（Tailscale 网段），局域网和公网仍然访问不到。撤销：
+它只放行 `100.64.0.0/10`（Tailscale 网段），局域网和公网仍然访问不到。
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\open-tailnet.ps1 -Remove
-```
+> 如果 `tailscale ping` 通但 `IP:8791` 超时：通常是 Windows 第一次弹「是否允许 Python 访问网络」时点了取消，系统留下一条**入站 Block 规则**。Block 优先级高于 Allow，必须先用上面的脚本删掉它。
 
-然后在 Mac 上打开 `http://<Windows 机器的 Tailscale IP>:8791`。
-
-> macOS / Linux 不需要第 2 步（没有 Windows 防火墙那一层），直接 `--host 0.0.0.0` 即可。
-
-#### 连不上但 ping 得通？先看有没有 Block 规则
-
-典型症状：`tailscale ping` 正常、同一台机器换个端口能访问、但 `IP:8791` 就是**超时**。
-
-原因通常是：Windows 第一次弹「是否允许 Python 访问网络」时点了**取消**，系统就记住并生成了一条
-**入站 Block 规则**（`TCP Query User{...}`，Name=`Python`）。Windows 防火墙里 **Block 的优先级高于 Allow**，
-所以之后再怎么加放行规则都没用，必须先删掉那条 Block。
-
-```powershell
-# 非管理员也能看出问题
-powershell -ExecutionPolicy Bypass -File scripts\open-tailnet.ps1 -Check
-#   Block  Dir=In  Profile=Private  Protocol=6  (Python)
-#   Block  Dir=In  Profile=Private  Protocol=17  (Python)
-
-# 管理员运行会先删 Block 再加放行
-scripts\open-tailnet.cmd
-```
-
-**更省事的做法**：用 Tailscale 自带的代理，既不用改防火墙，也自带 HTTPS 证书：
+更省事的做法是用 Tailscale 自带代理（不用改防火墙，自带 HTTPS 证书）：
 
 ```bash
 tailscale serve --bg 8791
-tailscale serve status    # 会给出 https://<机器名>.<tailnet>.ts.net/
+tailscale serve status    # 给出 https://<机器名>.<tailnet>.ts.net/
 ```
 
-之后在 Mac 上直接打开那个 `https://...ts.net` 地址即可（走 443，绕开 8791 的防火墙规则）。
-首次使用需要在管理台点一次授权链接（`https://login.tailscale.com/f/serve?node=...`）。
-
-
-**安全提示**：本程序没有登录体系，能访问端口的人就能操作它（改配置、触发采集、推送微信）。所以：
-
-- 不要把 `--host` 设成 `0.0.0.0` 却用「允许所有网络」的防火墙规则；
-- 优先用上面的 `open-tailnet` 脚本（限 tailnet）或 `tailscale serve`；
-- 不在公共网络上时把服务改回 `127.0.0.1`。
+**安全提示**：本程序没有登录体系，能访问端口的人就能改配置、触发采集、推送微信。不要把它直接暴露到公网。
 
 ---
 
-## 统一界面
-
-两个业务模块共用一套应用外壳与设计系统：左侧是业务模块导航，顶部是当前页面上下文与主操作，右侧是模块自己的内容区。
+## 界面
 
 | 入口 | 地址 | 内容 |
 |---|---|---|
 | GitHub 技术雷达 | `/` | 今日榜单、卡片/列表视图、口味画像、关注动态 |
-| 全球热点雷达 | `/radar.html` | 每日热点、事件调查、科技核验、数据源、历史、监控设置 |
-| 学术论文 | `/papers.html` | 按学科浏览公开论文、原始摘要、AI 中文概况、来源状态 |
-| 全局设置 | `/settings.html` | 大模型开关与密钥、连接测试、错误日志、AI 解读参数 |
-| 系统状态 | `/status.html` | 各模块的运行状态、数据源健康与最近运行记录（只读） |
+| 全球热点雷达 | `/radar.html` | 每日热点、事件调查、科技核验、数据源管理、历史、全球态势、监控设置 |
+| 学术论文 | `/papers.html` | 按学科浏览论文、原始摘要、AI 中文概况、来源状态 |
+| 全局设置 | `/settings.html` | 模型接口列表（1..N 个）、服务商预设与 Key、连接测试、额度用量、错误日志 |
+| 系统状态 | `/status.html` | 各模块运行状态、数据源健康、最近运行记录 |
+| 采集监控 | `/monitor.html` | 运行时间线、逐来源与逐条明细、结构化日志（只读） |
+| 收藏夹 | `/bookmarks.html` | 文件夹分类与搜索 |
 
-- **三态主题**：浅色 / 深色 / 跟随系统，顶栏一键切换并记住选择；也可用 `?theme=dark` 直接指定。
-- **卡片 / 列表视图**：同一份数据两种密度，选择会记住。
-- **响应式**：≥1240px 双栏；≤1080px 单栏；≤860px 侧栏变成抽屉导航；≤560px 卡片单屏一列。
-- **可访问性**：图标按钮有可访问名称，标签页有 `aria-selected`，焦点可见，尊重系统「减少动态效果」。
+- **三态主题**：浅色 / 深色 / 跟随系统，顶栏一键切换并记住选择；也可用 `?theme=dark` 指定。
+- **响应式**：≥1240px 双栏；≤1080px 单栏；≤860px 侧栏变抽屉；≤560px 单列。
 - **无外部依赖**：没有 CDN、没有构建、没有前端框架；核心界面断网也能显示（除头像）。
 
-设计令牌、组件清单、交互规则、浏览器实测结果和**新增模块的接入步骤**见 [docs/ui.md](docs/ui.md)。
+设计令牌、组件清单、新增模块的接入步骤见 [docs/ui.md](docs/ui.md)。
 
 ---
 
-## 产品思路
+## 模块一：GitHub 技术雷达
 
-### 1. 三路数据，而不是一张榜
+### 三路数据
 
 | 信号 | 来源 | 作用 |
-| --- | --- | --- |
+|---|---|---|
 | 日榜 | `github.com/trending?since=daily` | 今天最多人看的项目、`stars today` |
 | 周榜 | `github.com/trending?since=weekly` | 持续走热、不是一日游的项目 |
 | 新星 | GitHub Search，近 7 / 30 天创建、按 star 排序 | 突然冒出来的新项目 |
 
-合并去重后，用 GitHub API 补齐 topics、创建时间、License 等信息；再按热度选出 30 个进入日报。
+合并去重后用 GitHub API 补齐 topics、创建时间、License，再按热度选 30 个进入日报。每日 stars 会写入 `snapshots` 表，为后续的加速度判断留下真实历史。
 
-### 2. 热度怎么算
+### 热度怎么算
 
 `heat` 是 0–100 的相对分，不是 GitHub 官方数据：
 
@@ -160,302 +137,310 @@ heat = 52% × 增速分位
      + 4   基础分
 ```
 
-`surge`（用于「热度猛增」标签）额外考虑：
+`surge`（「热度猛增」标签）额外考虑今日 star 相对项目总量的占比与当日分位。「日榜第一 / 日榜前三 / 增速冠军 / 新星崛起 / 持续走热 / 上升中」是不同维度的徽章，避免只看一个总榜。
 
-- 今日 star 相对项目总量的占比（小项目一天涨 10% 比大项目涨 1% 更值得注意）；
-- 增速在当日候选集中的分位；
-- 周榜续航会体现在热度与「持续走热」徽章上。
+### 口味模型
 
-「日榜第一 / 日榜前三 / 增速冠军 / 新星崛起 / 持续走热 / 上升中」是不同维度的徽章，避免只看一个总榜。
+每个项目被拆成可读特征：`lang:python`（语言）、`cat:ai`（领域）、`topic:llm`、`kw:agent`（白名单过滤后的关键词）、`age:new` / `size:huge` / `heat:surge`（阶段特征）。
 
-> 每日会把 stars 写入 `snapshots` 表，为后续的加速度判断留下真实历史；GitHub 本身只提供 `stars today`，没有历史曲线。
-
-### 3. 口味模型
-
-每个项目被拆成可读特征：
-
-- `lang:python` — 语言
-- `cat:ai` — 领域（AI / 开发工具 / Web / 基础设施 / 数据 / 安全 / 创意 / 系统……）
-- `topic:llm` — GitHub topics
-- `kw:agent` — 经过白名单过滤的高信号关键词
-- `age:new` / `size:huge` / `heat:surge` — 阶段特征
-
-反馈（`+1 / -1 / 撤销`）追加到 `feedback` 表。每次反馈后，用**逻辑回归**从零重放所有有效样本：
-
-```
-P(喜欢) = sigmoid(bias + Σ weight[feature])
-```
+反馈（`+1 / -1 / 撤销`）追加到 `feedback` 表。每次反馈后用**逻辑回归**从零重放所有有效样本：
 
 - 学习率 0.5、L2 正则、14 轮，小样本也能快速收敛；
 - 少于 3 次评价时保持冷启动，只按热度排序；
-- 激活后最终排序为 **56% 热度 + 44% 个人匹配**；
-- 没有正向匹配的项目会进入「探索位」，避免信息茧房；
-- 一次 👎 不会立刻被判定为「永久讨厌」；画像里只展示至少出现过 2 次的负向特征，防止过拟合。
+- 激活后排序为 **56% 热度 + 44% 个人匹配**；
+- 没有正向匹配的项目进入「探索位」，避免信息茧房；
+- 一次 👎 不会立刻判定为「永久讨厌」；画像里只展示至少出现过 2 次的负向特征。
 
 所有特征、权重、证据数都在「我的口味」抽屉里可见。点「清空口味记忆」会删除反馈与权重，榜单立即回到热度排序。
 
-### 4. 关注发布者
+### 关注发布者
 
-关注按钮在每张卡片的作者名旁。关注后，「关注」视图会汇总这位发布者近 14 天的：
+关注按钮在每张卡片的作者名旁。关注后「关注」视图会汇总这位发布者近 14 天的 GitHub Release 和新建公开仓库。
 
-- GitHub Release（版本号 + release notes）；
-- 新建的公开仓库。
+想关注的人不在榜单里也没关系：关注视图顶部可以按名字搜 GitHub 用户或组织。抓取优先走公开 Atom feed（不消耗 API 配额），组织账号的 user feed 为空时会额外读已知仓库的 releases feed。每 20 分钟最多刷新一次，最多关注 20 位。
 
-抓取优先走 GitHub 的公开 Atom feed（不消耗 API 配额）；组织账号的 user feed 经常为空，会额外读取已知仓库的 releases feed。每 20 分钟最多刷新一次，最多关注 20 位发布者。
+### 项目速读
 
-关注动态和每日热榜是两条独立的数据流：热榜每天重算，关注动态只属于你自己。
+每张卡片的「项目速读」由大模型读一遍项目后写出：一句话是什么 / 项目解读 / 值得注意 / 局限与注意。
 
-### 5. 项目速读与 AI 解读
+没有配置模型、调用失败或额度用尽时，**不编造解读**，直接显示 GitHub 上的项目简介，并在弹窗顶部标明来源：
 
-每张卡片都有「项目速读」。配置了大模型后，内容由模型基于项目简介、语言、topics 与 README 摘要生成；没有配置或调用失败时，自动回退到本地规则版。
-
-打开后显示：
-
-- **适合谁**：目标用户/团队；
-- **怎么用**：安装与运行方式（模型不确定时写「README 未说明」）；
-- **解决什么问题**：这个方向最常见的痛点；
-- **典型场景**：可落地的使用场景；
-- **完整使用流程**：从安装、配置到接入的 4 步路径；
-- **上手门槛**：需要命令行、Docker、某语言运行环境，或只需阅读；
-- **局限与注意**：已知限制（AI 解读会明确写「README 未说明」，不编造）。
-
-内容是**基于项目简介、语言、topics 与 README 摘要的归纳**，界面会明确提示“具体命令与限制以 README 为准”，不假装比 README 更懂项目。
+| 标识 | 含义 |
+|---|---|
+| `AI 解读 · 模型名` | 这条解读是大模型写的 |
+| `GitHub 简介` | 没走大模型，直接显示项目简介 |
 
 ![项目速读](docs/brief.png)
 
-### 6. 微信简报（Server酱）
+### 收藏夹
 
-日报生成成功后，会自动把一份**手机简报**推送到微信。设计目标不是把 30 个项目全部塞进手机，而是只挑 3 个项目，每个讲清楚：
+卡片右上角的书签图标把项目收进「我的收藏」，同时存下简介、语言、star、topics —— 项目掉出当日榜单后收藏里照样能看到。
 
-- 是什么
-- 解决什么问题
-- 适合谁
-- 完整使用流程（4 步）
-- 典型场景
-- GitHub 链接
+- 新建 / 改名 / 删除文件夹；删文件夹不会删收藏，只会回到「未分类」；
+- 在收藏里按名称、简介、语言、topics 搜索。
 
-每个项目单独一段，使用 Server酱 Turbo 的 Markdown 正文。手机端不展示完整 30 个项目，完整榜单仍在电脑端。
+### 微信简报
 
-配置方式：
+日报生成成功后，把一份手机简报推送到微信（Server酱 Turbo）。只挑 3 个项目（可配 1–5），每个讲清楚：是什么、项目解读、值得注意、局限、来源标识、GitHub 链接。
+
+**推送开关**在「全局设置 → 微信推送」：关掉后连手动「立即推送一次」也不会发。开关状态和最近发送结果在「系统状态」页。
 
 ```bash
-cd filter-bubble
-cp .env.example .env
-# 编辑 .env，把 SERVERCHAN_SENDKEY 换成 sct.ftqq.com 获取的 SCT 开头 SendKey
-./run.sh
+python3 app.py push --dry-run    # 先预览，不消耗额度
+python3 app.py push              # 确认后发送
 ```
 
-先预览、不消耗额度：
-
-```bash
-python3 app.py push --dry-run
-```
-
-确认后发送：
-
-```bash
-python3 app.py push
-```
-
-`serverchan` 的 `push_log` 表会记录每天是否已发送；同一天不会重复推送。生成日报、`scripts/daily-update.sh` 都会自动尝试推送并重试失败记录。
-
-**注意**：请使用 Server酱 **Turbo** 的 `SCT...` SendKey（微信通道），不要用 Server酱³ 的 `sctp...` key（那是独立 App 通道）。免费额度每天 5 条，正常每天 1 条足够；调试请用 `--dry-run`。
-
-### 7. 界面
-
-- 编辑感深色版面 + 荧光绿信号色；桌面双栏，移动端单栏；
-- 顶部总览：收录数、今日新增 star、最快增速、平均口味匹配；
-- 六类视图：为你推荐 / 热度猛增 / 新星崛起 / 持续走热 / 关注 / 已收藏；
-- 卡片内：热度环、中文简介、英文原文、topics、今日/本周增量、匹配理由，以及「项目速读」入口；
-- 反馈后即时重排（FLIP 位移动画），并弹出模型学习提示；
-- 口味抽屉展示领域/语言/topic/关键词权重，以及会主动避开的特征。
+`push_log` 表记录每天是否已发送，同一天不会重复推送。请使用 Server酱 **Turbo** 的 `SCT...` SendKey（微信通道），不要用 Server酱³ 的 `sctp...` key（那是独立 App 通道）。免费额度每天 5 条。
 
 ---
 
-## 全球热点雷达（独立模块）
+## 模块二：全球热点雷达
 
-在同一个应用里新增了第二个模块：**全球热点雷达**，入口是 <http://127.0.0.1:8791/radar.html>，左侧导航可以在「GitHub 技术雷达 / 全球热点雷达 / 全局设置 / 系统状态」之间切换。
+入口 `/radar.html`。监控中文互联网、国际新闻和可免费访问的公开信息，自动聚类热点，支持事件起源追溯、事实主张拆解、多方证据核验、国内外报道对比和每日推送。
 
 ![全球热点雷达](docs/radar.png)
 
-它监控中文互联网、国际新闻和可免费访问的公开社交信息，自动聚类热点，并支持**事件起源追溯、事实主张拆解、多方证据核验、国内外报道对比和每日自动推送**。
+- **两级聚合**：材料先聚成「事件」，事件再按稀有词共现聚成「故事」，日报按故事排。同一个地震的 7 个角度会合并成一条，而不是 7 条。
+- **价值过滤**：噪音词、互动门槛、热榜截断三重过滤。
+- **排名轨迹**：每次采集记录每条材料在榜单上的位次，日报标「↑ 升温 / ↓ 降温 / — 持平 / 新上榜」。
+- **去重先归一化 URL**：剥掉 `band_rank`、`log_pb`、`utm_*` 等每次都变的参数再算哈希。
+- **完全独立**：`radar_*` 表、独立调度线程（每小时采集、每天 08:00 出日报并推送）、独立推送配置与去重日志。
+- **诚实标注**：仍然无法访问的平台会明确显示「未接入 / 受限」，不伪造数据；调查找不到来源就写「尚未找到最早来源」，证据不足就写「证据不足」。
 
-- **两级聚合**：材料先聚成「事件」，事件再按稀有词共现聚成「故事」，日报按故事排 —— 同一个地震的 7 个角度会合并成一条，而不是 7 条。
-- **价值过滤**：噪音词、互动门槛、热榜截断三重过滤，未覆盖材料比例从 72% 降到 24%。
-- **数据源熔断**：连续失败 3 次降频、6 次自动停用，可在数据源管理页一键重置。
-- **摘要可接大模型**：默认用本地抽取式摘要（直接引用原文标题）。模型在**全局设置**里配置，见下一节；失败会自动回退，不影响日报。
+### 33 个数据源
 
-- **完全独立**：新的 `radar_*` 表、独立的 `radar-scheduler` 线程（每小时采集、每天 08:00 出日报并推送）、独立的推送配置与去重日志。原有 GitHub 的采集、筛选、评分、日报、推送和接口一行未改。
-- **每小时采集，每天推一次**：两个模块的采集频率都是每小时，微信简报统一在 08:00 发出，避免一天几十条推送。
-- **NEW 标签**：每条内容是第一次出现就标 NEW，只有你真的点开「项目速读」或「深入调查」之后才消除；刷新页面、重新排序都不会让标签复活。
-- **40 个信源，四种接入方式**：直连适配器（中国新闻网、新浪、IT之家、量子位、微博热搜、百度热搜、B站、今日头条、网易、V2EX、德国之声、Hacker News、TechCrunch、BBC 等）保证数据自持与正文深度；抖音、知乎、贴吧、华尔街见闻、财联社、澎湃、凤凰这些**没有可直连公开接口**的平台，通过第三方聚合 API（newsnow）接入，作为热点发现源；**AnySearch** 统一搜索引擎（可选）按查询跨域召回，补上 RSS/热榜覆盖不到的长尾；另有 3 个**结构化地理图层**（USGS 地震、NASA EONET、GDACS），只进地图、不进新闻聚类。
-- **国际新闻有 4 个官方 RSS 兜底**：BBC World、The Guardian、Al Jazeera、NPR，全部免 key、英文、走同一套聚类去重流水线（不是第二套新闻系统）。GDELT 因公共额度 429 长期停用，**不做重试加速或代理绕过**。
-- **AnySearch 有两种用法**（`social_radar.json` → `anysearch`）：`queries` 里每条查询 = 一个发现源，和 RSS 源平级；调查阶段可用它补外部取证。它一次最多返回 10 条、限流窗口 20 次，所以发现源默认 4 小时才跑一次（`min_interval_minutes`），避免把额度烧光。
-- **搜索引擎材料单独分类，不参与"独立来源"计数**：AnySearch 的结果标记为 `search` 类型，在报告里明确写成"搜索引擎材料"。因为同一篇通稿的几家转载站很容易被算成"3 个独立域名"，所以它**不会**把一条说法顶成"多方证实"，也不会把"独立来源不足"的警告消掉。
-- **聚合源有域名校验**：第三方返回的每条链接都必须匹配预期域名（`expected_domain`），不匹配直接丢弃，防止数据被篡改。
-- **去重先归一化 URL**：剥掉 `band_rank`、`log_pb`、`utm_*` 等每次抓取都变的参数再算哈希，同一条新闻不会因为链接变体重复入库。
-- **自定义 RSS 源**：在 `social_radar.json` 的 `rss.feeds` 里加一行 `{id, name, url}` 就多一个源，不用改代码。
-- **关键词语法**：`[组名]` 分组、`+必须词`、`!排除词`、`/正则/ => 别名`、`@每组上限`，比一列扁平的排除词更能压住噪音。
-- **排名轨迹**：每次采集记录每条材料在榜单上的位次，日报上直接标「↑ 升温 / ↓ 降温 / — 持平 / 新上榜」。
-- **全部免费**：不需要任何付费订阅；AnySearch 是可选源，不配 key 也能走匿名通道（额度更低）。
-- **诚实标注**：仍然无法访问的平台（X、小红书、Instagram、Threads、TikTok，以及 arXiv、Reddit 的本机网络问题）会明确显示「未接入 / 受限」，不会伪造数据。
-- **不编造结论**：调查默认只使用已采集的公开材料，每条结论都指回具体链接；找不到来源就写「尚未找到最早来源」；证据不足就写「证据不足」。开启 `investigation.external_search` 后会补搜索引擎材料，这类材料单独标注来源类型、且不计入独立来源。
+| 类型 | 数量 | 代表 |
+|---|---|---|
+| RSS | 13 | 中国新闻网（滚动/国内/国际）、新浪新闻、IT之家、量子位、BBC 中文/世界、德国之声、The Guardian、Al Jazeera、NPR、TechCrunch |
+| 热榜 | 9 | 微博、百度、B站、今日头条、网易、V2EX、抖音、知乎、贴吧 |
+| API | 8 | Hacker News、GDELT、华尔街见闻、财联社、澎湃、凤凰网、AnySearch（2 个查询） |
+| 地理图层 | 3 | USGS 地震、NASA EONET、GDACS —— 只进地图，不进新闻聚类 |
 
-七个标签页：每日热点 / 事件调查 / 科技突破核验 / 数据源管理 / 历史记录 / 监控设置 / **全球态势**。
+另有 9 个平台默认关闭并标注原因：arXiv（本机 TLS 证书链缺中间证书）、Reddit / Bluesky（本机 403）、X / 小红书 / Instagram / Threads / TikTok（没有合规的免费公开入口，系统不会绕过登录、验证码或访问控制）。
 
-```bash
-python app.py radar collect           # 采集 + 生成雷达日报
-python app.py radar query 芯片 突破    # 自由关键词调查
-```
+抖音、知乎、贴吧、华尔街见闻、财联社、澎湃、凤凰这些没有可直连公开接口的平台，通过第三方聚合 API（newsnow）接入；返回的每条链接都要匹配预期域名，不匹配直接丢弃。
 
-### 全球态势监控：世界地图 + 五个面板
+**AnySearch** 是可选源：`queries` 里每条查询 = 一个发现源，和 RSS 源平级；调查阶段也可用它补外部取证。一次最多返回 10 条、限流窗口 20 次，所以发现源默认 4 小时才跑一次。它的结果标记为 `search` 类型，**不参与「独立来源」计数**——同一篇通稿的几家转载站很容易被算成「3 个独立域名」。
 
-「全球热点雷达」的第 7 个标签页 **全球态势**（<http://127.0.0.1:8791/radar.html> → 全球态势），把已有的事件数据放到一张可交互的世界地图上，并给出五个监控面板。**没有引入任何 CDN、构建步骤或瓦片服务**，断网也能用。
+**自定义 RSS 源**：在 `social_radar.json` 的 `rss.feeds` 里加一行 `{id, name, url}` 就多一个源，不用改代码。
 
-**地图**
+### 熔断与自愈
 
-- 底图是本地矢量（Natural Earth，公共领域，由 `scripts/build-basemap.py` 一次性生成 `web/world-110m.js`），**运行时零外部请求**。
-- 滚轮缩放 / 拖拽平移 / 双击放大；缩小时点位自动聚合成数字气泡，**点击气泡会放大到成员展开**（不是死区）。
-- 三种位置精度用**不同形状**区分，不只是颜色：来源坐标（实心圆+外环）/ 地名匹配（实心圆）/ 国家级近似（**菱形+虚线**）。详情里写明定位方式与依据。
-- 地图与情报流双向联动：点地图上的事件打开详情并高亮对应情报卡；点情报卡的「地图定位」会把视野居中到该事件。
-- 灾害点按类型分开关（地震/火山/野火/洪水/风暴/其他），面几何（多边形）按真实范围绘制，**不把影响范围简化成一个看起来精确的中心点**。
+- 连续失败 3 次 → 降频（每 60 分钟才重试一次）；
+- 连续失败 6 次 → 自动停用；
+- 停用**不是永久的**：冷却 180 分钟后自动放行一次试探性重试，成功即恢复，失败继续等下一个冷却窗口；
+- 也可以在「数据源管理」点「重置失败计数」立即解除。
 
-**五个面板**
+每次采集都会记录每个来源的 HTTP 状态、耗时、错误与本次入库条数，这些数据在「采集监控」和「系统状态」页可见。
+
+### 全球态势：交互式世界地图
+
+第 7 个标签页「全球态势」把事件放到一张可交互的世界地图上，配五个面板。**没有 CDN、没有瓦片服务**，断网也能用。
+
+- 底图是本地矢量（Natural Earth，由 `scripts/build-basemap.py` 生成 `web/world-110m.js`），运行时零外部请求；
+- 滚轮缩放 / 拖拽平移 / 双击放大，缩小时点位聚合成数字气泡，点击气泡会放大展开；
+- 三种定位精度用不同形状区分：来源坐标（实心圆+外环）、地名匹配（实心圆）、国家级近似（菱形+虚线）；
+- 地图与情报流双向联动；灾害点按类型分开关，面几何按真实范围绘制。
 
 | 面板 | 内容 |
 |---|---|
-| Threat Timeline | 过去 7 天**威胁活动**与**情报可信度**两条独立曲线；历史不足时如实显示可用天数，**不插值**，反推口径用虚线点标出 |
-| Strategic Risk | 综合估算值（明确标注「非官方指数」）+ 活动/证据不确定/监控盲区三个分项 + 权重 + 缺失输入 |
-| Country Index | 基于公开媒体可观测事件的紧张度，按国家列出冲突/动荡/灾害计数；**样本不足的国家不给分数**，也不等于「零风险」 |
-| Intelligence Feed | 复用日报里已聚好的故事，点「深入调查」直接进入既有事件调查 |
-| Live News | 近实时新闻流，`before_id` 翻历史、`since_id` 拉新增（两种游标不混用），没有发布时间时明确标注 |
+| Threat Timeline | 过去 7 天威胁活动与情报可信度两条独立曲线；历史不足时如实显示可用天数，不插值 |
+| Strategic Risk | 综合估算值（明确标注「非官方指数」）+ 三个分项 + 权重 + 缺失输入 |
+| Country Index | 基于公开媒体可观测事件的紧张度；样本不足的国家不给分数 |
+| Intelligence Feed | 复用日报里已聚好的故事，可直接进入事件调查 |
+| Live News | 近实时新闻流，`before_id` 翻历史、`since_id` 拉新增 |
 
-**数据来源与诚实边界**
+地理位置来自 `core/geo/`（国家表 + 地名库），**离线**识别，按顺序尝试：来源坐标 → 地名匹配 → 国家质心 → 无法判断就不显示。标题里出现两个以上国家、或体育队名/跨国评论时不强行锚定。报道来源国与事件发生国分开存储，不混用。
 
-- 新闻事件的地理位置来自 `core/geo/`（国家表 + 244 条地名库），**离线**识别，按顺序尝试：来源坐标 → 地名匹配 → 国家质心（低精度）→ 无法判断就**不显示**。
-- 标题里出现两个以上国家/地区、或体育队名/跨国评论时，**不强行锚定**到单一国家（例如「美国警告中国某项政策可能影响日本」不会被定位）。
-- 报道来源国（`origin_country_code`）与事件发生国（`event_country_code`）**分开存储**，不混用。
-- 灾害图层：USGS（地震）、NASA EONET（野火/火山/洪水/风暴）、GDACS（灾害警报），全部免 key、只进 `radar_geo_points`、**不混入新闻聚类**；同一事件被多个来源报道时只做「疑似重复」提示，**不自动合并**。
+详细的数据源实测、评分公式、调查方法与已知限制见 [docs/radar.md](docs/radar.md)。
 
-**API**
+---
+
+## 模块三：学术论文
+
+入口 `/papers.html`。按学科浏览近期公开论文，每篇只展示：标题、原始摘要、原文链接、AI 中文概况。
+
+![学术论文](docs/papers.png)
+
+- **7 个来源**：Crossref、PubMed、Europe PMC、bioRxiv、medRxiv、HuggingFace 可用；OpenAlex 需要免费 Key（默认关闭，可在配置里开）。
+- **8 个学科**：全部 / 计算机与 AI / 物理 / 医学与生物医学 / 金融与经济 / 数学 / 生物学 / 工程与电子信息，按发布日期倒序。
+- **每天更新一次**：论文增量本来就慢，不需要像新闻那样每小时抓。
+- **AI 概况与摘要分区展示**：研究内容 / 核心方法 / 主要发现 / 研究意义 / 信息局限。没有摘要就显示「该来源没有提供摘要」，不拿标题冒充。
+- **缓存优先**：按内容指纹命中，刷新页面、切换学科、重复采集都不会重新分析；失败可单篇重试。
+- **单源失败不影响其他来源**：页面底部显示每源的获取数、摘要覆盖、耗时与错误。
 
 ```bash
-curl "http://127.0.0.1:8791/api/radar/intel?days=7"                 # 五个面板 + 地图，一份数据
-curl "http://127.0.0.1:8791/api/radar/intel/map?hazards=earthquake" # 只看地震
-curl "http://127.0.0.1:8791/api/radar/intel/live?since_id=16845"   # 实时新闻增量
+python app.py radar papers test-sources        # 实测论文数据源（真实请求）
+python app.py radar papers collect             # 采集论文 + 生成 AI 概况
+python app.py radar papers status              # 查看来源与队列状态
 ```
 
-**首次使用**（给历史事件补地理标注，纯本地计算）：
+详细的数据源实测、去重规则与表结构见 [docs/papers.md](docs/papers.md)。
 
-```bash
-python scripts/geo-backfill.py --fetch-usgs    # 补地理标注 + 抓一次地震
-python scripts/collect-now.py --only eonet,gdacs,bbc_world,guardian_world,aljazeera,npr_world
-```
+---
 
-### 接入大模型（可选）
+## 模块四：采集监控
 
-大模型是**全局配置**：GitHub 的 AI 解读、热点雷达的摘要、学术论文的概况共用同一套接口、模型与密钥。入口在左侧导航 **全局设置**。
+入口 `/monitor.html`。它回答：后台任务到底跑过什么、每个来源返回了什么、每条信息为什么被新增 / 去重 / 过滤、出错时错误码是什么。
 
-![全局设置](docs/llm-settings.png)
+![采集监控](docs/monitor-overview.png)
 
-**接口类型分三类**，按服务商选：
+- **只读旁路**：数据全部来自 `GET /api/monitor/*`，页面不会触发采集、聚类、推送或写库（`POST /api/monitor/*` 一律 405）。监控写入失败只丢监控数据，不影响采集本身。
+- **看板**：最近一次任务结果、24 小时成功率、条目流转、信息源状态、未解决的严重错误；历史不全时显示「未知」而不是 0。
+- **时间线**：24 小时 / 7 天 / 30 天的真实运行，按任务类型分组；点条块或列表行打开抽屉，看阶段时间线、逐来源结果、逐条处理结果与本次日志。
+- **阶段说实话**：只显示本次真的执行过的阶段，没执行的标成「已跳过 / 不适用 / 未知」，绝不显示成成功。
+- **信息追踪**：标题、原始链接、来源、发布时间、采集时间、处理动作、被过滤或去重的原因、`item_id` / `event_id` / `story_id`，以及这条信息现在还能不能在雷达里找到。
+- **来源管理**：区分「配置存在 / 当前启用 / 最近成功 / 具有新数据」四个概念；**返回 0 条算成功，不等于失败**。
+- **日志**：按时间 / 等级 / 任务 / run_id / source_id / 阶段 / 错误码 / 关键词筛选，分页 + 增量追加，点开看脱敏后的 `details_json`。
 
-| 接口类型 | 适用于 | 地址示例 | 模型名示例 |
-|---|---|---|---|
-| OpenAI 兼容 | OpenAI、DeepSeek、OpenRouter、各类中转 | `https://api.deepseek.com`<br>`https://api.openai.com/v1`<br>`https://openrouter.ai/api/v1` | `deepseek-chat`<br>`gpt-4o-mini`<br>`openai/gpt-4o-mini` |
-| Anthropic (Claude) | Claude 原生接口（`/v1/messages` + `x-api-key`） | `https://api.anthropic.com` | `claude-sonnet-4-20250514` |
-| 本地模型 | Ollama / vLLM 等本机服务 | `http://127.0.0.1:11434` | `qwen2.5:7b` |
+数据来自两处真实来源：`core/monitor/instrument.py` 的实时埋点，以及把已有历史（`radar_runs`、`paper_source_runs`、`digests`、推送日志）幂等投影进监控表。监控表默认保留 45 天。
 
-每张卡片（主接口 / 备用接口 / AI 解读）底部都有自己的 **保存设置** 按钮，改完点一下就生效，三处改动会一起保存。
+接口、统计口径与验收步骤见 [docs/monitor.md](docs/monitor.md)。
 
-点 **保存设置** → 点 **测试连接**。测试会真实请求一次，并显示：
+---
 
-- 成功：耗时、模型回显、模型返回的内容片段
-- 失败：具体原因（HTTP 状态、上游原始消息、建议）和最近的错误日志
+## 网络与代理
 
-**常见的失败原因**：
+**这一节是重点：项目不需要你为它配置代理，开不开 VPN 都能跑。**
 
-| 现象 | 含义 | 处理 |
-|---|---|---|
-| 401 `Missing Authentication header` | **地址和 key 不是同一家**（最常见） | 例如把 DeepSeek 的 `sk-...` 填在 `openrouter.ai` 地址上，key 本身没问题也会 401。用「快速选择服务商」重填地址，或手动改成 `https://api.deepseek.com` |
-| 429 + “temporarily rate-limited upstream” | 免费模型的上游共享池被限流，**不是 key 的问题** | 等 1–2 分钟重试，或换一个免费模型 |
-| 404 + “unavailable for free … use this slug instead” | 该模型已取消免费额度 | 按提示改用付费 slug，或换免费模型 |
-| 402 | 额度不足 | 检查服务商余额 |
-| `model not found` | 模型名写错 | 服务商文档里的精确 ID，DeepSeek 是 `deepseek-chat` / `deepseek-reasoner` |
+请求层在 `core/net.py`，所有出网（新闻采集、GitHub、翻译、微信推送、大模型）都走它。
 
-> 实测：`google/gemma-4-26b-a4b-it:free` 在当前时段经常被上游限流（429），而 `recursive/flint-v1.0:free` 可以正常返回。OpenRouter 的免费池是共享的，可用性会随时间变化。
->
-> 另一个实测：DeepSeek 的 `sk-...` key 打到 `https://api.deepseek.com` 返回 200，打 `https://openrouter.ai/api/v1` 返回 401 —— 同一把 key，换地址就是从「无效」变成「可用」。
+### 为什么以前会「所有源一起挂」
 
-### 备用接口与 Token 限额
+以前每个模块都直接调 `urllib.request.urlopen`，而 urllib 默认跟随系统 / 环境变量里的代理。一旦那个本地代理端口没人监听（VPN 退出、Clash 重连、终端里的临时代理失效），**所有**域名都会立刻返回 `WinError 10061 目标计算机积极拒绝` —— 包括本来根本不需要代理的国内站点。随后熔断器把每个源记满 6 次失败并自动停用，网络恢复后也不会自己回来。
 
-免费模型有每日上限，用完后当天的 AI 功能就废了。所以支持**主 + 备两个接口**，并且**本地记账** token 用量：
+### 现在的行为
 
-- 主接口返回额度类错误（429 / 402 / `free-models-per-day` / `insufficient`）→ 自动切备用；
-- 主接口 token 用量达到你设的上限（本地累计，不等报错）→ 直接切备用；
-- 备用接口也超限 / 也报额度错误 → **AI 暂停 24 小时**，期间所有模块直接返回「已暂停」，不再发请求；
-- 24 小时后自动恢复并**重新计数**，也可以手动「立即恢复」；
-- 切换状态写在本机 `data/ai_state.json`，用量写在 `data/ai_usage.json`（都已 gitignore）；
-- 全局设置里有「Token 用量」面板：主/备各自的已用/上限进度条 + **最近 15 天折线图**（横轴日期、纵轴 token，主接口实线、备用接口虚线，悬停看当天数值）。
+| 模式 | 行为 |
+|---|---|
+| `auto`（默认） | 系统有代理就先用代理；代理不通立刻换直连；两个都失败才算失败 |
+| `system` | 只跟随系统 / 环境变量代理 |
+| `direct` | 强制直连 |
+| `manual` | 只用 `network.proxy` 指定的代理 |
 
-**这是整个应用里唯一的 AI 成本闸门**：论文模块、GitHub 解读、雷达摘要都不再有自己的次数上限，全部受这两个 token 限额约束。两个接口都用尽才停 AI。
+- 只有**连接级**失败（拒绝连接、超时、DNS、TLS、代理 407/5xx）才换路由；HTTP 4xx/5xx 是站点给的答复，原样返回，不重试。
+- 失败的出口进入冷却（拒绝连接 120 秒、超时 30 秒），期间优先用另一个出口，不会每个请求都白等一次。
+- 系统代理每 60 秒重新探测一次，所以**运行中开关 VPN 也能自动适配**，不用重启。
+- 数据源管理页会显示当前实际使用的出口，例如「当前出网：直连（direct → system，模式 auto）」。
 
-![全局设置](docs/llm-settings.png)
-
-默认上限 50 万 tokens/天（`0` 表示不限）。三个模块（GitHub 解读、雷达摘要、论文概况）共用这套额度。
+配置写在 `social_radar.json`：
 
 ```json
 {
-  "llm": {
-    "enabled": true,
-    "provider": "openai",
-    "base_url": "https://openrouter.ai/api/v1",
-    "model": "recursive/flint-v1.0:free",
-    "token_limits": { "primary": 500000, "fallback": 500000, "window_hours": 24 },
-    "fallback": {
-      "enabled": true,
-      "provider": "openai",
-      "base_url": "https://api.deepseek.com",
-      "model": "deepseek-chat",
-      "api_key_env": "RADAR_LLM_API_KEY_FALLBACK"
-    }
+  "network": {
+    "mode": "auto",        // auto | system | direct | manual
+    "proxy": ""            // mode=manual 时生效，例如 http://127.0.0.1:7890
   }
 }
 ```
 
-| 状态 | 行为 |
-|---|---|
-| 主接口正常 | 用主接口，主接口计数 +1 次调用与 token |
-| 主接口超限 / 额度错误 | 切备用（记录到明天），备用计数 |
-| 备用也超限 / 也报错 | 暂停 24 小时，返回 `code: paused` |
-| 24 小时后 / 手动恢复 | 清零重新计数，从主接口开始 |
+也可以用环境变量 `FB_PROXY_MODE` / `FB_PROXY_URL` 覆盖。
 
-两个 Key 分开存：主接口用 `RADAR_LLM_API_KEY` 或 `data/ai_secrets.json` 里的 `llm_api_key`；备用接口用 `RADAR_LLM_API_KEY_FALLBACK` 或同文件的 `llm_api_key_fallback`。切换只影响调用路由，不改变你的配置。
+> 需要说明的边界：境外站点（BBC、Guardian、Al Jazeera 等）能不能抓到，取决于你本机到它们的网络路径。**没有可用代理时它们会失败，但只影响它们自己**——国内源照常工作，也不会再拖垮整个采集。
 
-密钥只保存在本机 `data/ai_secrets.json`（已 gitignore），不会写进配置文件，接口也只返回掩码。配置本身写在 `app_settings.json`：
+---
+
+## 大模型（全局配置）
+
+GitHub 的 AI 解读、热点雷达的摘要、学术论文的概况共用同一套接口、模型与密钥。入口在左侧导航 **全局设置**。
+
+![全局设置](docs/llm-settings.png)
+
+**接口是 1..N 个有序列表**，按优先级依次尝试，全部不可用才停。
+
+| 预设 | 协议 | 地址 | Key 特征 | 额度习惯 |
+|---|---|---|---|---|
+| DeepSeek 官方 | OpenAI 兼容 | `https://api.deepseek.com` | `sk-...` | 每天 |
+| 百度千帆 Token Plan（个人版） | OpenAI 兼容 | `https://qianfan.baidubce.com/v2/tokenplan/personal` | `bce-v3/...` | 套餐（窗口 / 总量） |
+| 百度千帆（按量计费） | OpenAI 兼容 | `https://qianfan.baidubce.com/v2` | `bce-v3/...` | 每天 |
+| OpenRouter | OpenAI 兼容 | `https://openrouter.ai/api/v1` | `sk-or-...` | 每天 |
+| 阿里云百炼 / Moonshot / 智谱 / 火山方舟 / 硅基流动 / OpenAI | OpenAI 兼容 | 见预设 | 各家自己的 | 每天 |
+| Anthropic (Claude) | Claude 原生（`/v1/messages` + `x-api-key`） | `https://api.anthropic.com` | `sk-ant-...` | 每天 |
+| 本地模型 | Ollama / vLLM 的 `/api/chat` | `http://127.0.0.1:11434` | 不需要 | 不限 |
+
+地址支持以 `/v1` `/v2` `/v3` `/v4` 结尾，也可以直接填完整端点；没有版本号时自动补 `/v1`。
+
+**Key 归属（key_ref）**：Key 按服务商分开保存，换地址不会把上一家的 Key 带过去（401 的头号原因就是这个）。填 Key 时会检查前缀，例如把 `sk-or-...` 填到 DeepSeek 地址上会立刻提示。刚保存过 Key 的接口会自动做一次真实自检。
+
+### 失败分类与额度
+
+- 每个接口有自己的额度规则，三种模式：**每日**（自然日 0 点清零）、**窗口**（每 N 小时刷新，套餐常见）、**总量**（累计抵扣，用完为止，可选重置周期）；
+- **配置类**失败（401 无效 Key、403 无权限、404 模型不存在）→ 该接口冷却 30 分钟并标红，期间不再每次白跑一条 401；
+- **额度类**失败（402、`quota_exceeded`、`account_overdue`、本地计数达上限）→ 按该接口的额度窗口冷却，换下一个接口；
+- **瞬时限流**（429）→ 读 `Retry-After` 退避重试，然后换下一个接口，不做长时间冷却；
+- **内容安全**类 403 只针对当次请求，不改变接口状态；
+- 所有接口都不可用 → 暂停 AI，窗口结束后自动恢复并重新计数，也可以「立即恢复」。
+
+状态写在 `data/ai_state.json`，用量写在 `data/ai_usage.json`（均已 gitignore）。「Token 用量」面板有每个接口的进度条和最近 15 天的多线折线图。
+
+**这是整个应用里唯一的 AI 成本闸门**：论文概况、GitHub 解读、雷达摘要、收藏夹解读都没有自己的次数上限，全部受接口额度约束。
+
+### 常见失败原因
+
+| 现象 | 含义 | 处理 |
+|---|---|---|
+| 401 `api key: ****xxxx is invalid` | **Key 与地址不是同一家**（最常见） | 选对应预设，把 Key 填到该服务商自己的 key_ref 下 |
+| 403 `account_overdue` / 429 `quota_exceeded` | 账号欠费或套餐额度用尽 | 充值，或等窗口刷新；也可以换下一个接口 |
+| 403 `token_plan_person_model_not_supported` | 千帆 Token Plan 个人版不含这个模型 | 换成套餐内的 GLM / DeepSeek 系列 |
+| 403 `unsafe_request` | 内容被安全策略拦截 | 与 Key 无关，只影响这一次 |
+| 429 `temporarily rate-limited upstream` | 免费模型的上游共享池被限流 | 等 1–2 分钟重试，或换一个模型 |
+| `model not found` | 模型名写错 | 用服务商文档里的精确 ID |
+
+配置写在 `app_settings.json`（version 2）：
 
 ```json
 {
-  "llm": { "enabled": true, "provider": "openai",
-           "base_url": "https://openrouter.ai/api/v1",
-           "model": "recursive/flint-v1.0:free" },
-  "ai": { "enable_briefs": true, "concurrency": 1 }
+  "version": 2,
+  "llm": {
+    "enabled": true,
+    "timeout_seconds": 90, "max_attempts": 2,
+    "slots": [
+      { "id": "primary", "name": "主接口", "enabled": true, "preset": "deepseek",
+        "provider": "openai", "base_url": "https://api.deepseek.com",
+        "model": "deepseek-chat", "key_ref": "deepseek", "priority": 1,
+        "quota": { "mode": "daily", "limit": 500000, "window_hours": 24 } }
+    ]
+  }
 }
 ```
 
-日报里的**每个项目**都会生成 AI 解读，不再限制每天生成多少个——成本由上面的 token 限额控制。结果按「仓库 + 模型」缓存，不会重复消耗额度。
+密钥只存本机 `data/ai_secrets.json`（已 gitignore），配置文件里只有 `key_ref`、没有 Key，接口也只返回掩码。环境变量优先：`primary` → `RADAR_LLM_API_KEY`，其它 → `RADAR_LLM_API_KEY_<KEY_REF>`。
 
-不配置或调用失败时，两个模块都会回退到本地规则（GitHub 用规则版解读，雷达用抽取式摘要），日报不受影响。
+---
+
+## 配置
+
+### 环境变量
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `GITPULSE_PORT` | `8791` | 本地端口（前缀保留 `GITPULSE_` 以兼容旧配置） |
+| `GITPULSE_HOST` | `127.0.0.1` | 改成 `0.0.0.0` 才能被同 tailnet / 局域网的设备访问 |
+| `GITPULSE_REFRESH_TIME` | `08:00` | 每日刷新时间 |
+| `GITPULSE_TIMEZONE` | `Asia/Shanghai` | 时区 |
+| `GITPULSE_MAX_ITEMS` | `30` | 日报条数 |
+| `GITPULSE_TRANSLATE` | `1` | 设为 `0` 关闭中文翻译 |
+| `GITHUB_TOKEN` | 空 | 可选，提升 GitHub API 限额（60/h → 5000/h） |
+| `SERVERCHAN_SENDKEY` | 空 | Server酱 Turbo SendKey（`SCT...`），也可写在 `.env` |
+| `GITPULSE_PUSH_ITEMS` | `3` | 微信简报包含几个项目（1–5） |
+| `ANYSEARCH_API_KEY` | 空 | 可选，AnySearch 统一搜索引擎的 Key |
+| `FB_PROXY_MODE` | `auto` | 出网模式，见「网络与代理」 |
+| `FB_PROXY_URL` | 空 | `mode=manual` 时使用的代理地址 |
+
+```bash
+GITPULSE_PORT=9000 GITPULSE_REFRESH_TIME=09:00 ./run.sh
+```
+
+### `social_radar.json` 关键段
 
 ```json
-// social_radar.json（热点雷达自己的配置，不含模型设置）
 {
-  "schedule": {
-    "daily_time": "08:00",              // 每天几点出日报并推送
-    "collect_interval_minutes": 60      // 每多少分钟采集一次
+  "schedule": { "daily_time": "08:00", "collect_interval_minutes": 60 },
+  "network": { "mode": "auto", "proxy": "" },
+  "backoff": {
+    "degrade_after": 3, "degrade_interval_minutes": 60,
+    "pause_after": 6, "resume_after_minutes": 180
   },
-  "push": { "enabled": false, "items": 5 },
-  "interests": { "topics": ["AI 与大模型", "芯片与半导体"], "keywords": [], "exclude": [] },
   "filters": {
     "rules": ["[科技]", "+芯片", "+半导体", "!抽奖", "/\\b(llm|gpt)\\b/ => 大模型", "@8"]
   },
@@ -465,32 +450,18 @@ python scripts/collect-now.py --only eonet,gdacs,bbc_world,guardian_world,aljaze
         "language": "en", "max_items": 20 }
     ]
   },
-  "scoring": { "velocity": 0.3, "cross_platform": 0.2, "engagement": 0.2,
-               "verification": 0.2, "interest": 0.1 },
   "anysearch": {
-    "enabled": true,                       // 总开关（默认关）
-    "api_key_env": "ANYSEARCH_API_KEY",    // key 放 .env，不进配置
-    "zone": "cn", "language": "zh-CN",     // 也可设 "tag": "academic.search" / "code.doc"
-    "min_interval_minutes": 240,           // 每条查询多久跑一次（限流窗口只有 20 次）
-    "queries": [                           // 每条 = 一个发现源
-      { "id": "ai", "name": "AI 与大模型", "query": "AI 大模型 最新进展 突破" },
-      { "id": "chip", "name": "芯片与半导体", "query": "芯片 半导体 制程 最新消息" },
-      // 垂直域要带必填参数，否则后端判 400（参数表见 docs/radar.md）
-      { "id": "stock", "name": "AAPL 行情", "query": "AAPL",
-        "tag": "finance.quote", "params": { "type": "stock", "symbol": "AAPL" } }
+    "enabled": false,
+    "api_key_env": "ANYSEARCH_API_KEY",
+    "min_interval_minutes": 240,
+    "queries": [
+      { "id": "ai", "name": "AI 与大模型", "query": "AI 大模型 最新进展 突破" }
     ]
   },
-  "investigation": {
-    "external_search": true,               // 调查时用 AnySearch 补外部材料
-    "external_extract_top": 2,             // 对前几条抓正文（每条占一次额度）
-    "min_local_evidence": 3                // 本地材料少于 3 条才补
-  }
+  "papers": { "enabled": true, "daily_time": "08:30", "interval_hours": 24 },
+  "push": { "enabled": false, "items": 5 }
 }
 ```
-
-`tag` 留空 = 通用网页搜索；AnySearch 还有 17 个垂直域（`academic.search` 学术、`code.doc` 代码文档、`finance.quote` 行情、`security.intel` 安全情报、`travel.flight`、`legal.*`、`business.*` 等），按查询换成对应领域。**部分子域有必填参数**（`finance.quote` 要 `type`，`security.intel` 要 `ioc`），要一起写进 `params`，否则后端判 400；完整参数表见 [docs/radar.md](docs/radar.md)。
-
-抓正文不是每次都成功：实测 `go.dev` 能抓 3.6 万字，财联社、EET-China 会返回 422（付费墙 / 反爬），这时自动退回搜索摘要，不会报错中断。
 
 关键词语法一行一条：
 
@@ -502,127 +473,21 @@ python scripts/collect-now.py --only eonet,gdacs,bbc_world,guardian_world,aljaze
 | `/正则/` | 正则匹配，可带 `=> 别名` |
 | `@数字` | 该组最多保留多少条 |
 
-详细说明（数据源实测结果、评分公式、调查方法、存储结构、已知限制）见 [docs/radar.md](docs/radar.md)。
+AnySearch 的 `tag` 留空 = 通用网页搜索；也可以换成垂直域（`academic.search`、`code.doc`、`finance.quote`、`security.intel` 等）。**部分子域有必填参数**（`finance.quote` 要 `type`），要一起写进 `params`，否则后端判 400。
 
----
+### 翻译
 
-## 学术论文（独立模块）
+中文简介使用 [MyMemory](https://mymemory.translated.net/) 公共接口，不需要 Key，每天约 5000 字符匿名额度。翻译结果永久缓存在 `translations` 表，同一项目第二天不会重复消耗额度。额度用尽或服务不可达时，卡片自动回退到英文原文——不报错，也不阻塞日报。
 
-左侧导航的第三项，与「GitHub 技术雷达」「全球热点雷达」同级，入口 `/papers.html`。
+### GitHub API 限额
 
-![学术论文](docs/papers.png)
-
-按学科浏览近期公开论文，每篇只展示：**标题、原始摘要、原文链接、AI 中文概况**。
-
-- **7 个来源实测**：Crossref、PubMed、Europe PMC、bioRxiv、medRxiv、HuggingFace 可用；OpenAlex 需要免费 Key；**arXiv 因本机 TLS 证书链缺中间证书暂不可用**（没有关闭校验绕过）
-- **8 个学科**：全部 / 计算机与 AI / 物理 / 医学与生物医学 / 金融与经济 / 数学 / 生物学 / 工程与电子信息，按发布日期倒序
-- **每天更新一次**：`interval_hours: 24`，每天 08:30 采集；论文增量本来就慢，不需要像新闻那样每小时抓
-- **AI 没有单独的次数上限**：所有待分析论文都会排队，成本统一由全局 token 限额控制（主接口用尽切备用，两个都用尽才暂停）
-- **首次采集 178 篇，94% 有摘要**：没有摘要就显示「该来源没有提供摘要」，不拿标题冒充
-- **每篇独立的 AI 中文概况**：研究内容 / 核心方法 / 主要发现 / 研究意义 / 信息局限，与原始摘要分区展示
-- **缓存优先**：按内容指纹命中，刷新页面、切换学科、重复采集都不会重新分析；失败可单篇重试
-- **单源失败不影响其他来源**：页面底部显示每源的获取数、摘要覆盖、耗时与错误
-
-```bash
-python app.py radar papers test-sources        # 实测论文数据源（真实请求）
-python app.py radar papers collect             # 采集论文 + 生成 AI 概况
-python app.py radar papers status              # 查看来源与队列状态
-```
-
-详细的数据源实测数据、去重规则、表结构和命令见 [docs/papers.md](docs/papers.md)。
-
----
-
-## 每日自动化
-
-### 方式 A：LaunchAgent（推荐，macOS）
-
-```bash
-./scripts/install-daily.sh
-```
-
-安装后：
-
-- 登录时自动启动本地服务；
-- 服务常驻，**每小时**刷新一次榜单，**每天 08:00（Asia/Shanghai）**推送一次微信简报；
-- 如果 08:00 时断网，生成失败后每 10 分钟重试一次；联网后自动补跑当天日报；
-- 即使 08:00 时电脑休眠，唤醒后也会补跑当天日报；
-- 日志：`data/launchd.err.log`。
-
-卸载：
-
-```bash
-./scripts/uninstall-daily.sh
-```
-
-### 方式 B：Harness 自动化任务
-
-本次已在 DeepSeek Harness 中创建每日 **08:00** 的任务，提示词会运行：
-
-```bash
-./scripts/daily-update.sh
-```
-
-脚本行为：
-
-- 如果当天日报已存在：直接返回，不重复抓取；
-- 在线：触发本地服务刷新，并轮询到完成；
-- 离线：退出码 `75`，Harness 任务会等待 10 分钟后重试；本机调度器也会持续重试；
-- 服务未运行时：直接执行一次 `python3 app.py refresh`。
-
-Harness 日程适合“到点提醒/触发”，LaunchAgent 适合“关掉会话也能持续运行”，两者可以同时保留。
-
-### 方式 C：cron（macOS / Linux）
-
-```cron
-0 8 * * * cd /path/to/filter-bubble && /usr/bin/python3 app.py refresh >> data/cron.log 2>&1
-```
-
-这种方式只生成数据；要看界面仍需运行 `./run.sh`。
-
-> 服务内部也有调度线程：只要进程活着，每天到点会检查并生成当日日报。因此单纯运行 `./run.sh` 也能实现每日更新。
-
----
-
-## 配置
-
-通过环境变量覆盖：
-
-| 变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `GITPULSE_PORT` | `8791` | 本地端口（环境变量前缀保留 `GITPULSE_` 以兼容旧配置） |
-| `GITPULSE_HOST` | `127.0.0.1` | 只监听本机；改成 `0.0.0.0` 才能被同 tailnet / 局域网的设备访问 |
-
-也可以用命令行临时覆盖，不改环境变量：
-
-```bash
-python app.py serve --host 0.0.0.0 --port 9000
-```
-| `SERVERCHAN_SENDKEY` | 空 | Server酱 Turbo SendKey（`SCT...`），也可写在 `.env` |
-| `GITPULSE_PUSH_ITEMS` | `3` | 微信简报包含几个项目（1–5） |
-| `GITPULSE_REFRESH_TIME` | `08:00` | 每日刷新时间 |
-| `GITPULSE_TIMEZONE` | `Asia/Shanghai` | 时区 |
-| `GITPULSE_MAX_ITEMS` | `30` | 日报条数 |
-| `GITPULSE_TRANSLATE` | `1` | 设为 `0` 关闭中文翻译 |
-| `GITHUB_TOKEN` | 空 | 可选，提升 GitHub API 限额（60/h → 5000/h） |
-
-```bash
-GITPULSE_PORT=9000 GITPULSE_REFRESH_TIME=09:00 ./run.sh
-```
-
-### 关于翻译
-
-中文简介使用 [MyMemory](https://mymemory.translated.net/) 公共接口，不需要 Key，每天约 5000 字符的匿名额度。翻译结果会永久缓存在 `translations` 表，因此同一项目第二天不会重复消耗额度。
-
-额度用尽或服务不可达时，卡片自动回退到英文原文——不会报错，也不会阻塞日报生成。介意隐私可设置 `GITPULSE_TRANSLATE=0`。
-
-### 关于 GitHub API 限额
-
-未登录时 GitHub REST API 为 60 次/小时。一次完整生成通常消耗 30 次左右；项目详情缓存 24 小时、README 缓存 7 天，所以后续刷新基本不消耗详情额度。若你频繁手动刷新，建议配置 `GITHUB_TOKEN`。
+未登录时 GitHub REST API 为 60 次/小时。一次完整生成通常消耗 30 次左右；项目详情缓存 24 小时、README 缓存 7 天，所以后续刷新基本不消耗详情额度。频繁手动刷新建议配置 `GITHUB_TOKEN`。
 
 ---
 
 ## API
+
+### 日报与口味
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -630,27 +495,129 @@ GITPULSE_PORT=9000 GITPULSE_REFRESH_TIME=09:00 ./run.sh
 | GET | `/api/status` | 生成状态、下次运行时间 |
 | POST | `/api/refresh` | 触发后台重新抓取 |
 | POST | `/api/feedback` | `{repo, signal: 1 / -1 / 0}` |
-| POST | `/api/bookmark` | `{repo}`，切换收藏 |
 | POST | `/api/rerank` | 按当前模型重排 |
 | POST | `/api/reset` | 清空口味记忆 |
-| GET | `/api/follows` | 关注列表 + 发布动态 |
-| GET | `/api/follows?refresh=1` | 强制刷新关注动态 |
+| GET | `/api/prefs` | 当前偏好画像 |
+| POST | `/api/brief` | 单个项目的 AI 速读 |
+| POST | `/api/seen` | `{kind: github\|radar, keys: []}`，标记 NEW 已读 |
+
+### 收藏与关注
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/bookmark` | `{repo, folder_id?}`，切换收藏 |
+| GET | `/api/bookmarks` | `?folder=all\|none\|<id>&q=关键词` |
+| POST | `/api/bookmarks/folder` | `{action: create\|rename\|delete, id?, name?}` |
+| POST | `/api/bookmarks/move` | `{repo, folder_id}` |
+| GET | `/api/follows` | 关注列表 + 发布动态（`?refresh=1` 强制刷新） |
+| GET | `/api/follows/search` | `?q=关键词`，搜 GitHub 用户/组织 |
 | POST | `/api/follow` | `{owner}`，关注/取消关注 |
 | POST | `/api/follows/refresh` | 刷新全部关注 |
-| GET | `/api/push` | 微信简报配置/发送状态 |
-| POST | `/api/push` | `{force}`，发送今日微信简报 |
-| GET | `/api/prefs` | 当前偏好画像 |
-| GET | `/api/health` | 健康检查 |
 
-命令行：
+### 大模型与推送
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/ai/status` | 接口健康、额度、冷却状态 |
+| GET | `/api/ai/settings` | 当前模型配置（Key 已掩码） |
+| GET | `/api/ai/presets` | 服务商预设列表 |
+| GET | `/api/ai/usage` | Token 用量与历史曲线 |
+| GET | `/api/ai/errors` | 最近的调用错误 |
+| POST | `/api/ai/test` | 测试指定接口 |
+| POST | `/api/ai/health/test-all` | 逐个测试全部接口 |
+| POST | `/api/ai/health/reset` | 清除冷却 |
+| POST | `/api/ai/resume` | 立即恢复暂停的 AI |
+| POST | `/api/ai/clear-key` | 清除某个 key_ref 的 Key |
+| GET / POST | `/api/push` | 微信简报状态 / `{force}` 发送 |
+
+### 全球热点雷达
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/radar/status` | 雷达状态、调度、数据源统计、当前出网出口 |
+| GET | `/api/radar/report` | 指定日期日报 |
+| GET | `/api/radar/events` | 事件列表 |
+| GET | `/api/radar/event` | 单个事件详情 |
+| GET | `/api/radar/sources` | 数据源列表 + 健康 + 出网状态 |
+| GET | `/api/radar/history` | 历史日报、调查与运行记录 |
+| GET | `/api/radar/settings` | 雷达配置（脱敏） |
+| POST | `/api/radar/collect` | 触发采集 |
+| POST | `/api/radar/report` | 只生成日报 |
+| POST | `/api/radar/sources/reset` | 重置失败计数（`{source_id?}`，空 = 全部） |
+| POST | `/api/radar/investigate` | `{event_id}` 或 `{query}` |
+| GET | `/api/radar/investigation` | 历史调查报告 |
+
+### 全球态势
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/radar/intel` | 五个面板 + 地图，一份数据 |
+| GET | `/api/radar/intel/threat` | 威胁时间线 |
+| GET | `/api/radar/intel/countries` | 国家指数 |
+| GET | `/api/radar/intel/map` | 地图点位（`?hazards=earthquake`） |
+| GET | `/api/radar/intel/live` | 实时新闻（`?since_id=` / `?before_id=`） |
+
+### 学术论文
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/radar/papers` | 按学科列论文 |
+| GET | `/api/radar/papers/status` | 来源与队列状态 |
+| POST | `/api/radar/papers/collect` | 触发采集 |
+| POST | `/api/radar/papers/analyze` | 分析单篇 |
+| POST | `/api/radar/papers/analyze-pending` | 分析队列 |
+| POST | `/api/radar/papers/retry` | 单篇重试 |
+| POST | `/api/radar/papers/retry-failed` | 批量重试失败 |
+| POST | `/api/radar/papers/test-sources` | 实测数据源 |
+
+### 采集监控（只读）
+
+`/api/monitor/health`、`/overview`、`/timeline`、`/runs`、`/run`、`/run/items`、`/run/logs`、`/sources`、`/source`、`/logs`、`/log`、`/meta`。全部 `GET`，`POST` 一律 405。
+
+### 命令行
 
 ```bash
-python3 app.py refresh   # 生成一次
-python3 app.py rerank    # 按最新模型重排
-python3 app.py reset     # 清空反馈
-./scripts/daily-update.sh  # 带网络检测的每日更新（Harness/cron 入口）
-python3 app.py serve     # 启动 UI + 每日调度
+python app.py serve                      # 启动 UI + 调度
+python app.py refresh                    # 生成一次 GitHub 日报
+python app.py rerank                     # 按最新模型重排
+python app.py push --dry-run             # 预览微信简报
+python app.py reset                      # 清空口味记忆
+python app.py radar collect              # 采集 + 生成雷达日报
+python app.py radar report               # 只生成雷达日报
+python app.py radar query 芯片 突破       # 自由关键词调查
+python app.py radar investigate <event_id>
+python app.py radar papers collect
+./scripts/daily-update.sh                # 带网络检测的每日更新
 ```
+
+`python scripts/collect-now.py --only ithome,qbitai` 可以只跑指定数据源，`--force` 忽略熔断与节流。
+
+---
+
+## 每日自动化
+
+### 方式 A：LaunchAgent（macOS）
+
+```bash
+./scripts/install-daily.sh      # 安装
+./scripts/uninstall-daily.sh    # 卸载
+```
+
+登录时自动启动本地服务，服务常驻：每小时刷新榜单，每天 08:00（Asia/Shanghai）推送微信简报；08:00 断网会每 10 分钟重试，唤醒后补跑当天日报。日志在 `data/launchd.err.log`。
+
+### 方式 B：cron（macOS / Linux）
+
+```cron
+0 8 * * * cd /path/to/filter-bubble && /usr/bin/python3 app.py refresh >> data/cron.log 2>&1
+```
+
+这种方式只生成数据；要看界面仍需运行 `./run.sh`。
+
+### 方式 C：Windows 计划任务
+
+`scripts/daily-update.cmd` 是 Windows 入口，交给任务计划程序在 08:00 调用即可。
+
+> 服务内部也有调度线程：只要进程活着，每天到点会检查并生成当日日报。所以单纯运行 `./run.sh` 也能实现每日更新。
 
 ---
 
@@ -660,6 +627,7 @@ python3 app.py serve     # 启动 UI + 每日调度
 filter-bubble/
 ├── app.py                  # HTTP 服务、API、CLI、调度
 ├── core/
+│   ├── net.py              # 统一出网层：代理自动切换 + 失败冷却
 │   ├── github.py           # Trending 解析 + Search + API 补全
 │   ├── rank.py             # 热度 / 猛增 / 多样性排序
 │   ├── prefs.py            # 特征、逻辑回归、偏好画像
@@ -667,31 +635,40 @@ filter-bubble/
 │   ├── translate.py        # MyMemory 翻译 + 额度 + 缓存
 │   ├── notify.py           # Server酱微信简报渲染与发送
 │   ├── db.py               # SQLite schema 与访问
-│   └── config.py           # 环境变量配置
-├── web/                    # 原生前端
-├── scripts/                # LaunchAgent 安装/卸载、每日更新脚本
-├── data/filter-bubble.db        # 日报、反馈、权重（本地）
+│   ├── config.py           # 环境变量配置
+│   ├── radar/              # 全球热点雷达：采集、聚类、评分、调查、推送、态势
+│   │   ├── sources/        # 各平台适配器（RSS / 热榜 / API / newsnow / AnySearch）
+│   │   └── ...
+│   ├── papers/             # 学术论文：来源、采集、分类、AI 概况
+│   ├── geo/                # 离线地名与国家表
+│   └── monitor/            # 采集监控：实时埋点 / 只读查询 / 脱敏 / 历史导入
+├── web/                    # 原生前端（7 个页面 + 本地世界地图矢量）
+├── scripts/                # 启停控制、每日更新、底图与地名构建、按需采集
+├── docs/                   # 设计文档与截图
+├── data/filter-bubble.db   # 全部本地数据
 └── run.sh
 ```
 
 ---
 
-## 已知边界与下一步
+## 已知边界
 
 - 热度是相对分，不是 GitHub 官方指标；不同日期之间的分数不保证绝对可比。
 - 免费翻译在专业术语上偶有生硬；英文原文始终保留。
-- GitHub 页面结构变化可能影响 Trending 解析；解析失败时会保留上一份日报并在界面提示。
+- GitHub 页面结构变化可能影响 Trending 解析；解析失败时保留上一份日报并在界面提示。
 - 部分网络环境无法加载 GitHub 头像；前端会自动回退到基于用户名生成的渐变首字母头像。
-- 关注动态依赖 GitHub 公开 Atom feed / Release feed；组织账号没有公开 activity 时，可能只能看到新仓库，不能看到 release。
-- 关注动态默认保留近 14 天、每位发布者最多展示 5 条，避免刷屏。
-- 微信简报只发 3 个项目（可配置 1–5），不是完整 30 个；完整内容仍在电脑端。
-- Server酱免费额度每天 5 条，发送失败也会计数；调试请用 `python3 app.py push --dry-run`。
-- 后续可做：按 topic 静音、周报、邮件/系统通知、GitHub Star 同步、LLM 生成更自然的中文摘要、历史趋势 sparkline、多人配置。
+- 关注动态依赖 GitHub 公开 Atom feed / Release feed；组织账号没有公开 activity 时，可能只能看到新仓库，看不到 release。
+- 微信简报只发 3 个项目（可配 1–5），不是完整 30 个；完整内容仍在电脑端。
+- Server酱免费额度每天 5 条，发送失败也会计数；调试请用 `--dry-run`。
+- 境外新闻源能否采集取决于本机到它们的网络路径；没有可用代理时它们会失败，但不影响国内源。
+- GDELT 的公共额度经常返回 429，失败属正常；arXiv 在本机因 TLS 证书链问题默认关闭；Reddit / Bluesky 本机 403。
+- 论文的 OpenAlex 来源需要免费 Key，默认关闭。
 
 ---
 
 ## 隐私
 
 - 服务只监听 `127.0.0.1`，不对外暴露。
-- 日报、反馈、权重全部在 `data/filter-bubble.db`。
+- 日报、反馈、权重、雷达与论文数据全部在 `data/filter-bubble.db`。
 - 只有「英文项目简介 / README 摘要」会发给 MyMemory 做翻译；关闭 `GITPULSE_TRANSLATE` 后，除 GitHub 之外的网络请求为零。
+- 大模型 Key 只存 `data/ai_secrets.json`，不写配置文件、不进仓库，接口只返回掩码。

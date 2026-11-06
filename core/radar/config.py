@@ -50,8 +50,17 @@ DEFAULTS: Dict[str, Any] = {
         # 连续失败达到该次数后降频（每 degrade_interval_minutes 分钟才重试一次）
         "degrade_after": 3,
         "degrade_interval_minutes": 60,
-        # 连续失败达到该次数后自动停用，直到手动重置
+        # 连续失败达到该次数后自动停用
         "pause_after": 6,
+        # 停用不是永久的：冷却这么久之后自动放行一次试探性重试，
+        # 成功就恢复，失败就继续停用。0 = 必须手动重置。
+        "resume_after_minutes": 180,
+    },
+    # 出网方式：auto 表示「系统有代理就用代理，代理不通立刻换直连」，两边都试过才算失败。
+    # 开着 VPN 和关掉 VPN 都不用改配置。
+    "network": {
+        "mode": "auto",   # auto | system | direct | manual
+        "proxy": "",      # mode=manual 时生效，例如 http://127.0.0.1:7890
     },
     # 第三方聚合源：抖音/知乎/贴吧等无直连公开接口的平台走这个 API
     "newsnow": {
@@ -288,6 +297,14 @@ def load() -> Dict[str, Any]:
             _set_path(cfg, dotted, caster(raw))
         except Exception:  # noqa: BLE001
             print("[radar] ignoring invalid %s=%r" % (env_key, raw))
+
+    # 出网策略随配置热更新：改 social_radar.json 的 network 段不用重启。
+    try:
+        from .. import net
+        network = cfg.get("network") or {}
+        net.configure(str(network.get("mode") or ""), str(network.get("proxy") or ""))
+    except Exception as exc:  # noqa: BLE001 - 出网层不可用不该拖垮配置加载
+        print("[radar] network policy not applied:", exc)
     return cfg
 
 

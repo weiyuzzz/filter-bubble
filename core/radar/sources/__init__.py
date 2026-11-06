@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, List, Tuple
 
 from ... import keywords
 from .. import store, urls
+from .. import fetch as radar_fetch
 from . import anysearch, hotlists, intl, newsnow, rss
 
 NON_FREE_NOTE = "无合规免费入口，未接入（不绕过登录/验证码/访问控制）"
@@ -389,8 +390,11 @@ def _run_one(spec: Dict[str, Any]) -> Tuple[Dict[str, Any], List[Dict[str, Any]]
     started = time.time()
     try:
         items = adapter(spec, make_item) or []
+        # 采集监控要展示「真实 HTTP 状态」：fetch 层按线程记下最近一次调用，这里带走
+        spec["_fetch"] = radar_fetch.last_call()
         return spec, items, "", int((time.time() - started) * 1000)
     except Exception as exc:  # noqa: BLE001 - isolate every adapter
+        spec["_fetch"] = radar_fetch.last_call()
         return spec, [], "%s: %s" % (type(exc).__name__, exc), int((time.time() - started) * 1000)
 
 
@@ -401,8 +405,10 @@ def _run_geo(spec: Dict[str, Any]) -> Tuple[Dict[str, Any], List[Dict[str, Any]]
     started = time.time()
     try:
         points = geo_sources.fetch_points(spec) or []
+        spec["_fetch"] = radar_fetch.last_call()
         return spec, points, "", int((time.time() - started) * 1000)
     except Exception as exc:  # noqa: BLE001 - 单个图层失败不影响其它源
+        spec["_fetch"] = radar_fetch.last_call()
         return spec, [], "%s: %s" % (type(exc).__name__, exc), int((time.time() - started) * 1000)
 
 
@@ -411,8 +417,14 @@ def _haystack(item: Dict[str, Any]) -> str:
 
 
 def filter_items(spec: Dict[str, Any], items: List[Dict[str, Any]],
-                 cfg: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], int, int, int]:
-    """价值过滤 + 截断。返回 (保留, 噪音丢弃数, 互动不达标丢弃数, 截断数)。"""
+                 cfg: Dict[str, Any],
+                 decisions: Optional[List[Dict[str, Any]]] = None
+                 ) -> Tuple[List[Dict[str, Any]], int, int, int]:
+    """价值过滤 + 截断。返回 (保留, 噪音丢弃数, 互动不达标丢弃数, 截断数)。
+
+    ``decisions``（可选）会收到**每一条**输入条目的处理结果与原因，供采集监控展示
+    「这条为什么被过滤」。不传时行为与以前完全一致。
+    """
     filters = cfg.get("filters") or {}
     noise = [w.lower() for w in (filters.get("noise_keywords") or []) if w]
     noise += [w.lower() for w in (spec.get("blacklist") or []) if w]
@@ -428,20 +440,36 @@ def filter_items(spec: Dict[str, Any], items: List[Dict[str, Any]],
     dropped_low = 0
     for item in items:
         blob = _haystack(item)
-        if any(word in blob for word in noise):
+        hit_word = next((word for word in noise if word in blob), "")
+        if hit_word:
             dropped_noise += 1
+            if decisions is not None:
+                decisions.append({"item": item, "kept": False,
+                                  "reason": "命中噪音关键词：%s" % hit_word})
             continue
         if rules and keywords.excluded(rules, blob):
             dropped_noise += 1
+            if decisions is not None:
+                decisions.append({"item": item, "kept": False,
+                                  "reason": "命中排除规则（! 词）"})
             continue
         if must_tokens and not any(keywords._hit(token, blob) for token in must_tokens):
             dropped_noise += 1
+            if decisions is not None:
+                decisions.append({"item": item, "kept": False,
+                                  "reason": "缺少必须词（+ 词）：%s" % "、".join(must_tokens[:3])})
             continue
         engagement = item.get("engagement") or {}
         if thresholds and not all(
             (engagement.get(key) or 0) >= minimum for key, minimum in thresholds.items()
         ):
             dropped_low += 1
+            if decisions is not None:
+                decisions.append({"item": item, "kept": False,
+                                  "reason": "互动量未达阈值：%s" % ", ".join(
+                                      "%s>=%s（实际 %s）" % (key, minimum,
+                                                            engagement.get(key) or 0)
+                                      for key, minimum in thresholds.items())})
             continue
         kept.append(item)
 
@@ -455,7 +483,16 @@ def filter_items(spec: Dict[str, Any], items: List[Dict[str, Any]],
         cap = cap or int(limits.get("news_top_n") or 40)
     truncated = max(0, len(kept) - cap) if cap else 0
     if cap:
+        if decisions is not None:
+            for item in kept[cap:]:
+                decisions.append({"item": item, "kept": False,
+                                  "reason": "超出本来源本轮上限（%d 条，按榜单顺序截断）" % cap})
+            for item in kept[:cap]:
+                decisions.append({"item": item, "kept": True, "reason": ""})
         kept = kept[:cap]
+    elif decisions is not None:
+        for item in kept:
+            decisions.append({"item": item, "kept": True, "reason": ""})
     return kept, dropped_noise, dropped_low, truncated
 
 
@@ -473,13 +510,26 @@ def _minutes_since(iso: Any) -> float:
         return 1e9
 
 
-def collect(conn, cfg: Dict[str, Any], force: bool = False) -> Dict[str, Any]:
+def collect(conn, cfg: Dict[str, Any], force: bool = False, run=None,
+            trigger: str = "unknown") -> Dict[str, Any]:
     """Fetch every enabled source concurrently, persist items, record per-source health.
 
     数据源熔断：
     * 连续失败 >= degrade_after → 降频（每 degrade_interval_minutes 才重试一次）
     * 连续失败 >= pause_after   → 自动停用，直到手动重置
+
+    采集监控（旁路）：如果当前线程有正在进行的监控运行（``monitor.current()``）或者
+    显式传了 ``run``，就把逐来源结果、逐条处理结果与原因、真实 HTTP 状态写进监控表。
+    没有监控运行时行为与以前完全一致。
     """
+    if run is None:
+        try:
+            from ... import monitor
+            run = monitor.current()
+        except Exception:  # noqa: BLE001 - 监控不可用不影响采集
+            run = None
+    if run is not None and (not trigger or trigger == "unknown"):
+        trigger = getattr(run, "trigger", "unknown") or "unknown"
     specs = active_specs(cfg)
     now = dt.datetime.now().astimezone().isoformat(timespec="seconds")
     for spec in all_specs(cfg):
@@ -494,6 +544,7 @@ def collect(conn, cfg: Dict[str, Any], force: bool = False) -> Dict[str, Any]:
 
     runnable: List[Dict[str, Any]] = []
     skipped: List[Dict[str, str]] = []
+    trials: List[Dict[str, str]] = []
     for spec in specs:
         state = states.get(spec["source_id"]) or {}
         failures = int(state.get("consecutive_failures") or 0)
@@ -501,10 +552,22 @@ def collect(conn, cfg: Dict[str, Any], force: bool = False) -> Dict[str, Any]:
             runnable.append(spec)
             continue
         if failures >= pause_after:
-            skipped.append({"source_id": spec["source_id"], "name": spec["name"],
-                            "reason": "连续失败 %d 次，已自动停用（可在数据源管理里重置）" % failures})
-            store.mark_source_paused(conn, spec["source_id"],
-                                     "连续失败 %d 次，已自动停用" % failures)
+            # 停用不是终点：冷却期过后放行一次试探性重试。
+            # 成功 → record_source_result 会把 consecutive_failures 清零、状态改回 ok；
+            # 失败 → last_error_at 刷新，下一轮继续等冷却，不会变成每个小时都白跑。
+            resume_after = float(backoff.get("resume_after_minutes") or 0)
+            idle = _minutes_since(state.get("last_error_at"))
+            if resume_after > 0 and idle >= resume_after:
+                runnable.append(spec)
+                trials.append({"source_id": spec["source_id"], "name": spec["name"],
+                               "reason": "停用已 %d 分钟，自动重试一次" % int(idle)})
+                continue
+            wait = max(0, int(resume_after - idle)) if resume_after > 0 else 0
+            reason = "连续失败 %d 次，已自动停用" % failures
+            if wait:
+                reason += "（约 %d 分钟后自动重试，也可在数据源管理里重置）" % wait
+            skipped.append({"source_id": spec["source_id"], "name": spec["name"], "reason": reason})
+            store.mark_source_paused(conn, spec["source_id"], "连续失败 %d 次，已自动停用" % failures)
             continue
         if failures >= degrade_after and _minutes_since(state.get("last_error_at")) < degrade_interval:
             skipped.append({"source_id": spec["source_id"], "name": spec["name"],
@@ -529,15 +592,53 @@ def collect(conn, cfg: Dict[str, Any], force: bool = False) -> Dict[str, Any]:
     total_ranks = 0
     per_source: List[Dict[str, Any]] = []
     geo_layers: List[Dict[str, Any]] = []
+    geo_failed: List[Dict[str, str]] = []
+    geo_run = None
+
+    if run is not None:
+        for entry in skipped:
+            state = states.get(entry["source_id"]) or {}
+            paused = int(state.get("consecutive_failures") or 0) >= pause_after
+            run.source_result(entry["source_id"], "paused" if paused else "skipped",
+                              name=entry.get("name"), kind=(state.get("kind") or ""),
+                              platform=(state.get("platform") or ""),
+                              reason=entry.get("reason"),
+                              detail={"source_id": entry["source_id"]})
+            run.log("WARNING" if paused else "INFO",
+                    "%s 本轮未采集：%s" % (entry.get("name") or entry["source_id"],
+                                        entry.get("reason") or ""),
+                    stage="fetch", source_id=entry["source_id"])
+
+        for entry in trials:
+            run.log("INFO",
+                    "%s 解除停用试跑：%s" % (entry.get("name") or entry["source_id"],
+                                         entry.get("reason") or ""),
+                    stage="fetch", source_id=entry["source_id"])
 
     with cf.ThreadPoolExecutor(max_workers=6) as pool:
         futures = [pool.submit(_run_geo if spec.get("kind") == "geo" else _run_one, spec)
                    for spec in runnable]
         for future in cf.as_completed(futures):
             spec, items, error, latency = future.result()
+            meta = spec.get("_fetch") or {}
+            http_status = meta.get("status") or None
             if error:
                 store.record_source_result(conn, spec["source_id"], False, 0, latency, error, now)
+                conn.commit()   # 先提交业务写，再写监控：监控是独立事务，不能压在业务事务里等锁
                 failed.append({"source_id": spec["source_id"], "name": spec["name"], "error": error})
+                if spec.get("kind") == "geo":
+                    geo_failed.append({"source_id": spec["source_id"], "name": spec["name"],
+                                       "error": error})
+                if run is not None:
+                    run.source_result(spec["source_id"], "failed", name=spec.get("name"),
+                                      platform=spec.get("platform"), kind=spec.get("kind"),
+                                      latency_ms=latency, http_status=http_status,
+                                      fetched=0, parsed=0, error=error,
+                                      detail={"url": meta.get("url") or spec.get("url") or ""})
+                    run.add_error("%s（%s）：%s" % (spec["name"], spec["source_id"], error),
+                                  source_id=spec["source_id"], stage="fetch",
+                                  details={"latency_ms": latency, "http_status": http_status,
+                                           "url": meta.get("url") or spec.get("url") or ""})
             elif spec.get("kind") == "geo":
                 # 结构化地理点：不进 news 过滤/聚类统计，只写 radar_geo_points
                 for point in items:
@@ -545,6 +646,7 @@ def collect(conn, cfg: Dict[str, Any], force: bool = False) -> Dict[str, Any]:
                 counts = store.upsert_geo_points(conn, items)
                 store.record_source_result(conn, spec["source_id"], True, len(items), latency,
                                            None, now)
+                conn.commit()   # 同上：监控写入排在业务提交之后
                 ok_sources += 1
                 geo_layers.append({
                     "source_id": spec["source_id"],
@@ -553,26 +655,88 @@ def collect(conn, cfg: Dict[str, Any], force: bool = False) -> Dict[str, Any]:
                     "inserted": counts["inserted"],
                     "updated": counts["updated"],
                 })
+                if run is not None:
+                    if geo_run is None:
+                        # 地理图层是真实执行的独立阶段：单独作为一次「地理数据采集」运行记录
+                        geo_run = _start_geo_run(run, trigger)
+                    geo_run.source_result(spec["source_id"], "ok" if items else "empty",
+                                          name=spec.get("name"), platform=spec.get("platform"),
+                                          kind=spec.get("kind"), latency_ms=latency,
+                                          http_status=http_status, fetched=len(items),
+                                          parsed=len(items), items_new=counts["inserted"],
+                                          detail={"layer": spec.get("layer"),
+                                                  "updated": counts["updated"],
+                                                  "url": meta.get("url") or ""},
+                                          reason=None if items else "本次返回 0 个点位（不等于失败）")
+                    geo_run.add_counts(items_fetched=len(items), items_new=counts["inserted"],
+                                      items_updated=counts["updated"])
             else:
                 total_raw += len(items)
-                kept, noise, low, truncated = filter_items(spec, items, cfg)
+                decisions: List[Dict[str, Any]] = []
+                kept, noise, low, truncated = filter_items(spec, items, cfg, decisions)
                 filtered = len(items) - len(kept)
                 total_filtered += filtered
                 total_kept += len(kept)
-                counts = store.insert_items(conn, kept)
+                trace: List[Dict[str, Any]] = []
+                counts = store.insert_items(conn, kept, trace=trace)
                 total_inserted += counts["inserted"]
                 total_seen += counts["seen"]
                 total_ranks += store.record_ranks(conn, kept, now[:10], now)
-                store.record_source_result(conn, spec["source_id"], True, len(kept), latency, None, now)
+                store.record_source_result(conn, spec["source_id"], True, len(kept), latency,
+                                           None, now)
+                conn.commit()   # 先提交业务写，再写监控：监控走独立连接/独立事务
                 ok_sources += 1
                 per_source.append({
                     "source_id": spec["source_id"], "raw": len(items), "kept": len(kept),
                     "items": len(kept), "new": counts["inserted"],
                     "dropped_noise": noise, "dropped_low_engagement": low, "truncated": truncated,
                 })
+                if run is not None:
+                    trace_by_hash = {entry["url_hash"]: entry for entry in trace}
+                    rows = []
+                    for decision in decisions:
+                        item = decision["item"]
+                        entry = trace_by_hash.get(item.get("url_hash")) or {}
+                        if decision["kept"]:
+                            action = entry.get("action") or "new"
+                            reason = entry.get("reason") or ""
+                        else:
+                            action = "filtered"
+                            reason = decision.get("reason") or ""
+                        rows.append({
+                            "source_id": spec["source_id"], "kind": "news",
+                            "title": item.get("title"), "url": item.get("url"),
+                            "url_hash": item.get("url_hash"),
+                            "content_hash": item.get("content_hash"),
+                            "published_at": item.get("published_at"),
+                            "collected_at": item.get("collected_at") or now,
+                            "action": action, "reason": reason,
+                            "item_id": entry.get("item_id"),
+                            "detail": {"platform": item.get("platform"),
+                                       "language": item.get("language"),
+                                       "truncated_before_insert": decision["kept"] is False and
+                                       "上限" in (reason or "")},
+                        })
+                    run.items(rows)
+                    new_count = counts["inserted"]
+                    run.source_result(
+                        spec["source_id"],
+                        "ok" if kept else ("empty" if not items else "filtered_all"),
+                        name=spec.get("name"), platform=spec.get("platform"),
+                        kind=spec.get("kind"), latency_ms=latency, http_status=http_status,
+                        fetched=len(items), parsed=len(items), items_new=new_count,
+                        items_duplicate=counts["seen"], items_filtered=filtered,
+                        reason=(None if kept else
+                                "本次返回 0 条可用条目（不等于失败）" if not items else
+                                "本次 %d 条全部被过滤" % len(items)),
+                        detail={"dropped_noise": noise, "dropped_low_engagement": low,
+                                "truncated": truncated, "kept": len(kept),
+                                "url": meta.get("url") or spec.get("url") or ""})
+                    run.add_counts(items_fetched=len(items), items_new=new_count,
+                                   items_duplicate=counts["seen"], items_filtered=filtered)
             conn.commit()
 
-    return {
+    summary = {
         "sources_enabled": len(specs),
         "sources_ok": ok_sources,
         "sources_failed": len(failed),
@@ -589,3 +753,62 @@ def collect(conn, cfg: Dict[str, Any], force: bool = False) -> Dict[str, Any]:
         "geo_layers": geo_layers,
         "collected_at": now,
     }
+    if geo_run is not None:
+        summary["geo_run_id"] = geo_run.run_id
+        _finish_geo_run(geo_run, geo_layers, geo_failed)
+    if run is not None:
+        run.set_counts(sources_attempted=len(runnable))
+        # 「解析 / 规范化 / 去重 / 入库」都真实发生过，但都在适配器与 make_item/insert 内
+        # 联完成，和抓取共用同一段墙钟时间，所以这里给出真实条数、不虚报耗时。
+        for name, status, result in (
+            ("fetch", "ok" if not failed else ("partial" if ok_sources else "failed"),
+             {"sources_runnable": len(runnable), "sources_ok": ok_sources,
+              "sources_failed": len(failed), "sources_skipped": len(skipped),
+              "items_fetched": total_raw,
+              "note": "抓取+解析：各适配器在拉取后立即解析，逐来源耗时见来源结果"}),
+            ("parse", "ok" if total_raw else "not_applicable",
+             {"items_parsed": total_raw,
+              "note": "解析在适配器内完成，与抓取同一阶段，未单独计时"}),
+            ("normalize", "ok" if total_raw else "not_applicable",
+             {"items_normalized": total_raw,
+              "note": "标题清洗与 URL 归一化在 make_item 内完成，未单独计时"}),
+            ("deduplicate", "ok" if total_kept else "not_applicable",
+             {"items_duplicate": total_seen,
+              "note": "按 url_hash 去重：已入库过的条目只刷新 last_seen_at"}),
+            ("persist", "ok" if total_kept else "not_applicable",
+             {"items_new": total_inserted, "items_filtered": total_filtered,
+              "note": "只统计通过过滤的条目"}),
+        ):
+            run.stage(name, status, result)
+    return summary
+
+
+def _start_geo_run(parent, trigger: str):
+    """地理图层采集单独记一次运行：它是真实执行的独立阶段，不是父运行的一部分。"""
+    from ... import monitor
+
+    geo = monitor.run("geo_collect", trigger=trigger,
+                      stats={"parent_run_id": parent.run_id,
+                             "note": "地理图层在新闻采集同一轮里抓取，单独记录以便按任务类型查看"})
+    geo.start()
+    return geo
+
+
+def _finish_geo_run(geo, geo_layers: List[Dict[str, Any]],
+                    geo_failed: List[Dict[str, str]]) -> None:
+    points = sum(int(layer.get("points") or 0) for layer in geo_layers)
+    inserted = sum(int(layer.get("inserted") or 0) for layer in geo_layers)
+    updated = sum(int(layer.get("updated") or 0) for layer in geo_layers)
+    geo.stage("fetch", "ok" if not geo_failed else ("partial" if geo_layers else "failed"),
+              {"layers": len(geo_layers), "layers_failed": len(geo_failed), "points": points,
+               "note": "结构化地理图层（USGS / EONET / GDACS），不进新闻聚类"})
+    geo.stage("persist", "ok" if (inserted or updated) else "not_applicable",
+              {"items_new": inserted, "items_updated": updated,
+               "note": "按 (layer, external_id) 幂等写入 radar_geo_points"})
+    geo.set_counts(items_fetched=points, items_new=inserted, items_updated=updated)
+    for entry in geo_failed:
+        geo.add_error("%s（%s）：%s" % (entry.get("name"), entry.get("source_id"),
+                                       entry.get("error")),
+                      source_id=entry.get("source_id"), stage="fetch")
+    geo.finish(status="failed" if (geo_failed and not geo_layers)
+               else "partial" if geo_failed else "ok")

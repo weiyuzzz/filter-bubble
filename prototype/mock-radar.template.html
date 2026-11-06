@@ -1,0 +1,1131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>全球热点雷达 · 地图融入版 mockup</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%233452d9'/%3E%3Ccircle cx='32' cy='32' r='17' fill='none' stroke='%23fff' stroke-width='4'/%3E%3Ccircle cx='32' cy='32' r='6' fill='%23fff'/%3E%3Cpath d='M32 32 47 17' stroke='%23fff' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+/* ==== 1. 真实 styles.css 原样内联（保证视觉与 app 完全一致） ==== */
+__STYLES__
+
+/* ==== 2. 本 mockup 新增的地图样式（全部使用 --fb-* 令牌） ==== */
+:root{
+  --map-ocean: #eef2f7;
+  --map-land: #ffffff;
+  --map-line: #c9d3de;
+  --map-grat: rgba(20,23,28,.06);
+  --map-night: rgba(28,38,58,.16);
+}
+[data-theme="dark"]{
+  --map-ocean: #0b1119;
+  --map-land: #1a2029;
+  --map-line: #33414f;
+  --map-grat: rgba(233,237,243,.06);
+  --map-night: rgba(2,6,14,.40);
+}
+
+/* 地图卡：和 .panel 同一套语气 */
+.radar-map{
+  border: 1px solid var(--fb-border);
+  border-radius: var(--fb-r-lg);
+  background: var(--fb-surface);
+  overflow: hidden;
+  margin-bottom: var(--fb-sp-4);
+}
+.radar-map-head{
+  display: flex; align-items: center; gap: var(--fb-sp-3);
+  padding: var(--fb-sp-3) var(--fb-sp-4);
+  border-bottom: 1px solid var(--fb-border);
+  flex-wrap: wrap;
+}
+.radar-map-head h2{ font-size: var(--fb-fs-md); margin: 0; }
+.radar-map-sub{ font-size: var(--fb-fs-xs); color: var(--fb-text-3); }
+.radar-map-tools{ margin-left: auto; display: flex; align-items: center; gap: var(--fb-sp-2); }
+.radar-map-tools .ghost-btn.on{ background: var(--fb-accent-soft); border-color: var(--fb-accent-line); color: var(--fb-accent); }
+.radar-map-body{ display: grid; grid-template-columns: 1fr 190px; }
+.radar-map-body.folded{ grid-template-columns: 1fr; }
+.radar-map-body.folded .maplayers{ display: none; }
+/* 世界地图要显示到 ±60° 纬度，高度约等于宽度的 0.32 倍；这里给三档 */
+.radar-map.mapsize-lg .mapbox{ height: 620px; }
+.radar-map.mapsize-md .mapbox{ height: 360px; }
+.radar-map.mapsize-sm .mapbox{ height: 220px; }
+
+.mapbox{ position: relative; min-width: 0;
+  background: radial-gradient(130% 100% at 50% 0%, var(--fb-surface-2) 0%, var(--map-ocean) 72%); }
+#map{ position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+#map.dragging{ cursor: grabbing; }
+.landmass{ fill: var(--map-land); stroke: var(--map-line); stroke-width: .7; vector-effect: non-scaling-stroke; }
+.grat{ fill: none; stroke: var(--map-grat); stroke-width: .8; vector-effect: non-scaling-stroke; }
+.night{ fill: var(--map-night); pointer-events: none; }
+.pt{ transition: opacity var(--fb-dur) var(--fb-ease); }
+.pt.dim{ opacity: .10; }
+.pt.hi circle:not(.hit), .pt.hi rect, .pt.hi path{ stroke: #fff; stroke-width: 1.8; vector-effect: non-scaling-stroke; }
+.pt.hover circle:not(.hit), .pt.hover rect, .pt.hover path{ stroke: #fff; stroke-width: 2.4; vector-effect: non-scaling-stroke; }
+.story-hit{ cursor: pointer; }
+.story-pulse{ fill: none; stroke: var(--fb-accent); stroke-opacity: .45; }
+.story-pulse.animate{ animation: story-pulse 2.6s var(--fb-ease) infinite; }
+@keyframes story-pulse{
+  0%{ r: 6; stroke-opacity: .55; } 70%{ r: 17; stroke-opacity: 0; } 100%{ r: 17; stroke-opacity: 0; }
+}
+.cluster circle{ fill: var(--fb-accent); fill-opacity: .18; stroke: var(--fb-accent); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.cluster text{ fill: var(--fb-accent); font-size: 11px; font-weight: 700; text-anchor: middle;
+  dominant-baseline: central; pointer-events: none; }
+.conv-ring circle{ fill: none; stroke: var(--fb-danger); stroke-width: 1.4; stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke; }
+.conv-ring text{ fill: var(--fb-danger); font-size: 10.5px; font-weight: 700; }
+.poi-label{ fill: var(--fb-text-3); font-size: 10.5px; font-weight: 600; paint-order: stroke;
+  stroke: var(--map-ocean); stroke-width: 2.6px; stroke-linejoin: round; pointer-events: none; }
+
+/* 地图浮层元素 */
+.map-legend{
+  position: absolute; left: 10px; bottom: 10px; display: flex; flex-wrap: wrap; gap: 4px 10px;
+  max-width: 56%; padding: 7px 10px; border-radius: var(--fb-r-sm);
+  background: color-mix(in srgb, var(--fb-surface) 90%, transparent);
+  border: 1px solid var(--fb-border); backdrop-filter: blur(6px);
+}
+.map-legend .li{ display: flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--fb-text-2); }
+.map-legend .li i{ width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.map-conv{
+  position: absolute; right: 10px; top: 10px; width: 232px; padding: 8px 10px;
+  border-radius: var(--fb-r-sm); border: 1px solid var(--fb-border);
+  background: color-mix(in srgb, var(--fb-surface) 92%, transparent); backdrop-filter: blur(6px);
+}
+.map-conv h4{ margin: 0 0 5px; font-size: var(--fb-fs-xs); color: var(--fb-text-2);
+  display: flex; align-items: center; gap: 6px; }
+.map-conv h4 .badge{ font-size: 9.5px; }
+.map-conv .row{ display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--fb-text-2);
+  padding: 2px 3px; border-radius: 4px; cursor: pointer; }
+.map-conv .row:hover{ background: var(--fb-surface-2); }
+.map-conv .row b{ margin-left: auto; color: var(--fb-danger); font-family: var(--fb-mono); }
+.map-zoombar{ position: absolute; right: 10px; bottom: 10px; display: flex; gap: 5px; }
+.map-zoombar button{
+  width: 28px; height: 28px; border-radius: var(--fb-r-sm); border: 1px solid var(--fb-border);
+  background: var(--fb-surface); color: var(--fb-text-2); display: grid; place-items: center;
+  font-size: 14px; line-height: 1;
+}
+.map-zoombar button:hover{ background: var(--fb-surface-2); color: var(--fb-text); }
+.map-pop{
+  position: absolute; width: 268px; padding: 11px; border-radius: var(--fb-r-md);
+  border: 1px solid var(--fb-border-strong); background: var(--fb-surface);
+  box-shadow: var(--fb-shadow-3); display: none; z-index: 8;
+}
+.map-pop.show{ display: block; }
+.map-pop .ph{ display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+.map-pop .ph .kind{ font-size: 10px; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--fb-text-3); }
+.map-pop .ph button{ margin-left: auto; border: 0; background: transparent; color: var(--fb-text-3);
+  font-size: 15px; line-height: 1; padding: 0 2px; }
+.map-pop h5{ margin: 0 0 6px; font-size: var(--fb-fs-sm); line-height: 1.45; }
+.map-pop .kv{ font-size: 11px; color: var(--fb-text-2); display: grid;
+  grid-template-columns: 48px 1fr; gap: 3px 8px; }
+.map-pop .kv dt{ color: var(--fb-text-3); }
+.map-pop .kv dd{ margin: 0; word-break: break-word; }
+.map-pop .go{ margin-top: 8px; width: 100%; }
+.map-pop a.go{ display: block; text-align: center; text-decoration: none; padding: 5px;
+  border: 1px solid var(--fb-border); border-radius: var(--fb-r-sm);
+  background: var(--fb-surface-2); color: var(--fb-text-2); font-size: var(--fb-fs-xs); }
+.map-pop a.go:hover{ background: var(--fb-accent); border-color: var(--fb-accent); color: var(--fb-accent-ink); text-decoration: none; }
+
+/* 悬停提示：只想知道「这是啥」时不用点开弹窗 */
+.map-tip{
+  position: absolute; z-index: 10; display: none; pointer-events: none;
+  max-width: 268px; padding: 7px 9px; border-radius: var(--fb-r-sm);
+  background: var(--fb-surface); border: 1px solid var(--fb-border-strong);
+  box-shadow: var(--fb-shadow-2);
+}
+.map-tip.show{ display: block; }
+.map-tip .h{ display: flex; align-items: center; gap: 6px; margin-bottom: 3px;
+  font-size: 10px; font-weight: 700; letter-spacing: .04em; color: var(--fb-text-3); }
+.map-tip .h i{ width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.map-tip .h .srcline{ margin-left: auto; font-weight: 400; letter-spacing: 0; }
+.map-tip .t{ font-size: var(--fb-fs-xs); color: var(--fb-text); line-height: 1.45; }
+.map-tip .d{ font-size: 10.5px; color: var(--fb-text-3); margin-top: 3px; line-height: 1.4; }
+.map-tip .d b{ color: var(--fb-text-2); font-weight: 600; }
+
+/* 图层侧栏 */
+.maplayers{ border-left: 1px solid var(--fb-border); overflow-y: auto; max-height: 640px; padding: 6px; }
+.maplayers .lg-head{ font-size: 10px; font-weight: 700; letter-spacing: .06em; color: var(--fb-text-3);
+  text-transform: uppercase; padding: 7px 5px 4px; }
+.maplayers .row{ display: flex; align-items: center; gap: 7px; padding: 5px 6px;
+  border-radius: var(--fb-r-sm); cursor: pointer; font-size: 12px; color: var(--fb-text-2); }
+.maplayers .row:hover{ background: var(--fb-surface-2); }
+.maplayers .row.off{ opacity: .42; }
+.maplayers .row .dot{ width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.maplayers .row .nm{ flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.maplayers .row .n{ font-family: var(--fb-mono); font-size: 10px; color: var(--fb-text-3); }
+.maplayers .row .st{ font-size: 9px; font-weight: 700; border-radius: 3px; padding: 1px 4px; }
+.maplayers .row .st.live{ background: var(--fb-success-soft); color: var(--fb-success); }
+.maplayers .row .st.static{ background: var(--fb-info-soft); color: var(--fb-info); }
+.maplayers .row .st.planned{ background: var(--fb-surface-3); color: var(--fb-text-3); }
+.maplayers .hintline{ font-size: 10.5px; color: var(--fb-text-3); padding: 6px 6px 2px; line-height: 1.5; }
+
+/* 筛选条：同时驱动地图与列表 */
+.radar-filter{
+  display: flex; align-items: center; gap: var(--fb-sp-3); flex-wrap: wrap;
+  padding: var(--fb-sp-3) var(--fb-sp-4); margin-bottom: var(--fb-sp-4);
+  border: 1px solid var(--fb-border); border-radius: var(--fb-r-md); background: var(--fb-surface);
+}
+.radar-filter .flabel{ font-size: var(--fb-fs-xs); color: var(--fb-text-3); letter-spacing: .04em; }
+.radar-filter .seg{ display: inline-flex; border: 1px solid var(--fb-border);
+  border-radius: var(--fb-r-sm); overflow: hidden; }
+.radar-filter .seg button{ border: 0; background: transparent; padding: 4px 11px;
+  font-size: var(--fb-fs-xs); color: var(--fb-text-2); }
+.radar-filter .seg button + button{ border-left: 1px solid var(--fb-border); }
+.radar-filter .seg button.on{ background: var(--fb-accent); color: var(--fb-accent-ink); font-weight: 600; }
+.radar-filter .seg button .c{ opacity: .72; margin-left: 4px; font-family: var(--fb-mono); font-size: 10px; }
+.radar-filter .chips{ display: flex; flex-wrap: wrap; gap: 5px; }
+.radar-filter .chips button{
+  border: 1px solid var(--fb-border); background: var(--fb-surface); border-radius: var(--fb-r-pill);
+  padding: 2px 9px; font-size: var(--fb-fs-xs); color: var(--fb-text-2);
+}
+.radar-filter .chips button.on{ background: var(--fb-accent); border-color: var(--fb-accent);
+  color: var(--fb-accent-ink); font-weight: 600; }
+.radar-filter .chips button .c{ opacity: .72; margin-left: 4px; font-family: var(--fb-mono); font-size: 10px; }
+.radar-filter .note{ margin-left: auto; font-size: 10.5px; color: var(--fb-text-3); }
+
+/* 故事卡上的坐标行 */
+.ev-geo{ display: inline-flex; align-items: center; gap: 5px; }
+.ev-geo .pin{ width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.9; }
+.ev-geo.none{ color: var(--fb-text-3); }
+.ev-card.is-active{ border-color: var(--fb-accent); box-shadow: 0 0 0 3px var(--fb-accent-soft); }
+.ev-card.flash{ animation: ev-flash 1.5s var(--fb-ease); }
+@keyframes ev-flash{ 0%,100%{ background: transparent; } 30%{ background: var(--fb-accent-soft); } }
+
+/* mockup 顶部说明 */
+.mock-note{
+  display: flex; align-items: flex-start; gap: 8px; margin-bottom: var(--fb-sp-4);
+  padding: var(--fb-sp-3) var(--fb-sp-4); border-radius: var(--fb-r-md);
+  background: var(--fb-warn-soft); border: 1px solid var(--fb-border);
+  color: var(--fb-warn); font-size: var(--fb-fs-xs); line-height: 1.6;
+}
+.mock-note b{ font-weight: 700; }
+.stub{ padding: var(--fb-sp-7); text-align: center; color: var(--fb-text-3); font-size: var(--fb-fs-sm); }
+
+@media (max-width: 1080px){
+  .radar-map-body{ grid-template-columns: 1fr; }
+  .maplayers{ border-left: 0; border-top: 1px solid var(--fb-border); max-height: 200px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <a class="brand" href="#" aria-label="Filter Bubble 首页">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none"><path d="M4 18h6l3-8 5 15 3-10 2 3h5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <span class="brand-word">Filter <span>Bubble</span></span>
+      </a>
+      <button class="sidebar-toggle" id="sidebarToggle" aria-label="收起或展开导航" aria-expanded="true" aria-controls="sidebar">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <nav class="sidebar-nav" aria-label="业务模块">
+      <span class="nav-label">业务模块</span>
+      <a class="nav-item" href="#">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 18h5l3-9 4 13 3-7h3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="nav-text">GitHub 技术雷达</span>
+      </a>
+      <a class="nav-item is-active" href="#" aria-current="page">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/><path d="M12 12l6-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
+        <span class="nav-text">全球热点雷达</span>
+      </a>
+      <a class="nav-item" href="#">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M6 3.5h8l4 4V20a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M14 3.5V8h4M8.5 12h7M8.5 15.5h7M8.5 8.5h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>
+        <span class="nav-text">学术论文</span>
+      </a>
+      <a class="nav-item" href="#">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.7"/><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6 7 7m10 10 1.4 1.4m0-12.8L17 7M7 17l-1.4 1.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+        <span class="nav-text">全局设置</span>
+      </a>
+      <a class="nav-item" href="#">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 14h4l2-6 3 12 2-8h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="nav-text">系统状态</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-foot">
+      免费公开数据源采集 · 本地规则核验<br>不调用付费 API
+    </div>
+  </aside>
+
+  <div class="app-main">
+    <header class="topbar">
+      <button class="icon-btn nav-toggle" id="navToggle" type="button" aria-label="打开导航" aria-controls="sidebar" aria-expanded="false">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <div class="crumb">
+        <strong>全球热点雷达</strong>
+        <span class="crumb-sep">/</span>
+        <span>每日热点</span>
+      </div>
+      <span class="topbar-spacer"></span>
+      <div class="topbar-actions">
+        <span class="live-pill"><i class="live-dot" id="radarDot"></i><span id="radarState">今日已更新</span></span>
+        <span class="updated-label" id="radarUpdated"></span>
+        <span class="topbar-divider" aria-hidden="true"></span>
+        <button class="icon-btn" id="collectBtn" title="立即采集并生成日报">
+          <svg class="icon" viewBox="0 0 24 24" fill="none"><path d="M20 11a8 8 0 1 0-.7 4.3M20 5v6h-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>采集</span>
+        </button>
+        <button class="taste-btn" id="pushBtn" type="button">
+          <span class="taste-orb" aria-hidden="true"></span>
+          <span>推送日报</span>
+        </button>
+        <button class="icon-btn" id="themeToggle" type="button" aria-label="切换主题" title="切换主题">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="4.2" stroke="currentColor" stroke-width="1.6"/><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6l1.4 1.4m10 10 1.4 1.4m0-12.8-1.4 1.4m-10 10-1.4 1.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="content">
+      <div class="shell">
+
+        <div class="mock-note">
+          <b>mockup 说明</b>
+          <span>
+            这是把「态势地图」<b>融入「每日热点」</b>后的样子，<b>没有新增第 7 个 tab</b>（下面 tab 栏仍是原来的 6 个）。
+            故事卡与地图点来自你在库里的<b>真实日报</b>（2026-10-25，12 个故事，其中 6 个成功地理编码）；
+            12 个故事里有 6 个没算出坐标，就<b>老实留在列表里不上图</b>，不塞假点。地图上的地震/灾害/航班是实测抓取的公开数据。
+          </span>
+        </div>
+
+        <section class="radar-head">
+          <div class="radar-title">
+            <h1>全球热点雷达</h1>
+            <p>免费公开数据源 · 热点发现 · 起源追溯 · 多方核验</p>
+          </div>
+          <div class="radar-board" id="radarBoard">
+            <div class="metric"><span class="metric-k">故事</span><b class="metric-v" id="mEvents">—</b></div>
+            <div class="metric"><span class="metric-k">已定位</span><b class="metric-v" id="mGeo">—</b></div>
+            <div class="metric"><span class="metric-k">覆盖材料</span><b class="metric-v" id="mItems">—</b></div>
+            <div class="metric"><span class="metric-k">在线源</span><b class="metric-v" id="mSources">—</b></div>
+            <div class="metric"><span class="metric-k">失败源</span><b class="metric-v" id="mFailed">—</b></div>
+            <div class="metric"><span class="metric-k">收敛区</span><b class="metric-v" id="mConv">—</b></div>
+          </div>
+        </section>
+
+        <!-- 注意：tab 栏保持 6 项不变 -->
+        <nav class="radar-tabs" id="radarTabs" role="tablist" aria-label="雷达子页面">
+          <button class="radar-tab is-active" data-view="daily" role="tab" aria-selected="true">每日热点</button>
+          <button class="radar-tab" data-view="investigate" role="tab" aria-selected="false">事件调查</button>
+          <button class="radar-tab" data-view="tech" role="tab" aria-selected="false">科技突破核验</button>
+          <button class="radar-tab" data-view="sources" role="tab" aria-selected="false">数据源管理</button>
+          <button class="radar-tab" data-view="history" role="tab" aria-selected="false">历史记录</button>
+          <button class="radar-tab" data-view="settings" role="tab" aria-selected="false">监控设置</button>
+        </nav>
+
+        <section class="radar-view" id="view-daily" role="tabpanel">
+
+          <!-- ===== ① 态势地图：融入每日热点，不是新页面 ===== -->
+          <section class="radar-map mapsize-md" id="radarMap">
+            <div class="radar-map-head">
+              <h2>态势地图</h2>
+              <span class="radar-map-sub" id="mapSub">—</span>
+              <div class="radar-map-tools">
+                <div class="seg" id="timeSeg" role="group" aria-label="时间窗"></div>
+                <button class="ghost-btn on" id="mapLayersBtn" type="button" aria-pressed="true">图层</button>
+                <button class="ghost-btn" id="mapSizeBtn" type="button">放大</button>
+              </div>
+            </div>
+            <div class="radar-map-body" id="mapBody">
+              <div class="mapbox" id="mapWrap">
+                <svg id="map" aria-label="态势地图"></svg>
+                <div class="map-conv" id="mapConv"></div>
+                <div class="map-legend" id="mapLegend"></div>
+                <div class="map-zoombar">
+                  <button type="button" id="zin" title="放大">+</button>
+                  <button type="button" id="zout" title="缩小">−</button>
+                  <button type="button" id="zreset" title="复位">⌂</button>
+                </div>
+                <div class="map-pop" id="mapPop"></div>
+                <div class="map-tip" id="mapTip"></div>
+              </div>
+              <aside class="maplayers" id="mapLayers"></aside>
+            </div>
+          </section>
+
+          <!-- ===== ② 一套筛选器，同时驱动地图与列表 ===== -->
+          <div class="radar-filter">
+            <span class="flabel">地域</span>
+            <div class="seg" id="regionSeg"></div>
+            <span class="flabel" style="margin-left:6px">主题</span>
+            <div class="chips" id="themeChips"></div>
+            <span class="note" id="filterNote"></span>
+          </div>
+
+          <!-- ===== ③ 故事卡片（原有的 dailyGrid） ===== -->
+          <div class="radar-grid" id="dailyGrid"></div>
+
+          <!-- ===== ④ 合并了原 zh_web / intl 两张表的「主题 × 地域」浏览区 ===== -->
+          <div class="panel" id="browsePanel" style="margin-top:var(--fb-sp-4)"></div>
+
+          <!-- ===== ⑤ 覆盖与缺口（原有） ===== -->
+          <div id="dailyMeta"></div>
+        </section>
+
+        <section class="radar-view" id="view-investigate" role="tabpanel" hidden>
+          <div class="stub">mockup 只演示「每日热点」的改法。<br><br>
+            正式实现时，这一页的时间线会复用<b>同一个地图实例</b>画出事件起源轨迹——地图在切 tab 时只隐藏、不重建。</div>
+        </section>
+        <section class="radar-view" id="view-tech" role="tabpanel" hidden><div class="stub">此 mockup 未演示。</div></section>
+        <section class="radar-view" id="view-sources" role="tabpanel" hidden>
+          <div class="stub">此 mockup 未演示。<br><br>正式实现时这一页<b>零改动</b>就会列出新增的 5 个地理源，因为它们就是 <code>radar_sources</code> 里的行。</div>
+        </section>
+        <section class="radar-view" id="view-history" role="tabpanel" hidden>
+          <div class="stub">此 mockup 未演示。<br><br>正式实现时每条历史日报会多一个「看那天的地图」按钮。</div>
+        </section>
+        <section class="radar-view" id="view-settings" role="tabpanel" hidden><div class="stub">此 mockup 未演示。</div></section>
+
+      </div>
+    </main>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script id="payload" type="application/json">__PAYLOAD__</script>
+<script>
+"use strict";
+/* =====================================================================
+   融入版 mockup：地图作为「每日热点」的画布
+   故事卡与地图点共用同一份数据（story_id 一一对应）
+   ===================================================================== */
+const DATA = JSON.parse(document.getElementById("payload").textContent);
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+
+const THEME_LABEL = {ai:"科技与 AI",chip:"芯片半导体",money:"财经市场",geo:"地缘冲突",
+  disaster:"灾害自然",cyber:"网络安全",energy:"能源资源",other:"社会与其他"};
+const THEME_ORDER = ["ai","chip","money","geo","disaster","cyber","energy","other"];
+const REGION_LABEL = {cn:"国内",intl:"国际"};
+const STATUS_LABEL = {live:"实测",static:"静态",planned:"计划",degraded:"受限"};
+
+/* ---------- 状态（沿用 radar.js 里 localStorage 的做法） ---------- */
+const SKEY = "mock.radar.";
+const state = {
+  view: "daily",
+  region: localStorage.getItem(SKEY + "region") || "all",
+  theme: localStorage.getItem(SKEY + "theme") || "all",
+  hours: +(localStorage.getItem(SKEY + "hours") || 0),
+  // 屏幕不够高时默认用紧凑档，避免地图把故事卡挤到屏幕外
+  mapSize: localStorage.getItem(SKEY + "mapsize") || (window.innerHeight < 860 ? "sm" : "md"),
+  visible: new Set(["story", "quake", "storm", "flood", "fire", "volcano", "drought", "ice",
+    "chokepoint", "nuclear", "cable", "datacenter", "finance", "base"]),
+  activeStory: null,
+  view_t: {k:1, tx:0, ty:0},
+};
+const persist = () => {
+  localStorage.setItem(SKEY + "region", state.region);
+  localStorage.setItem(SKEY + "theme", state.theme);
+  localStorage.setItem(SKEY + "hours", state.hours);
+  localStorage.setItem(SKEY + "mapsize", state.mapSize);
+};
+
+/* =====================================================================
+   投影（与后端 core/geo/project.py 同一套公式）
+   ===================================================================== */
+const VW = 2000, VH = 1000, LAT_LIMIT = 85.05112878;
+function project(lon, lat){
+  const la = Math.max(-LAT_LIMIT, Math.min(LAT_LIMIT, lat));
+  const x = (lon + 180) / 360 * VW;
+  const r = la * Math.PI / 180;
+  const y = (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * VH;
+  return [x, y];
+}
+function subsolar(date){
+  const n = date / 86400000 + 2440587.5 - 2451545.0;
+  const L = (280.460 + 0.9856474 * n) % 360;
+  const g = ((357.528 + 0.9856003 * n) % 360) * Math.PI / 180;
+  const lam = (L + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * Math.PI / 180;
+  const eps = (23.439 - 0.0000004 * n) * Math.PI / 180;
+  const dec = Math.asin(Math.sin(eps) * Math.sin(lam));
+  const ra = Math.atan2(Math.cos(eps) * Math.sin(lam), Math.cos(lam));
+  const gmst = (18.697374558 + 24.06570982441908 * n) % 24;
+  let lon = (ra * 180 / Math.PI) - gmst * 15;
+  return {lat: dec * 180 / Math.PI, lon: ((lon + 540) % 360) - 180};
+}
+function terminatorPath(date){
+  const ss = subsolar(date), R = Math.PI / 180, D = 180 / Math.PI, pts = [];
+  for (let b = 0; b <= 360; b += 2){
+    const la1 = ss.lat * R, lo1 = ss.lon * R, d = Math.PI / 2, br = b * R;
+    const la = Math.asin(Math.sin(la1) * Math.cos(d) + Math.cos(la1) * Math.sin(d) * Math.cos(br));
+    const lo = lo1 + Math.atan2(Math.sin(br) * Math.sin(d) * Math.cos(la1),
+                                Math.cos(d) - Math.sin(la1) * Math.sin(la));
+    pts.push([((lo * D + 540) % 360) - 180, la * D]);
+  }
+  pts.sort((a, b) => a[0] - b[0]);
+  const darkLat = ss.lat > 0 ? -LAT_LIMIT : LAT_LIMIT;
+  let d = "";
+  pts.forEach((p, i) => {
+    const [x, y] = project(p[0], Math.max(-LAT_LIMIT, Math.min(LAT_LIMIT, p[1])));
+    d += (i ? "L" : "M") + x.toFixed(1) + " " + y.toFixed(1);
+  });
+  const [, yD] = project(0, darkLat);
+  return d + "L" + VW + " " + yD.toFixed(1) + "L0 " + yD.toFixed(1) + "Z";
+}
+
+/* =====================================================================
+   筛选：一张筛选器同时决定「卡片」和「地图点」
+   ===================================================================== */
+const timeOk = (t) => {
+  if (!state.hours) return true;
+  const ts = t ? Date.parse(String(t).length === 10 ? t + "T00:00:00" : t) : NaN;
+  if (isNaN(ts)) return true;               // 静态点位/无时间的不受时间窗限制
+  return (Date.now() - ts) <= state.hours * 3600e3;
+};
+function visibleStories(){
+  return (DATA.stories || []).filter(s =>
+    (state.region === "all" || s.region === state.region) &&
+    (state.theme === "all" || s.theme === state.theme));
+}
+function geoPoints(){
+  return (DATA.geoPoints || []).filter(p =>
+    state.visible.has(p.layer) && (p.time == null || timeOk(
+      typeof p.time === "number"
+        ? new Date(p.time < 1e12 ? p.time * 1000 : p.time).toISOString()
+        : p.time)));
+}
+function storyPoints(){
+  if (!state.visible.has("story")) return [];
+  return visibleStories().filter(s => s.geo).map(s => ({
+    kind: "story", layer: "story", story_id: s.story_id, lon: s.geo.lon, lat: s.geo.lat,
+    label: s.geo.label, heat: s.heat, confidence: s.geo.confidence,
+    title: s.headline || s.title, is_new: s.is_new, region: s.region, theme: s.theme,
+  }));
+}
+
+/* =====================================================================
+   收敛：1°×1° 网格，>=2 类信号
+   ===================================================================== */
+const SIGNAL_OF = {quake:"natural",storm:"natural",flood:"natural",fire:"natural",
+  volcano:"natural",drought:"natural",ice:"natural",dust:"natural",snow:"natural",
+  temp:"natural",landslide:"natural",manmade:"natural",water:"natural",
+  base:"infra",cable:"infra",nuclear:"infra",datacenter:"infra",chokepoint:"infra",finance:"infra",
+  story:"news"};
+const SIGNAL_LABEL = {natural:"自然事件",infra:"基础设施",news:"新闻"};
+function convergence(){
+  const grid = {};
+  const feed = geoPoints().concat(storyPoints().map(s => ({...s, layer:"story"})));
+  feed.forEach(p => {
+    const sig = SIGNAL_OF[p.layer];
+    if (!sig) return;
+    const key = Math.floor(p.lat) + "|" + Math.floor(p.lon);
+    const c = grid[key] || (grid[key] = {lat: Math.floor(p.lat) + .5, lon: Math.floor(p.lon) + .5,
+                                         sigs:{}, n:0, sample:[]});
+    c.sigs[sig] = (c.sigs[sig] || 0) + 1; c.n++;
+    if (c.sample.length < 4) c.sample.push(p);
+  });
+  return Object.keys(grid).map(k => grid[k])
+    .filter(c => Object.keys(c.sigs).length >= 2 && c.n >= 4)
+    .map(c => ({...c, score: Math.min(100, Object.keys(c.sigs).length * 25 + Math.min(25, c.n * 2))}))
+    .sort((a, b) => b.score - a.score).slice(0, 5);
+}
+function zoneName(c){
+  const named = (DATA.geoPoints || []).filter(p => p.title && (p.layer === "chokepoint"))
+    .concat((DATA.stories || []).filter(s => s.geo).map(s => ({lat:s.geo.lat, lon:s.geo.lon, title:s.geo.label})))
+    .map(p => ({d: Math.hypot(p.lat - c.lat, p.lon - c.lon), n: p.title}))
+    .filter(x => x.d < 14).sort((a, b) => a.d - b.d);
+  if (named.length) return named[0].n;
+  return (c.lat >= 0 ? "N" : "S") + Math.abs(c.lat).toFixed(0) + "° " +
+         (c.lon >= 0 ? "E" : "W") + Math.abs(c.lon).toFixed(0) + "°";
+}
+
+/* =====================================================================
+   地图渲染
+   ===================================================================== */
+const svg = $("#map"), wrap = $("#mapWrap"), pop = $("#mapPop"), tip = $("#mapTip");
+let lastPoints = [];
+let worldG, pointsG, convG, labelG, viewBoxY = 0, viewBoxH = VH;
+
+function buildSvg(){
+  const grat = [];
+  for (let lon = -180; lon <= 180; lon += 30){
+    const [x] = project(lon, 0);
+    grat.push('<path class="grat" d="M' + x.toFixed(1) + ' 0V' + VH + '"/>');
+  }
+  for (let lat = -60; lat <= 60; lat += 30){
+    const [, y] = project(0, lat);
+    grat.push('<path class="grat" d="M0 ' + y.toFixed(1) + 'H' + VW + '"/>');
+  }
+  const [, eq] = project(0, 0);
+  grat.push('<path class="grat" style="stroke-width:1.1" d="M0 ' + eq.toFixed(1) + 'H' + VW + '"/>');
+  svg.innerHTML = '<g id="world">' +
+      '<g id="grat">' + grat.join("") + '</g>' +
+      '<path id="landmass" class="landmass" fill-rule="evenodd" d="' + DATA.land + '"/>' +
+      '<path id="night" class="night" d="' + terminatorPath(Date.now()) + '"/>' +
+      '<g id="conv"></g><g id="points"></g><g id="labels"></g></g>';
+  worldG = $("#world"); pointsG = $("#points"); convG = $("#conv"); labelG = $("#labels");
+  computeViewBox(); applyTransform();
+}
+function svgSize(){ const r = svg.getBoundingClientRect(); return {w: Math.max(1, r.width), h: Math.max(1, r.height)}; }
+function computeViewBox(){
+  const {w, h} = svgSize();
+  viewBoxH = Math.max(240, Math.min(VH, VW * h / w));
+  viewBoxY = (VH - viewBoxH) / 2;
+  svg.setAttribute("viewBox", "0 " + viewBoxY.toFixed(2) + " " + VW + " " + viewBoxH.toFixed(2));
+  svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+}
+function applyTransform(){
+  const v = state.view_t;
+  worldG.setAttribute("transform", "translate(" + v.tx.toFixed(2) + " " + v.ty.toFixed(2) +
+                        ") scale(" + v.k.toFixed(4) + ")");
+}
+function clampView(){
+  const v = state.view_t;
+  v.k = Math.max(1, Math.min(14, v.k));
+  if (v.k <= 1.02){ v.k = 1; v.tx = 0; v.ty = 0; return; }
+  v.tx = Math.min(0, Math.max(VW - VW * v.k, v.tx));
+  const minTy = viewBoxY + viewBoxH - VH * v.k;
+  v.ty = Math.min(viewBoxY, Math.max(minTy, v.ty));
+}
+function scaleOffset(){
+  const {w, h} = svgSize();
+  const s = Math.min(w / VW, h / viewBoxH);
+  return {s, ox: (w - VW * s) / 2, oy: (h - viewBoxH * s) / 2 - viewBoxY * s};
+}
+function toScreen(lon, lat){
+  const [wx, wy] = project(lon, lat), {s, ox, oy} = scaleOffset(), v = state.view_t;
+  return {x: ox + (v.tx + wx * v.k) * s, y: oy + (v.ty + wy * v.k) * s};
+}
+function toWorld(mx, my){
+  const {s, ox, oy} = scaleOffset(), v = state.view_t;
+  return {x: ((mx - ox) / s - v.tx) / v.k, y: ((my - oy) / s - v.ty) / v.k};
+}
+function flyTo(lon, lat, k, animate){
+  const {s, ox, oy} = scaleOffset();
+  const [wx, wy] = project(lon, lat);
+  const K = Math.max(1, Math.min(14, k)), sz = svgSize();
+  const target = {k: K, tx: (sz.w / 2 - ox) / s - wx * K, ty: (sz.h / 2 - oy) / s - wy * K};
+  const v = state.view_t;
+  if (!animate){ Object.assign(v, target); clampView(); applyTransform(); renderMap(); return; }
+  const from = {k:v.k, tx:v.tx, ty:v.ty}, t0 = performance.now();
+  (function step(now){
+    const t = Math.min(1, (now - t0) / 420), e = 1 - Math.pow(1 - t, 3);
+    v.k = from.k + (target.k - from.k) * e;
+    v.tx = from.tx + (target.tx - from.tx) * e;
+    v.ty = from.ty + (target.ty - from.ty) * e;
+    clampView(); applyTransform();
+    if (t < 1) requestAnimationFrame(step); else renderMap();
+  })(t0);
+}
+
+const asc = (v) => String(v == null ? "" : v).replace(/[&<>"']/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+/* 每个点都带一个透明的「命中圈」：小方块/小圆点也能悬停到 */
+function hitCircle(x, y, r){
+  return '<circle class="hit" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' +
+         Math.max(9, r + 3.5).toFixed(1) + '" fill="none" pointer-events="all"/>';
+}
+function marker(p, i){
+  const m = DATA.layerMeta[p.layer] || {color:"#888", shape:"circle"};
+  const [x, y] = project(p.lon, p.lat);
+  const isStory = p.kind === "story";
+  let body = "", r = 3.4;
+  if (isStory){
+    // 故事点：菱形 + 热度决定大小 + NEW 脉冲环
+    r = 4.4 + Math.min(5.5, (p.heat || 0) / 18);
+    if (p.is_new) body += '<circle class="story-pulse animate" cx="' + x.toFixed(1) +
+                          '" cy="' + y.toFixed(1) + '" r="6"/>';
+    body += '<path d="M' + x.toFixed(1) + ' ' + (y - r).toFixed(1) +
+            'L' + (x + r).toFixed(1) + ' ' + y.toFixed(1) +
+            'L' + x.toFixed(1) + ' ' + (y + r).toFixed(1) +
+            'L' + (x - r).toFixed(1) + ' ' + y.toFixed(1) + 'Z" fill="var(--fb-accent)"' +
+            (p.confidence === "low"
+              ? ' fill-opacity=".45" stroke="var(--fb-accent)" stroke-width="1.2" stroke-dasharray="2 2"'
+              : ' fill-opacity=".95"') + '/>';
+  } else if (p.layer === "flight"){
+    r = 4.6;
+    body = '<path d="M0 -4.4L1.6 1.5L0 .6L-1.6 1.5Z" transform="translate(' +
+           x.toFixed(1) + ' ' + y.toFixed(1) + ')" fill="' + m.color + '" fill-opacity=".62"/>';
+  } else {
+    const shape = m.shape || "circle";
+    r = p.layer === "quake" ? Math.min(11, 2.6 + Math.max(0, (p.mag || 0) - 3) * 1.5)
+                            : (shape === "square" ? 3.2 : 3.4);
+    body = shape === "square"
+      ? '<rect x="' + (x - 1.9).toFixed(1) + '" y="' + (y - 1.9).toFixed(1) +
+        '" width="3.8" height="3.8" rx="1" fill="' + m.color + '" fill-opacity=".9"/>'
+      : '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' +
+        r.toFixed(2) + '" fill="' + m.color + '" fill-opacity=".85"/>';
+  }
+  const attrs = ' data-i="' + i + '"' + (isStory ? ' data-story="' + asc(p.story_id) + '"' : '');
+  return '<g class="pt' + (isStory ? ' story-hit' : '') + '"' + attrs + '>' +
+         body + hitCircle(x, y, r) + '</g>';
+}
+
+function renderMap(){
+  hideTip();
+  const stories = storyPoints(), geo = geoPoints();
+  const list = [];
+  // 航班在缩小时网格聚合
+  const cells = {}, clusters = [], clustered = new Set();
+  geo.filter(p => p.layer === "flight").forEach(p => {
+    if (state.view_t.k >= 3){ list.push(p); return; }
+    const key = Math.floor(p.lat / 4) + "|" + Math.floor(p.lon / 4);
+    (cells[key] = cells[key] || []).push(p);
+  });
+  Object.keys(cells).forEach(k => {
+    if (cells[k].length >= 4){ clusters.push(cells[k]); cells[k].forEach(p => clustered.add(p)); }
+  });
+  geo.filter(p => p.layer !== "flight").forEach(p => list.push(p));
+  geo.filter(p => p.layer === "flight" && !clustered.has(p)).forEach(p => list.push(p));
+  stories.forEach(p => list.push(p));          // 故事点放最后 → 叠在最上层
+  lastPoints = list;
+  pointsG.innerHTML = list.map((p, i) => marker(p, i)).join("");
+  const old = $("#clusterLayer"); if (old) old.remove();
+  if (clusters.length){
+    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    g.id = "clusterLayer";
+    g.innerHTML = clusters.map(c => {
+      const [x, y] = project(c[0].lon, c[0].lat);
+      const r = 8 + Math.min(14, Math.log2(c.length) * 3);
+      return '<g class="cluster"><circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + r.toFixed(1) +
+             '"/><text x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '">' + c.length + '</text></g>';
+    }).join("");
+    worldG.insertBefore(g, pointsG);
+  }
+
+  const conv = convergence();
+  convG.innerHTML = conv.map(c => {
+    const [x, y] = project(c.lon, c.lat);
+    const r = 25 + Object.keys(c.sigs).length * 5;
+    return '<g class="conv-ring"><circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + r +
+           '"/><text x="' + (x + r + 5).toFixed(1) + '" y="' + y.toFixed(1) + '">' + asc(zoneName(c)) + '</text></g>';
+  }).join("");
+
+  // 放大后显示基础设施名称
+  labelG.innerHTML = state.view_t.k < 2.2 ? "" :
+    geo.filter(p => p.title && ["chokepoint","nuclear","finance"].includes(p.layer))
+       .map(p => { const [x, y] = project(p.lon, p.lat);
+         return '<text class="poi-label" x="' + (x + 7).toFixed(1) + '" y="' + (y + 3.5).toFixed(1) + '">' +
+                asc(p.title) + '</text>'; }).join("");
+
+  renderLegend(geo, stories);
+  renderConvPanel(conv);
+  const placed = (DATA.stories || []).filter(s => s.geo).length;
+  $("#mapSub").textContent = "故事点位 " + stories.length + " / 已定位 " + placed +
+    " · 图层 " + (state.visible.size - 1) + " · 收敛区 " + conv.length +
+    " · 悬停点位看说明，点击看详情";
+  $("#mConv").textContent = conv.length;
+  return {conv};
+}
+function renderLegend(geo, stories){
+  const counts = {};
+  geo.forEach(p => counts[p.layer] = (counts[p.layer] || 0) + 1);
+  if (stories.length) counts.story = stories.length;
+  const meta = Object.assign({story:{color:"var(--fb-accent)"}}, DATA.layerMeta);
+  const nameOf = {};
+  (DATA.layerCatalog || []).forEach(l => nameOf[l.id] = l.name);
+  nameOf.story = "故事点位";
+  $("#mapLegend").innerHTML = Object.keys(counts).sort((a, b) => counts[b] - counts[a]).slice(0, 8)
+    .map(id => '<span class="li"><i style="background:' + (meta[id] || {}).color + '"></i>' +
+      asc(nameOf[id] || id) + ' <span style="color:var(--fb-text-3)">' + counts[id] + '</span></span>').join("");
+}
+function renderConvPanel(conv){
+  if (!conv.length){
+    $("#mapConv").innerHTML = '<h4>地理收敛告警 <span class="badge">1°×1°</span></h4>' +
+      '<div class="row" style="color:var(--fb-text-3)">当前组合下无收敛区 —— 空结果也是结论，不补造。</div>';
+    return;
+  }
+  $("#mapConv").innerHTML = '<h4>地理收敛告警 <span class="badge">1°×1° · ≥2 类信号</span></h4>' +
+    conv.map(c => '<div class="row" data-lon="' + c.lon + '" data-lat="' + c.lat + '">' +
+      '<span style="color:var(--fb-text);font-weight:600">' + asc(zoneName(c)) + '</span>' +
+      '<span style="color:var(--fb-text-3)">' + Object.keys(c.sigs).map(s => SIGNAL_LABEL[s]).join("+") + '</span>' +
+      '<b>' + c.score + '</b></div>').join("");
+  $$("#mapConv .row[data-lon]").forEach(r => r.onclick =
+    () => flyTo(+r.dataset.lon, +r.dataset.lat, 4.5, true));
+}
+
+/* ---------- 交互 ---------- */
+let drag = null;
+svg.addEventListener("pointerdown", e => {
+  if (e.button !== 0) return;
+  drag = {x:e.clientX, y:e.clientY, tx:state.view_t.tx, ty:state.view_t.ty, moved:false};
+  svg.setPointerCapture(e.pointerId); svg.classList.add("dragging");
+});
+svg.addEventListener("pointermove", e => {
+  if (!drag) return;
+  const {s} = scaleOffset();
+  if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 3) drag.moved = true;
+  state.view_t.tx = drag.tx + (e.clientX - drag.x) / s;
+  state.view_t.ty = drag.ty + (e.clientY - drag.y) / s;
+  clampView(); applyTransform();
+});
+svg.addEventListener("pointerup", e => {
+  if (!drag) return;
+  const moved = drag.moved; drag = null;
+  svg.classList.remove("dragging");
+  try { svg.releasePointerCapture(e.pointerId); } catch (_){}
+  if (moved) renderMap();
+});
+svg.addEventListener("wheel", e => {
+  e.preventDefault();
+  const r = svg.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  const before = toWorld(mx, my), v = state.view_t;
+  v.k = Math.max(1, Math.min(14, v.k * Math.exp(-e.deltaY * 0.0016)));
+  const {s, ox, oy} = scaleOffset();
+  v.tx = (mx - ox) / s - before.x * v.k;
+  v.ty = (my - oy) / s - before.y * v.k;
+  clampView(); applyTransform();
+  clearTimeout(svg._rt); svg._rt = setTimeout(renderMap, 60);
+}, {passive:false});
+$("#zin").onclick = () => flyTo(0, 20, state.view_t.k * 1.7, true);
+$("#zout").onclick = () => (state.view_t.k <= 1.02
+  ? (state.view_t.k = 1, state.view_t.tx = 0, state.view_t.ty = 0, clampView(), applyTransform(), renderMap())
+  : flyTo(0, 20, state.view_t.k / 1.7, true));
+$("#zreset").onclick = () => { state.view_t.k = 1; state.view_t.tx = 0; state.view_t.ty = 0;
+  clampView(); applyTransform(); renderMap(); };
+
+/* ---------- 悬停提示：回答「这个点是什么」 ---------- */
+function layerName(id){
+  if (id === "story") return "故事点位";
+  const l = (DATA.layerCatalog || []).find(x => x.id === id);
+  return l ? l.name : id;
+}
+function layerColor(p){
+  if (p.kind === "story") return "var(--fb-accent)";
+  return (DATA.layerMeta[p.layer] || {}).color || "#888";
+}
+function fmtWhen(t){
+  if (t == null) return "";
+  let ms = typeof t === "number" ? (t < 1e12 ? t * 1000 : t) : Date.parse(String(t));
+  if (isNaN(ms)) return String(t);
+  const d = new Date(ms);
+  const days = (Date.now() - ms) / 86400e3;
+  const stamp = d.toLocaleString("zh-CN", {month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", hour12:false});
+  return days < 2 ? stamp : stamp + "（" + Math.round(days) + " 天前）";
+}
+function tipHtml(p){
+  let title = p.title || "(无标题)", line = "";
+  if (p.kind === "story"){
+    line = "热度 <b>" + p.heat + "</b> · " + (p.confidence === "high" ? "位置高置信" : "位置低置信") +
+           " · " + (REGION_LABEL[p.region] || "") + "/" + (THEME_LABEL[p.theme] || "");
+  } else if (p.layer === "flight"){
+    line = (p.country || "—") + (p.alt ? " · 高度 " + Math.round(p.alt / 1000) + " km" : "") +
+           (p.heading != null ? " · 航向 " + Math.round(p.heading) + "°" : "");
+  } else {
+    line = (p.detail || "") + (p.source ? " · " + p.source : "");
+  }
+  const when = fmtWhen(p.time);
+  return '<div class="h"><i style="background:' + layerColor(p) + '"></i>' + asc(layerName(p.layer)) +
+           (p.source && p.kind !== "story" ? '<span class="srcline">' + asc(p.source) + '</span>' : '') + '</div>' +
+         '<div class="t">' + asc(String(title).slice(0, 90)) + '</div>' +
+         '<div class="d">' + line + (when ? ' · ' + asc(when) : '') + '</div>';
+}
+let hoverPt = null;
+function placeTip(ev){
+  const w = wrap.getBoundingClientRect();
+  const mx = ev.clientX - w.left, my = ev.clientY - w.top;
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  let x = mx + 15, y = my + 15;
+  if (x + tw > w.width - 6) x = mx - tw - 15;
+  if (y + th > w.height - 6) y = my - th - 15;
+  tip.style.left = Math.max(4, x) + "px";
+  tip.style.top = Math.max(4, y) + "px";
+}
+function hideTip(){ tip.classList.remove("show"); hoverPt = null; }
+svg.addEventListener("mousemove", e => {
+  if (drag){ hideTip(); return; }
+  const g = e.target.closest(".pt");
+  if (!g){ hideTip(); return; }
+  const p = lastPoints[+g.dataset.i];
+  if (!p){ hideTip(); return; }
+  if (p !== hoverPt){                 // 换到另一个点才重算内容
+    hoverPt = p;
+    tip.innerHTML = tipHtml(p);
+    tip.classList.add("show");
+    svg.querySelectorAll(".pt.hover").forEach(x => x.classList.remove("hover"));
+    g.classList.add("hover");
+  }
+  placeTip(e);
+});
+svg.addEventListener("mouseleave", () => {
+  hideTip();
+  svg.querySelectorAll(".pt.hover").forEach(x => x.classList.remove("hover"));
+});
+
+svg.addEventListener("click", e => {
+  const g = e.target.closest(".pt");
+  if (!g){ pop.classList.remove("show"); return; }
+  const p = lastPoints[+g.dataset.i];
+  if (!p){ pop.classList.remove("show"); return; }
+  hideTip();
+  openPop(p, toScreen(p.lon, p.lat));
+  if (p.kind === "story") focusCard(p.story_id);
+});
+document.addEventListener("click", e => {
+  if (!pop.contains(e.target) && !e.target.closest("#map")) pop.classList.remove("show");
+});
+
+/* 通用弹窗：故事点给「去列表」，其它图层给「这是什么」 */
+function openPop(p, pt){
+  const w = wrap.getBoundingClientRect();
+  const isStory = p.kind === "story";
+  let rows = "";
+  if (isStory){
+    const s = DATA.stories.find(x => x.story_id === p.story_id) || {};
+    rows =
+      '<dt>热度</dt><dd><b>' + s.heat + '</b> · ' + (s.confidence_label || "") + '</dd>' +
+      '<dt>位置</dt><dd>' + asc((s.geo || {}).label || "") + '（命中 ' + ((s.geo || {}).hit_count || 0) +
+        ' 条 · ' + ((s.geo || {}).confidence === "high" ? "高置信" : "低置信") + '）</dd>' +
+      '<dt>平台</dt><dd>' + (s.platforms || []).slice(0, 4).map(asc).join("、") + '</dd>' +
+      '<dt>角度</dt><dd>' + (s.angle_count || 1) + ' 个 · ' + (s.item_count || 0) + ' 条材料</dd>';
+  } else {
+    const cat = (DATA.layerCatalog || []).find(x => x.id === p.layer) || {};
+    rows =
+      (p.detail ? '<dt>数值</dt><dd>' + asc(p.detail) + '</dd>' : "") +
+      '<dt>图层</dt><dd>' + asc(cat.name || p.layer) + '</dd>' +
+      '<dt>来源</dt><dd>' + asc(p.source || cat.source || "—") + '</dd>' +
+      '<dt>接入</dt><dd>' + asc(cat.access || "—") + '</dd>' +
+      '<dt>时间</dt><dd>' + (fmtWhen(p.time) || "—") + '</dd>' +
+      '<dt>坐标</dt><dd>' + p.lat.toFixed(3) + ", " + p.lon.toFixed(3) + '</dd>';
+  }
+  pop.innerHTML =
+    '<div class="ph"><span class="kind">' + asc(layerName(p.layer)) +
+      (isStory ? " · " + (REGION_LABEL[p.region] || "") + " · " + (THEME_LABEL[p.theme] || "") : "") +
+      '</span><button type="button" aria-label="关闭">×</button></div>' +
+    '<h5>' + asc(String(p.title || "").slice(0, 120)) + '</h5>' +
+    '<dl class="kv">' + rows + '</dl>' +
+    (isStory
+      ? '<button class="ghost-btn go" type="button">在下方列表定位</button>'
+      : (p.url ? '<a class="ghost-btn go" href="' + asc(p.url) + '" target="_blank" rel="noopener">打开原始链接</a>' : ''));
+  pop.style.left = Math.max(8, Math.min(w.width - 276, pt.x - 134)) + "px";
+  pop.style.top = Math.max(8, Math.min(w.height - 210, pt.y - 40)) + "px";
+  pop.classList.add("show");
+  pop.querySelector(".ph button").onclick = () => pop.classList.remove("show");
+  const go = pop.querySelector(".go");
+  if (go && isStory) go.onclick = () => { focusCard(p.story_id); pop.classList.remove("show"); };
+}
+function focusCard(storyId){
+  const card = $('.ev-card[data-story="' + storyId + '"]');
+  if (!card) return;
+  $$(".ev-card").forEach(c => c.classList.toggle("is-active", c === card));
+  card.scrollIntoView({behavior:"smooth", block:"center"});
+  card.classList.remove("flash"); void card.offsetWidth; card.classList.add("flash");
+}
+
+/* =====================================================================
+   图层侧栏
+   ===================================================================== */
+function buildLayers(){
+  const geoCount = {};
+  (DATA.geoPoints || []).forEach(p => geoCount[p.layer] = (geoCount[p.layer] || 0) + 1);
+  const groups = {};
+  (DATA.layerCatalog || []).forEach(l => (groups[l.group] = groups[l.group] || []).push(l));
+  let html = '<div class="lg-head">故事</div>' +
+    '<div class="row" data-id="story"><span class="dot" style="background:var(--fb-accent)"></span>' +
+    '<span class="nm">故事点位</span><span class="n">' + (DATA.stories || []).filter(s => s.geo).length +
+    '</span><span class="st live">实测</span></div>';
+  Object.keys(groups).forEach(g => {
+    html += '<div class="lg-head">' + asc(g) + '</div>';
+    groups[g].forEach(l => {
+      const n = l.status === "planned" ? 0 : (geoCount[l.id] || 0);
+      const on = state.visible.has(l.id);
+      html += '<div class="row' + (on && l.status !== "planned" ? "" : " off") + '" data-id="' + l.id + '">' +
+        '<span class="dot" style="background:' + (l.status === "planned" ? "var(--fb-text-3)" : (DATA.layerMeta[l.id] || {}).color) + '"></span>' +
+        '<span class="nm">' + asc(l.name) + '</span><span class="n">' + n + '</span>' +
+        '<span class="st ' + l.status + '">' + STATUS_LABEL[l.status] + '</span></div>';
+    });
+  });
+  html += '<div class="hintline">标 <b>计划</b> 的图层需要 key 或尚未接入，计数为 0，<b>不填充假点位</b>。</div>';
+  $("#mapLayers").innerHTML = html;
+  $("#mapLayers").addEventListener("click", e => {
+    const row = e.target.closest(".row"); if (!row) return;
+    const id = row.dataset.id;
+    if (id !== "story"){
+      const l = (DATA.layerCatalog || []).find(x => x.id === id);
+      if (l && l.status === "planned") return;      // 计划层不可开，解释即可
+    }
+    if (state.visible.has(id)) state.visible.delete(id); else state.visible.add(id);
+    row.classList.toggle("off", !state.visible.has(id));
+    renderMap();
+  });
+}
+
+/* =====================================================================
+   筛选条 / 卡片 / 浏览区
+   ===================================================================== */
+function buildFilter(){
+  const counts = {all: DATA.stories.length, cn: 0, intl: 0};
+  DATA.stories.forEach(s => counts[s.region]++);
+  $("#regionSeg").innerHTML = ["all","cn","intl"].map(r =>
+    '<button type="button" data-r="' + r + '"' + (state.region === r ? ' class="on"' : '') + '>' +
+    (r === "all" ? "全部" : REGION_LABEL[r]) + '<span class="c">' + counts[r] + '</span></button>').join("");
+  $("#regionSeg").onclick = e => {
+    const b = e.target.closest("button"); if (!b) return;
+    state.region = b.dataset.r; persist(); refresh();
+  };
+  const tc = {};
+  DATA.stories.forEach(s => tc[s.theme] = (tc[s.theme] || 0) + 1);
+  $("#themeChips").innerHTML = '<button type="button" data-t="all"' +
+      (state.theme === "all" ? ' class="on"' : '') + '>全部<span class="c">' + DATA.stories.length + '</span></button>' +
+    THEME_ORDER.filter(t => tc[t]).map(t =>
+      '<button type="button" data-t="' + t + '"' + (state.theme === t ? ' class="on"' : '') + '>' +
+      THEME_LABEL[t] + '<span class="c">' + tc[t] + '</span></button>').join("");
+  $("#themeChips").onclick = e => {
+    const b = e.target.closest("button"); if (!b) return;
+    state.theme = b.dataset.t; persist(); refresh();
+  };
+}
+const TIME_OPTIONS = [[6,"6h"],[24,"24h"],[48,"48h"],[168,"7d"],[0,"全部"]];
+function buildToolbar(){
+  $("#timeSeg").innerHTML = TIME_OPTIONS.map(([h, l]) =>
+    '<button type="button" data-h="' + h + '"' + (h === state.hours ? ' class="on"' : '') + '>' + l + '</button>').join("");
+  $("#timeSeg").onclick = e => {
+    const b = e.target.closest("button"); if (!b) return;
+    state.hours = +b.dataset.h; persist();
+    $$("#timeSeg button").forEach(x => x.classList.toggle("on", x === b));
+    renderMap();
+  };
+  $("#mapLayersBtn").onclick = e => {
+    const folded = $("#mapBody").classList.toggle("folded");
+    e.currentTarget.classList.toggle("on", !folded);
+    e.currentTarget.setAttribute("aria-pressed", String(!folded));
+    state.layersFold = folded;
+    applyMapSize();
+  };
+  $("#mapSizeBtn").onclick = () => {
+    const el = $("#radarMap"), order = ["sm","md","lg"];
+    state.mapSize = order[(order.indexOf(state.mapSize) + 1) % 3];
+    persist(); applyMapSize();
+  };
+  applyMapSize();
+  $("#themeToggle").onclick = () => {
+    const cur = document.documentElement.getAttribute("data-theme");
+    document.documentElement.setAttribute("data-theme", cur === "dark" ? "light" : "dark");
+    renderMap();
+  };
+  $$(".radar-tab").forEach(tab => tab.onclick = () => switchView(tab.dataset.view));
+}
+function applyMapSize(){
+  const el = $("#radarMap");
+  el.classList.remove("mapsize-sm","mapsize-md","mapsize-lg");
+  el.classList.add("mapsize-" + state.mapSize);
+  $("#mapSizeBtn").textContent = state.mapSize === "sm" ? "放大" : (state.mapSize === "md" ? "再放大" : "收起");
+  requestAnimationFrame(() => { computeViewBox(); clampView(); applyTransform(); renderMap(); });
+}
+function switchView(name){
+  state.view = name;
+  $$(".radar-tab").forEach(t => {
+    const on = t.dataset.view === name;
+    t.classList.toggle("is-active", on); t.setAttribute("aria-selected", String(on));
+  });
+  $$(".radar-view").forEach(v => { v.hidden = v.id !== "view-" + name; });
+  if (name === "daily") requestAnimationFrame(() => { computeViewBox(); applyTransform(); renderMap(); });
+}
+
+function renderCards(){
+  const list = visibleStories();
+  $("#dailyGrid").innerHTML = list.length ? list.map(s => {
+    const g = s.geo;
+    const geoChip = g
+      ? '<span class="chip info ev-geo" data-fly="' + asc(s.story_id) + '" role="button" tabindex="0">' +
+          '<svg class="pin" viewBox="0 0 24 24"><path d="M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11Z"/><circle cx="12" cy="10" r="2.4"/></svg>' +
+          asc(g.label) + (g.confidence === "low" ? ' · 低置信' : '') + '</span>'
+      : '<span class="chip ev-geo none">未地理编码</span>';
+    const trend = s.rank_trend || {};
+    const trendChip = {up:'<span class="chip warn">↑ 升温</span>', down:'<span class="chip">↓ 降温</span>',
+                       flat:'<span class="chip">— 持平</span>', new:'<span class="chip info">新上榜</span>'}[trend.state] || "";
+    return '<article class="panel ev-card" data-story="' + asc(s.story_id) + '">' +
+      '<div class="ev-top"><h3 class="ev-title">' + asc(s.headline || s.title) + '</h3>' +
+        '<span class="ev-heat">' + s.heat + '</span></div>' +
+      (s.summary ? '<p class="ev-summary">' + asc(s.summary) + '</p>' : '') +
+      '<div class="ev-meta">' +
+        (s.is_new ? '<span class="badge-new">NEW</span>' : '') +
+        '<span class="chip">' + asc(s.category) + '</span>' +
+        '<span class="chip">' + (REGION_LABEL[s.region] || "") + ' · ' + (THEME_LABEL[s.theme] || "") + '</span>' +
+        '<span class="chip">' + (s.confidence_label || "") + '</span>' +
+        trendChip +
+        '<span class="chip">' + (s.angle_count || 1) + ' 个角度 · ' + (s.item_count || 0) + ' 条材料</span>' +
+        geoChip +
+      '</div>' +
+      '<div class="ev-links">' + (s.platforms || []).slice(0, 5).map(p =>
+        '<a href="#" onclick="return false">' + asc(p) + '</a>').join("") + '</div>' +
+      '<div class="ev-actions"><button class="ghost-btn" type="button">深入调查</button>' +
+        (g ? '<button class="ghost-btn" type="button" data-fly="' + asc(s.story_id) + '">在地图上查看</button>' : '') +
+      '</div></article>';
+  }).join("") : '<div class="empty-state"><div class="empty-mark">⌕</div><h3>该组合下没有故事</h3>' +
+      '<p>筛选只过滤真实采集结果，不会补造内容。</p></div>';
+
+  $$("#dailyGrid .ev-card").forEach(card => {
+    const sid = card.dataset.story;
+    card.addEventListener("mouseenter", () => highlightPoint(sid, true));
+    card.addEventListener("mouseleave", () => highlightPoint(sid, false));
+  });
+  $$("#dailyGrid [data-fly]").forEach(el => el.addEventListener("click", e => {
+    e.stopPropagation();
+    const s = DATA.stories.find(x => x.story_id === el.dataset.fly);
+    if (s && s.geo) flyTo(s.geo.lon, s.geo.lat, Math.max(3.2, state.view_t.k), true);
+  }));
+}
+function highlightPoint(storyId, on){
+  if (!on){ $$(".pt").forEach(g => g.classList.remove("dim","hi")); return; }
+  $$(".pt").forEach(g => g.classList.add("dim"));
+  const g = $('.pt[data-story="' + storyId + '"]');
+  if (g){ g.classList.remove("dim"); g.classList.add("hi"); }
+  else $$(".pt").forEach(x => x.classList.remove("dim"));
+}
+
+function renderBrowse(){
+  const rows = (DATA.browse || []).filter(s =>
+    (state.region === "all" || s.region === state.region) &&
+    (state.theme === "all" || s.theme === state.theme));
+  // 主题 × 地域 矩阵
+  const matrix = THEME_ORDER.map(t => {
+    const cn = (DATA.browse || []).concat(DATA.stories).filter(s => s.theme === t && s.region === "cn").length;
+    const it = (DATA.browse || []).concat(DATA.stories).filter(s => s.theme === t && s.region === "intl").length;
+    return '<tr><td>' + THEME_LABEL[t] + '</td>' +
+      '<td style="text-align:right;font-family:var(--fb-mono);color:' + (cn ? 'var(--fb-accent)' : 'var(--fb-text-3)') + '">' + cn + '</td>' +
+      '<td style="text-align:right;font-family:var(--fb-mono);color:' + (it ? 'var(--fb-success)' : 'var(--fb-text-3)') + '">' + it + '</td></tr>';
+  }).join("");
+  $("#browsePanel").innerHTML =
+    '<h3>主题 × 地域 <span class="chip" style="margin-left:6px">合并了原来的「中文网络热点 / 国际热点」两张表</span></h3>' +
+    '<p class="hint" style="margin-bottom:var(--fb-sp-3)">原来这两张表是按<b>平台名白名单</b>硬分的，' +
+      '后加的 newsnow / AnySearch 源进不去；改成 <code>region</code> + <code>theme</code> 两个字段后，' +
+      '任何新源都能自动归位。下面两个数字就是同一套筛选器的结果。</p>' +
+    '<table class="radar-table" style="margin-bottom:var(--fb-sp-4)"><thead><tr><th>主题</th>' +
+      '<th style="text-align:right">国内</th><th style="text-align:right">国际</th></tr></thead><tbody>' +
+      matrix + '</tbody></table>' +
+    '<table class="radar-table"><thead><tr><th>事件</th><th>地域·主题</th><th>位置</th><th>平台</th><th>热度</th></tr></thead><tbody>' +
+    (rows.length ? rows.map(s => '<tr>' +
+      '<td class="ev-title">' + asc(s.headline || s.title) + '</td>' +
+      '<td><span class="chip">' + (REGION_LABEL[s.region] || "") + '·' + (THEME_LABEL[s.theme] || "") + '</span></td>' +
+      '<td>' + (s.geo ? asc(s.geo.label) + (s.geo.confidence === "low" ? '（低置信）' : '')
+                      : '<span style="color:var(--fb-text-3)">—</span>') + '</td>' +
+      '<td class="mono">' + asc((s.platforms || []).slice(0, 3).join("、")) + '</td>' +
+      '<td class="mono">' + (s.heat != null ? s.heat : "—") + '</td></tr>').join("")
+      : '<tr><td colspan="5" style="color:var(--fb-text-3)">该组合下没有条目</td></tr>') +
+    '</tbody></table>';
+}
+
+function renderBoard(){
+  const st = (DATA.report && DATA.report.stats) || {};
+  const cov = (DATA.report && DATA.report.coverage) || {};
+  const stories = DATA.stories || [];
+  $("#mEvents").textContent = stories.length;
+  $("#mGeo").textContent = stories.filter(s => s.geo).length + "/" + stories.length;
+  $("#mItems").textContent = st.covered != null ? st.covered : "—";
+  $("#mSources").textContent = (cov.ok || []).length;
+  $("#mFailed").textContent = (cov.failed || []).length;
+  $("#radarUpdated").textContent = (DATA.report && DATA.report.generated_at || "").slice(0, 16).replace("T", " ");
+}
+
+function refresh(){ buildFilter(); renderCards(); renderBrowse(); renderMap(); }
+
+/* ---------- 启动 ---------- */
+function init(){
+  buildSvg(); buildLayers(); buildToolbar(); renderBoard();
+  refresh();
+}
+window.addEventListener("resize", () => {
+  clearTimeout(window._rz);
+  window._rz = setTimeout(() => { computeViewBox(); clampView(); applyTransform(); renderMap(); }, 120);
+});
+requestAnimationFrame(init);
+</script>
+</body>
+</html>

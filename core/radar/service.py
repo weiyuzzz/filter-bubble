@@ -11,7 +11,7 @@ import traceback
 import uuid
 from typing import Any, Dict, Optional
 
-from .. import db
+from .. import db, net
 from . import cluster, config as radar_config, investigate, push, report, sources, store, summarize
 
 try:
@@ -87,12 +87,30 @@ def collect_only(cfg: Optional[Dict[str, Any]] = None, reason: str = "hourly") -
     cfg = cfg or radar_config.cached()
     if not _begin():
         return {"started": False, "reason": "already running"}
+    from .. import monitor
+
+    mon = monitor.run("news_collect", trigger=reason)
     conn = db.connect()
     try:
         store.init()
+        mon.start()
         _set("collecting")
-        summary = sources.collect(conn, cfg)
+        with mon.phase("fetch") as phase:
+            summary = sources.collect(conn, cfg)
+            phase.result = {
+                "sources_ok": summary.get("sources_ok"),
+                "sources_failed": summary.get("sources_failed"),
+                "sources_skipped": summary.get("sources_skipped"),
+                "items_fetched": summary.get("items_raw"),
+                "note": "本轮只采集，不聚类、不生成日报、不推送",
+            }
+            phase.mark("ok" if not summary.get("sources_failed")
+                       else ("partial" if summary.get("sources_ok") else "failed"))
         conn.commit()
+        mon.set_counts(sources_attempted=summary.get("sources_enabled"))
+        mon.finish(status="ok" if not summary.get("sources_failed")
+                   else ("partial" if summary.get("sources_ok") else "failed"),
+                   stats={"reason": reason, "collect": summary})
         _set("idle", last_collect_at=summary.get("collected_at"))
         return {"started": True, "reason": reason, "summary": summary}
     except Exception as exc:  # noqa: BLE001
@@ -100,6 +118,9 @@ def collect_only(cfg: Optional[Dict[str, Any]] = None, reason: str = "hourly") -
             conn.rollback()
         except Exception:  # noqa: BLE001
             pass
+        mon.add_error("%s: %s" % (type(exc).__name__, exc), stage="fetch")
+        mon.finish(status="failed", error="%s: %s" % (type(exc).__name__, exc),
+                   stats={"reason": reason})
         _end(error="%s: %s" % (type(exc).__name__, exc))
         return {"started": True, "reason": reason,
                 "error": "%s: %s" % (type(exc).__name__, exc)}
@@ -114,16 +135,29 @@ def collect_and_report(cfg: Optional[Dict[str, Any]] = None, reason: str = "manu
     cfg = cfg or radar_config.cached()
     run_id = "run-" + uuid.uuid4().hex[:12]
     started = now_iso()
+    from .. import monitor
+
+    mon = monitor.run("event_report", trigger=reason)
+    mon.start()
     conn = db.connect()
     stats: Dict[str, Any] = {"reason": reason}
     error: Optional[str] = None
     try:
         store.init()
         store.start_run(conn, run_id, "collect", started)
+        # 立刻提交：运行记录对其他进程/线程立即可见（监控页要看「正在运行」），
+        # 同时也把写锁还给别人——采集监控的写入不该被这条未提交的 INSERT 挡住。
+        conn.commit()
+        mon.stats["pipeline_run_id"] = run_id
 
         _set("collecting", last_run_id=run_id)
         try:
-            collect_summary = sources.collect(conn, cfg)
+            with mon.phase("fetch") as phase:
+                collect_summary = sources.collect(conn, cfg)
+                phase.result = {"sources_ok": collect_summary.get("sources_ok"),
+                                "sources_failed": collect_summary.get("sources_failed"),
+                                "sources_skipped": collect_summary.get("sources_skipped"),
+                                "items_fetched": collect_summary.get("items_raw")}
             conn.commit()
         except Exception as exc:  # noqa: BLE001 - never let collection kill the report
             conn.rollback()
@@ -131,16 +165,23 @@ def collect_and_report(cfg: Optional[Dict[str, Any]] = None, reason: str = "manu
                                "sources_enabled": 0, "sources_ok": 0, "sources_failed": 0,
                                "items_new": 0, "failures": []}
             error = collect_summary["error"]
+            mon.add_error(error, stage="fetch")
         stats["collect"] = collect_summary
+        mon.set_counts(sources_attempted=collect_summary.get("sources_enabled"))
 
         _set("clustering")
         date = today()
-        since = (dt.datetime.now(tz()) - dt.timedelta(hours=36)).isoformat(timespec="seconds")
-        items = store.recent_items(conn, since, limit=int((cfg.get("limits") or {}).get("max_candidates") or 150))
-        events = cluster.build_events(conn, date, items, cfg, now_iso())
-        max_events = int((cfg.get("limits") or {}).get("max_events") or 60)
-        events = sorted(events, key=lambda e: (e.get("importance", 0) + e.get("heat", 0)), reverse=True)[:max_events]
-        stories = cluster.build_stories(conn, date, events, cfg, now_iso())
+        with mon.phase("cluster") as phase:
+            since = (dt.datetime.now(tz()) - dt.timedelta(hours=36)).isoformat(timespec="seconds")
+            items = store.recent_items(conn, since, limit=int((cfg.get("limits") or {}).get("max_candidates") or 150))
+            events = cluster.build_events(conn, date, items, cfg, now_iso())
+            max_events = int((cfg.get("limits") or {}).get("max_events") or 60)
+            events = sorted(events, key=lambda e: (e.get("importance", 0) + e.get("heat", 0)), reverse=True)[:max_events]
+            stories = cluster.build_stories(conn, date, events, cfg, now_iso())
+            phase.result = {"events": len(events), "stories": len(stories),
+                            "items_considered": len(items),
+                            "note": "评分（热度/重要度）在聚类阶段内完成，未单独计时"}
+            phase.mark("ok" if events else "not_applicable")
 
         for event in events:
             store.assign_event(conn, event.get("_item_ids") or [], event["id"])
@@ -152,12 +193,20 @@ def collect_and_report(cfg: Optional[Dict[str, Any]] = None, reason: str = "manu
         stats["events"] = len(events)
         stats["stories"] = len(stories)
         stats["items_considered"] = len(items)
+        mon.stage("score", "ok" if events else "not_applicable",
+                  {"events_scored": len(events),
+                   "note": "热度与重要度在聚类里一次算出，没有独立阶段"})
 
         # 地理标注 + 主题分类：只处理当天事件，纯本地计算（不联网），
         # 每 50 条一个短事务，避免长事务增加写锁竞争。
         try:
             from . import geo_tag
-            geo_stats = geo_tag.tag_events(conn, events, force=False, commit_every=50)
+            with mon.phase("geo_tag") as phase:
+                geo_stats = geo_tag.tag_events(conn, events, force=False, commit_every=50)
+                conn.commit()   # tag_events 可能留下最后一批未提交，先落盘再写监控
+                phase.result = {"processed": geo_stats.get("processed"),
+                                "located": geo_stats.get("located")}
+                phase.mark("ok" if geo_stats.get("processed") else "not_applicable")
             stats["geo_tag"] = {
                 "processed": geo_stats.get("processed"),
                 "located": geo_stats.get("located"),
@@ -167,11 +216,16 @@ def collect_and_report(cfg: Optional[Dict[str, Any]] = None, reason: str = "manu
         except Exception as exc:  # noqa: BLE001 - 地理标注失败不影响日报
             print("[radar] geo tagging failed:", exc)
             stats["geo_tag"] = {"error": "%s: %s" % (type(exc).__name__, exc)}
+            mon.add_error("地理标注失败：%s: %s" % (type(exc).__name__, exc), stage="score")
 
         _set("reporting")
-        payload = report.build(conn, date, cfg, collect_summary)
-        store.save_report(conn, date, "daily", payload, now_iso(),
-                          version=int(payload.get("version") or 1))
+        with mon.phase("report") as phase:
+            payload = report.build(conn, date, cfg, collect_summary)
+            store.save_report(conn, date, "daily", payload, now_iso(),
+                              version=int(payload.get("version") or 1))
+            phase.result = {"report_date": date,
+                            "events_in_report": len(payload.get("highlights") or [])}
+            conn.commit()   # 先提交日报，再写监控阶段：监控是独立事务
         # 全球态势：在同一个事务里物化当日的固定口径快照。
         # 纯本地计算，不联网、不等待外部请求；失败不影响日报。
         try:
@@ -190,10 +244,21 @@ def collect_and_report(cfg: Optional[Dict[str, Any]] = None, reason: str = "manu
         stats["report_date"] = date
 
         _set("pushing")
-        try:
-            push_result = push.send_daily(conn, payload, cfg)
-        except Exception as exc:  # noqa: BLE001
-            push_result = {"ok": False, "error": "%s: %s" % (type(exc).__name__, exc)}
+        with mon.phase("push") as phase:
+            try:
+                push_result = push.send_daily(conn, payload, cfg)
+            except Exception as exc:  # noqa: BLE001
+                push_result = {"ok": False, "error": "%s: %s" % (type(exc).__name__, exc)}
+            phase.result = {"ok": bool(push_result.get("ok")),
+                            "skipped": bool(push_result.get("skipped")),
+                            "reason": push_result.get("reason") or "",
+                            "detail": push_result.get("detail") or ""}
+            if push_result.get("ok"):
+                phase.mark("ok")
+            elif push_result.get("skipped"):
+                phase.mark("skipped")
+            else:
+                phase.mark("failed")
         stats["push"] = push_result
 
         try:
@@ -203,18 +268,22 @@ def collect_and_report(cfg: Optional[Dict[str, Any]] = None, reason: str = "manu
         except Exception:  # noqa: BLE001
             conn.rollback()
 
-        store.finish_run(conn, run_id, now_iso(), "ok" if not error else "partial", stats, error)
+        final_status = "ok" if not error else "partial"
+        store.finish_run(conn, run_id, now_iso(), final_status, stats, error)
         conn.commit()
+        mon.finish(status=final_status, stats=stats)
         _end(error, stats)
         return {"ok": True, "run_id": run_id, "stats": stats, "error": error}
     except Exception as exc:  # noqa: BLE001
         tb = traceback.format_exc(limit=3)
         print("[radar] run failed:", exc)
+        mon.add_error("%s: %s" % (type(exc).__name__, exc), stage="internal")
         try:
             store.finish_run(conn, run_id, now_iso(), "failed", stats, "%s\n%s" % (exc, tb))
             conn.commit()
         except Exception:  # noqa: BLE001
             conn.rollback()
+        mon.finish(status="failed", error="%s: %s" % (type(exc).__name__, exc), stats=stats)
         _end("%s: %s" % (type(exc).__name__, exc), stats)
         return {"ok": False, "run_id": run_id, "error": str(exc), "stats": stats}
     finally:
@@ -227,6 +296,8 @@ def collect_and_report(cfg: Optional[Dict[str, Any]] = None, reason: str = "manu
                 conn.commit()
         except Exception:  # noqa: BLE001 - 收尾失败也不能再抛出去
             pass
+        mon.finish(status=mon.status if mon.status != "running" else "interrupted",
+                   error=error)
         conn.close()
 
 
@@ -316,6 +387,7 @@ def status(conn, cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         "push": push.status(conn, cfg, date),
         "push_enabled": bool(push_cfg.get("enabled")),
         "summary_backend": summarize.backend_status(cfg),
+        "network": _network_state(),
         "cluster": cfg.get("cluster") or {},
         "sources": {
             "total": len(all_sources),
@@ -328,6 +400,18 @@ def status(conn, cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         "runs": runs,
         "enabled": bool(cfg.get("enabled")),
     }
+
+
+def _network_state() -> Dict[str, Any]:
+    """当前出网状态：状态页用它显示「现在走代理还是直连」。"""
+    try:
+        state = net.describe()
+    except Exception:  # noqa: BLE001 - 诊断信息拿不到不该影响状态接口
+        return {}
+    labels = {"system": "系统代理", "direct": "直连", "manual": "指定代理"}
+    order = state.get("order") or []
+    state["active_label"] = labels.get(order[0], "") if order else "无可用出口"
+    return state
 
 
 def _minutes_since(iso: str) -> float:

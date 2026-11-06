@@ -71,7 +71,9 @@ def handle_get(path: str, query: Dict[str, str]) -> Tuple[int, Dict[str, Any]]:
                 store.ensure_source(conn, spec)
             conn.commit()
             rows = store.sources(conn)
+            from .. import net
             return _ok({"sources": rows,
+                        "network": net.describe(),
                         "summary": {
                             "total": len(rows),
                             "ok": len([r for r in rows if r["status"] == "ok"]),

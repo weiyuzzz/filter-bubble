@@ -17,12 +17,29 @@ import zlib
 from typing import Any, Dict, Optional, Tuple
 
 from . import config as radar_config
+from .. import net
 
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36 FilterBubbleRadar/1.0")
 
 _LOCK = threading.Lock()
 _LAST_CALL: Dict[str, float] = {}
+
+#: 每个线程最近一次真实请求的元信息（状态码/耗时/错误），供采集监控记录「HTTP 状态」。
+#: 采集是并发跑的，所以必须用 thread-local；适配器在同一线程里发起请求，采集循环在
+#: 同一个线程里读走它，不会串源。
+_LOCAL = threading.local()
+
+
+def last_call() -> Optional[Dict[str, Any]]:
+    """当前线程最近一次 HTTP 调用的元信息（没有调用过则返回 None）。"""
+    return getattr(_LOCAL, "last", None)
+
+
+def _record_call(result: FetchResult) -> None:
+    _LOCAL.last = {"ok": bool(result.ok), "status": int(result.status or 0),
+                   "latency_ms": int(result.latency_ms or 0),
+                   "error": result.error or "", "url": result.url or ""}
 
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\u200b-\u200f\u2028\u2029\ufeff]")
 _SPACE = re.compile(r"[ \t\u00a0]+")
@@ -120,6 +137,7 @@ def _perform(method: str, url: str, body: Optional[bytes] = None,
     retries = int(limits.get("source_retries", 1) if retries is None else retries)
 
     _respect_rate(rate_key or url, min_interval)
+    _LOCAL.last = None
 
     merged = {
         "User-Agent": UA,
@@ -135,11 +153,14 @@ def _perform(method: str, url: str, body: Optional[bytes] = None,
     for attempt in range(retries + 1):
         try:
             req = urllib.request.Request(url, data=body, headers=merged, method=method)
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with net.urlopen(req, timeout=timeout) as resp:
                 raw = resp.read()
                 raw = _decompress(raw, resp.headers.get("Content-Encoding", ""))
                 text = _decode(raw, resp.headers.get("Content-Type", ""))
-                return FetchResult(True, resp.status, text, "", int((time.time() - started) * 1000), url)
+                result = FetchResult(True, resp.status, text, "",
+                                     int((time.time() - started) * 1000), url)
+                _record_call(result)
+                return result
         except urllib.error.HTTPError as exc:
             status = exc.code
             last_error = "HTTP %s" % exc.code
@@ -151,7 +172,9 @@ def _perform(method: str, url: str, body: Optional[bytes] = None,
         if attempt < retries:
             time.sleep(min(4.0, 0.8 * (2 ** attempt)))
 
-    return FetchResult(False, status, "", last_error[:300], int((time.time() - started) * 1000), url)
+    result = FetchResult(False, status, "", last_error[:300], int((time.time() - started) * 1000), url)
+    _record_call(result)
+    return result
 
 
 def get(url: str, headers: Optional[Dict[str, str]] = None, timeout: Optional[float] = None,

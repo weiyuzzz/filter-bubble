@@ -458,6 +458,11 @@
       const data = await api("/api/radar/sources");
       const rows = data.sources || [];
       const summary = data.summary || {};
+      const net = data.network || {};
+      const netLabel = (net.order || []).length
+        ? (net.order[0] === "system" ? "系统代理" : net.order[0] === "direct" ? "直连" : "指定代理")
+        : "未知";
+      const netHint = `当前出网：${netLabel}（${(net.routes || []).join(" → ") || "无可用出口"}，模式 ${net.mode || "auto"}）`;
       const rowHtml = rows.map((row) => {
         const status = row.status === "ok" ? `<span class="status-ok">正常</span>`
           : row.status === "error" ? `<span class="status-error">失败 ${esc(row.consecutive_failures)}</span>`
@@ -485,7 +490,7 @@
         <div class="ev-actions">
           <button class="ghost-btn" id="resetSources" type="button">重置失败计数（解除自动停用）</button>
         </div>
-        <p class="hint">连续失败 3 次开始降频，6 次自动停用；重置后下一轮会重新尝试。未接入 = 该平台没有合规的免费公开入口，系统不会绕过登录、验证码或访问控制去抓取。</p>`;
+        <p class="hint">连续失败 3 次开始降频，6 次自动停用；停用后冷却一段时间会自动再试一次，也可以点上面的按钮立即重置。${esc(netHint)} 系统代理不通时会自动改用直连，开着或关着 VPN 都不用手动改配置。未接入 = 该平台没有合规的免费公开入口，系统不会绕过登录、验证码或访问控制去抓取。</p>`;
       const resetBtn = $("#resetSources");
       if (resetBtn) {
         resetBtn.addEventListener("click", async () => {

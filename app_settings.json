@@ -1,33 +1,37 @@
 {
-  "version": 1,
+  "version": 2,
   "llm": {
     "enabled": true,
-    "provider": "openai",
-    "base_url": "https://api.deepseek.com",
-    "model": "deepseek-chat",
-    "api_key_env": "RADAR_LLM_API_KEY",
-    "timeout_seconds": 33,
+    "timeout_seconds": 90,
     "max_attempts": 2,
     "temperature": 0.5,
-    "max_tokens": 999,
-    "note": "API Key 不写在这里：在网页「全局设置」里填，只存 data/ai_secrets.json；也可用环境变量 RADAR_LLM_API_KEY。",
-    "fallback": {
-      "enabled": true,
-      "provider": "openai",
-      "base_url": "https://api.deepseek.com",
-      "model": "deepseek-chat",
-      "api_key_env": "RADAR_LLM_API_KEY_FALLBACK"
-    },
-    "token_limits": {
-      "primary": 500000,
-      "fallback": 500000,
-      "window_hours": 24.0
-    }
+    "max_tokens": 4000,
+    "quota_window_hours": 24.0,
+    "slots": [
+      {
+        "id": "primary",
+        "name": "主接口 · 千帆 Token Plan",
+        "enabled": true,
+        "preset": "qianfan",
+        "provider": "openai",
+        "base_url": "https://qianfan.baidubce.com/v2/tokenplan/personal",
+        "model": "deepseek-v4.1-flash",
+        "key_ref": "qianfan",
+        "priority": 1,
+        "quota": {
+          "mode": "window",
+          "limit": 0,
+          "window_hours": 5.0,
+          "reset_days": 0
+        }
+      }
+    ]
   },
   "ai": {
-    "enable_briefs": true,
-    "briefs_per_run": 6,
     "concurrency": 1,
-    "note": "briefs_per_run：每天自动为多少个 GitHub 项目生成 AI 解读；其余项目可在「项目速读」里按需生成。"
+    "enable_briefs": true
+  },
+  "push": {
+    "enabled": false
   }
 }

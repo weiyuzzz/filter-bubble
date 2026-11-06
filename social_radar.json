@@ -27,162 +27,18 @@
   "backoff": {
     "degrade_after": 3,
     "degrade_interval_minutes": 60,
-    "pause_after": 6
+    "pause_after": 6,
+    "resume_after_minutes": 180
+  },
+  "network": {
+    "mode": "auto",
+    "proxy": ""
   },
   "newsnow": {
     "api_url": "https://newsnow.busiyi.world/api/s",
     "verify_domain": true,
     "note": "抖音/知乎/贴吧/华尔街见闻/财联社/澎湃/凤凰走这个第三方聚合 API；可在 sources 里单独关闭某个平台，例如 \"sources\": {\"douyin\": {\"enabled\": false}}"
   },
-  "filters": {
-    "noise_keywords": [
-      "吃不吃挑战",
-      "返厂了",
-      "抽奖",
-      "转发抽",
-      "表情包",
-      "壁纸",
-      "cp向",
-      "磕糖",
-      "二创",
-      "鬼畜",
-      "整活",
-      "梗图"
-    ],
-    "rules": [],
-    "rules_note": "关键词语法，每行一条：[组名] / +必须词 / !排除词 / /正则/ => 别名 / @每组上限。示例：[\"科技\", \"+芯片\", \"!抽奖\"]",
-    "min_engagement": {
-      "bilibili_popular": {
-        "view": 50000
-      },
-      "hackernews": {
-        "points": 40
-      }
-    }
-  },
-  "rss": {
-    "feeds": [],
-    "feeds_note": "自定义 RSS 源，加源不用改代码。每项：{id, name, url, platform?, language?, max_items?, enabled?}"
-  },
-  "scoring": {
-    "velocity": 0.3,
-    "cross_platform": 0.2,
-    "engagement": 0.2,
-    "verification": 0.2,
-    "interest": 0.1
-  },
-  "report": {
-    "length": "standard",
-    "top_events": 12,
-    "section_limits": {
-      "zh_web": 8,
-      "intl": 8,
-      "tech": 8,
-      "investigations": 5
-    }
-  },
-  "push": {
-    "enabled": false,
-    "channel": "radar-wechat",
-    "items": 5,
-    "alert_threshold": 82,
-    "max_attempts": 3,
-    "fallback_to_main_key": true,
-    "sendkey_env": "RADAR_SERVERCHAN_SENDKEY"
-  },
-  "interests": {
-    "topics": [
-      "AI 与大模型",
-      "芯片与半导体",
-      "开源软件",
-      "国际科技公司",
-      "游戏与消费电子",
-      "国际新闻",
-      "中国科技发展与科研成果",
-      "产业竞争与经济事件"
-    ],
-    "keywords": [],
-    "synonyms": {},
-    "exclude": [],
-    "languages": [
-      "zh",
-      "en"
-    ]
-  },
-  "investigation": {
-    "min_heat": 70,
-    "max_evidence": 60,
-    "tech_auto_check": true,
-    "external_search": true,
-    "external_max_results": 6,
-    "external_extract_top": 2,
-    "min_local_evidence": 3,
-    "tech_keywords": [
-      "芯片",
-      "半导体",
-      "光刻",
-      "大模型",
-      "人工智能",
-      "量子",
-      "可控核聚变",
-      "超导",
-      "6G",
-      "卫星",
-      "航空发动机",
-      "新材料",
-      "量产",
-      "首次实现",
-      "国际领先",
-      "突破"
-    ]
-  },
-  "retention": {
-    "days": 90
-  },
-  "intel": {
-    "caliber_version": 1,
-    "window_days": 7,
-    "min_days_for_full_confidence": 7,
-    "activity_refs": {
-      "event_ref": 200,
-      "item_ref": 400,
-      "platform_ref": 12,
-      "evidence_gap_ref": 5
-    },
-    "activity_weights": {
-      "intensity": 0.4,
-      "volume": 0.25,
-      "breadth": 0.2,
-      "growth": 0.15
-    },
-    "credibility_weights": {
-      "verified_share": 0.45,
-      "concentration_free": 0.25,
-      "evidence_ok": 0.3
-    },
-    "strategic_weights": {
-      "observed_activity": 0.55,
-      "evidence_uncertainty": 0.25,
-      "monitoring_blind_spot": 0.2
-    },
-    "intl_share_ref": 0.3,
-    "live_news_default_limit": 50,
-    "live_news_max_limit": 200,
-    "note": "全球态势监控口径参数。activity_refs 是本站归一化参考值（分母），不是国际标准；改动这些值会让历史序列与新点不可直接比较。威胁活动与情报可信度是两个独立指标，不合成一个危险程度。"
-  },
-  "llm": {
-    "enabled": false,
-    "provider": "openai_compatible",
-    "base_url": "",
-    "model": "",
-    "api_key_env": "RADAR_LLM_API_KEY",
-    "timeout_seconds": 45,
-    "max_attempts": 2,
-    "max_events": 12,
-    "temperature": 0.2,
-    "note": "可在网页「监控设置 → 大模型」里配置；API Key 只存本地 data/radar_secrets.json。未配置时自动回退到本地抽取式摘要"
-  },
-  "sources": {},
   "anysearch": {
     "enabled": true,
     "api_base": "https://api.anysearch.com",
@@ -236,5 +92,154 @@
       "concurrency": 2
     },
     "note": "论文每天更新一次（interval_hours=24）；AI 不设条数上限，成本由全局 token 限额控制（主接口用尽切备用，两个都用尽才暂停）"
+  },
+  "filters": {
+    "noise_keywords": [
+      "吃不吃挑战",
+      "返厂了",
+      "抽奖",
+      "转发抽",
+      "表情包",
+      "壁纸",
+      "cp向",
+      "磕糖",
+      "二创",
+      "鬼畜",
+      "整活",
+      "梗图"
+    ],
+    "rules": [],
+    "rules_note": "关键词语法，每行一条：[组名] / +必须词 / !排除词 / /正则/ => 别名 / @每组上限。示例：[\"科技\", \"+芯片\", \"!抽奖\"]",
+    "min_engagement": {
+      "bilibili_popular": {
+        "view": 50000
+      },
+      "hackernews": {
+        "points": 40
+      }
+    }
+  },
+  "push": {
+    "enabled": false,
+    "channel": "radar-wechat",
+    "items": 5,
+    "alert_threshold": 82,
+    "max_attempts": 3,
+    "fallback_to_main_key": true,
+    "sendkey_env": "RADAR_SERVERCHAN_SENDKEY"
+  },
+  "sources": {},
+  "investigation": {
+    "min_heat": 70,
+    "max_evidence": 60,
+    "tech_auto_check": true,
+    "external_search": true,
+    "external_max_results": 6,
+    "external_extract_top": 2,
+    "min_local_evidence": 3,
+    "tech_keywords": [
+      "芯片",
+      "半导体",
+      "光刻",
+      "大模型",
+      "人工智能",
+      "量子",
+      "可控核聚变",
+      "超导",
+      "6G",
+      "卫星",
+      "航空发动机",
+      "新材料",
+      "量产",
+      "首次实现",
+      "国际领先",
+      "突破"
+    ]
+  },
+  "rss": {
+    "feeds": [],
+    "feeds_note": "自定义 RSS 源，加源不用改代码。每项：{id, name, url, platform?, language?, max_items?, enabled?}"
+  },
+  "scoring": {
+    "velocity": 0.3,
+    "cross_platform": 0.2,
+    "engagement": 0.2,
+    "verification": 0.2,
+    "interest": 0.1
+  },
+  "report": {
+    "length": "standard",
+    "top_events": 12,
+    "section_limits": {
+      "zh_web": 8,
+      "intl": 8,
+      "tech": 8,
+      "investigations": 5
+    }
+  },
+  "interests": {
+    "topics": [
+      "AI 与大模型",
+      "芯片与半导体",
+      "开源软件",
+      "国际科技公司",
+      "游戏与消费电子",
+      "国际新闻",
+      "中国科技发展与科研成果",
+      "产业竞争与经济事件"
+    ],
+    "keywords": [],
+    "synonyms": {},
+    "exclude": [],
+    "languages": [
+      "zh",
+      "en"
+    ]
+  },
+  "retention": {
+    "days": 90
+  },
+  "intel": {
+    "caliber_version": 1,
+    "window_days": 7,
+    "min_days_for_full_confidence": 7,
+    "activity_refs": {
+      "event_ref": 200,
+      "item_ref": 400,
+      "platform_ref": 12,
+      "evidence_gap_ref": 5
+    },
+    "activity_weights": {
+      "intensity": 0.4,
+      "volume": 0.25,
+      "breadth": 0.2,
+      "growth": 0.15
+    },
+    "credibility_weights": {
+      "verified_share": 0.45,
+      "concentration_free": 0.25,
+      "evidence_ok": 0.3
+    },
+    "strategic_weights": {
+      "observed_activity": 0.55,
+      "evidence_uncertainty": 0.25,
+      "monitoring_blind_spot": 0.2
+    },
+    "intl_share_ref": 0.3,
+    "live_news_default_limit": 50,
+    "live_news_max_limit": 200,
+    "note": "全球态势监控口径参数。activity_refs 是本站归一化参考值（分母），不是国际标准；改动这些值会让历史序列与新点不可直接比较。威胁活动与情报可信度是两个独立指标，不合成一个危险程度。"
+  },
+  "llm": {
+    "enabled": false,
+    "provider": "openai_compatible",
+    "base_url": "",
+    "model": "",
+    "api_key_env": "RADAR_LLM_API_KEY",
+    "timeout_seconds": 45,
+    "max_attempts": 2,
+    "max_events": 12,
+    "temperature": 0.2,
+    "note": "可在网页「监控设置 → 大模型」里配置；API Key 只存本地 data/radar_secrets.json。未配置时自动回退到本地抽取式摘要"
   }
 }

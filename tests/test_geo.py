@@ -10,6 +10,7 @@ import json
 import re
 import sys
 import unittest
+import datetime as dt
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -447,10 +448,12 @@ class TestIntelGeoPayload(unittest.TestCase):
             intel.record_daily_snapshot(conn, today, self.cfg)
             points = geosrc._parse_usgs({"features": [
                 {"id": "q1", "geometry": {"type": "Point", "coordinates": [139.7, 35.6]},
-                 "properties": {"mag": 5.2, "place": "Japan", "time": 1792951902000}},
+                 # 时间必须是「现在」：地图按 7 天窗口筛选，写死日期会让这个用例随日历过期
+                 "properties": {"mag": 5.2, "place": "Japan",
+                                "time": int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000)}},
             ]}, {"source_id": "usgs_quake", "layer": "usgs_quake"})
             for point in points:
-                point["collected_at"] = "2026-10-26T03:00:00+08:00"
+                point["collected_at"] = db.now_iso()
             store.upsert_geo_points(conn, points)
             conn.commit()
             self.payload = intel.build_payload(conn, self.cfg)

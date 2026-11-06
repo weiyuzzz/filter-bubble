@@ -136,14 +136,24 @@ def paper_key(item: Dict[str, Any]) -> str:
     return "title:" + digest
 
 
-def upsert_papers(conn: sqlite3.Connection, items: Iterable[Dict[str, Any]]) -> Dict[str, int]:
-    """写入论文。返回 {inserted, merged, skipped}。"""
+def upsert_papers(conn: sqlite3.Connection, items: Iterable[Dict[str, Any]],
+                  trace: Optional[List[Dict[str, Any]]] = None) -> Dict[str, int]:
+    """写入论文。返回 {inserted, merged, skipped}。
+
+    ``trace``（可选）会收到逐篇处理结果（新增/合并/丢弃 + 原因），供采集监控展示
+    「这一篇为什么被并进已存在的记录」。不传时行为与以前完全一致。
+    """
     inserted = merged = skipped = 0
     now = _now()
     for item in items:
         title = (item.get("title") or "").strip()
         if not title:
             skipped += 1
+            if trace is not None:
+                trace.append({"id": "", "action": "skipped", "title": item.get("title"),
+                              "url": item.get("url"), "published_at": item.get("published_at"),
+                              "source": item.get("source"),
+                              "reason": "标题为空，未入库"})
             continue
         key = paper_key(item)
         source_entry = {"source": item.get("source", ""), "source_id": item.get("source_id", ""),
@@ -151,9 +161,11 @@ def upsert_papers(conn: sqlite3.Connection, items: Iterable[Dict[str, Any]]) -> 
         row = conn.execute("SELECT * FROM paper_items WHERE id=?", (key,)).fetchone()
         if row:
             sources = json.loads(row["sources_json"] or "[]")
+            added = False
             if not any(s.get("source") == source_entry["source"] and
                        s.get("source_id") == source_entry["source_id"] for s in sources):
                 sources.append(source_entry)
+                added = True
             # 只在原值为空时补全，绝不用空值或新摘要覆盖已有原文
             conn.execute(
                 """UPDATE paper_items SET
@@ -170,6 +182,15 @@ def upsert_papers(conn: sqlite3.Connection, items: Iterable[Dict[str, Any]]) -> 
                  json.dumps(sources, ensure_ascii=False),
                  json.dumps(item.get("raw") or {}, ensure_ascii=False), key))
             merged += 1
+            if trace is not None:
+                trace.append({"id": key, "action": "merged", "title": title,
+                              "url": item.get("url") or row["url"],
+                              "published_at": item.get("published_at") or row["published_at"],
+                              "source": item.get("source"),
+                              "reason": ("去重键 %s 已存在（DOI→PMID→arXiv→标题），"
+                                         "本次%s" % (key.split(":", 1)[0],
+                                                    "合并了新的来源" if added else
+                                                    "只补全空缺字段"))})
             continue
 
         conn.execute(
@@ -185,6 +206,11 @@ def upsert_papers(conn: sqlite3.Connection, items: Iterable[Dict[str, Any]]) -> 
              json.dumps([source_entry], ensure_ascii=False),
              json.dumps(item.get("raw") or {}, ensure_ascii=False)))
         inserted += 1
+        if trace is not None:
+            trace.append({"id": key, "action": "new", "title": title, "url": item.get("url"),
+                          "published_at": item.get("published_at"),
+                          "source": item.get("source"), "reason": "首次入库（键 %s）"
+                          % key.split(":", 1)[0]})
     conn.commit()
     return {"inserted": inserted, "merged": merged, "skipped": skipped}
 

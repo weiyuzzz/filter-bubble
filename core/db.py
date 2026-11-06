@@ -136,6 +136,9 @@ def connect() -> sqlite3.Connection:
             # 否则调用方第一次 execute 就炸（例如 pending_papers 的大排序）。
             conn.execute("PRAGMA temp_store=MEMORY")   # 排序/连接全在内存里，不碰 %TEMP%
             conn.execute("PRAGMA busy_timeout=15000")
+            # WAL 下 NORMAL 是官方推荐组合：不再每条提交都 fsync，
+            # 写锁持有时间明显变短，多线程/多进程并发时「database is locked」大幅减少。
+            conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("SELECT 1").fetchone()
             return conn
         except sqlite3.OperationalError as exc:

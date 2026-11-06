@@ -24,7 +24,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from . import ai_secrets, ai_settings, ai_usage
+from . import ai_secrets, ai_settings, ai_usage, net
 from .config import DATA_DIR
 
 # 三类协议：OpenAI 兼容（DeepSeek / 千帆 / OpenRouter / 各类中转）、Anthropic 原生、本地模型
@@ -748,7 +748,7 @@ def _post(url: str, payload: Dict[str, Any], headers: Dict[str, str], timeout: f
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST", headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with net.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8", "replace")), None
     except urllib.error.HTTPError as exc:
         body = ""

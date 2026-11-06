@@ -55,7 +55,7 @@ def main(argv=None) -> int:
     store.init()
     conn = db.connect()
     try:
-        summary = sources.collect(conn, cfg, force=args.force)
+        summary = sources.collect(conn, cfg, force=args.force, trigger="cli")
     finally:
         conn.close()
 

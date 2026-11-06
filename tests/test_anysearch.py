@@ -419,17 +419,17 @@ class TestErrorHygiene(unittest.TestCase):
             def __exit__(self, *exc):
                 return False
 
-        original = radar_fetch.urllib.request.urlopen
+        original = radar_fetch.net.urlopen
 
         def fake_urlopen(*a, **k):
             raise __import__("urllib.error", fromlist=["x"]).HTTPError(
                 "https://api.anysearch.com/v1/search", 402, "quota", {}, None)
 
-        radar_fetch.urllib.request.urlopen = fake_urlopen
+        radar_fetch.net.urlopen = fake_urlopen
         try:
             data, result = radar_fetch.post_json("https://api.anysearch.com/v1/search", {"query": "x"})
         finally:
-            radar_fetch.urllib.request.urlopen = original
+            radar_fetch.net.urlopen = original
         self.assertIsNone(data)
         self.assertFalse(result.ok)
         self.assertEqual(result.status, 402)

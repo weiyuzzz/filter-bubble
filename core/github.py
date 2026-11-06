@@ -12,7 +12,7 @@ import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional
 
-from . import config, db
+from . import config, db, net
 
 UA_HEADERS = {"User-Agent": config.USER_AGENT, "Accept-Encoding": "identity"}
 RATE_REMAINING: Optional[int] = None
@@ -34,7 +34,7 @@ def http_get(url: str, api: bool = False, timeout: Optional[float] = None) -> Op
     for attempt in range(2):
         try:
             req = urllib.request.Request(url, headers=_headers(api))
-            with urllib.request.urlopen(req, timeout=timeout or config.HTTP_TIMEOUT) as resp:
+            with net.urlopen(req, timeout=timeout or config.HTTP_TIMEOUT) as resp:
                 if api:
                     raw = resp.headers.get("X-RateLimit-Remaining")
                     if raw is not None:

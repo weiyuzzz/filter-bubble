@@ -357,17 +357,34 @@ def sources(conn: sqlite3.Connection) -> List[Dict[str, Any]]:
 
 # ---------- items ----------
 
-def insert_items(conn: sqlite3.Connection, items: Iterable[Dict[str, Any]]) -> Dict[str, int]:
-    """Insert new items, refresh ``last_seen_at`` for ones already stored."""
+def insert_items(conn: sqlite3.Connection, items: Iterable[Dict[str, Any]],
+                 trace: Optional[List[Dict[str, Any]]] = None) -> Dict[str, int]:
+    """Insert new items, refresh ``last_seen_at`` for ones already stored.
+
+    ``trace``（可选）会收到逐条处理结果，供采集监控记录「新增 / 重复」及原因。
+    判定新增/重复必须**先查再写**：``INSERT ... ON CONFLICT`` 的情况下
+    ``cursor.rowcount`` 恒为 1、``lastrowid`` 是上一次插入的陈旧值，靠它们区分
+    会把每一轮重复出现的条目都算成新增（历史统计因此长期虚高）。
+    """
     inserted = 0
     seen = 0
     for item in items:
+        row = conn.execute(
+            "SELECT id FROM radar_items WHERE url_hash=?", (item["url_hash"],)).fetchone()
+        if row:
+            conn.execute("UPDATE radar_items SET last_seen_at=? WHERE id=?",
+                         (item["last_seen_at"], row["id"]))
+            seen += 1
+            if trace is not None:
+                trace.append({"url_hash": item["url_hash"], "action": "duplicate",
+                              "item_id": int(row["id"]),
+                              "reason": "该 URL 已入库过，本次只刷新 last_seen_at（重复）"})
+            continue
         cur = conn.execute(
             """INSERT INTO radar_items(source_id, platform, title, url, url_hash, author_name,
                    published_at, collected_at, language, engagement, content_hash, raw_content,
                    source_type, fetch_status, last_seen_at)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-               ON CONFLICT(url_hash) DO UPDATE SET last_seen_at=excluded.last_seen_at""",
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 item["source_id"], item.get("platform", ""), item["title"], item.get("url", ""),
                 item["url_hash"], item.get("author_name", ""), item.get("published_at", ""),
@@ -378,10 +395,11 @@ def insert_items(conn: sqlite3.Connection, items: Iterable[Dict[str, Any]]) -> D
                 item["last_seen_at"],
             ),
         )
-        if cur.rowcount and cur.lastrowid:
-            inserted += 1
-        else:
-            seen += 1
+        inserted += 1
+        if trace is not None:
+            trace.append({"url_hash": item["url_hash"], "action": "new",
+                          "item_id": int(cur.lastrowid or 0) or None,
+                          "reason": "首次入库"})
     return {"inserted": inserted, "seen": seen}
 
 

@@ -10,6 +10,7 @@ import urllib.request
 from typing import Any, Dict, Optional
 
 from .. import config as app_config
+from .. import net
 from . import store
 
 API_BASE = os.environ.get("RADAR_SERVERCHAN_API_BASE", "https://sctapi.ftqq.com").rstrip("/")
@@ -35,7 +36,7 @@ def _post(sendkey: str, title: str, body: str, timeout: float = 15.0) -> tuple:
     req = urllib.request.Request(url, data=data, method="POST",
                                  headers={"Content-Type": "application/x-www-form-urlencoded"})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with net.urlopen(req, timeout=timeout) as resp:
             raw = resp.read().decode("utf-8", "replace")
         payload = json.loads(raw) if raw.strip().startswith("{") else {}
         code = payload.get("code")
@@ -67,18 +68,49 @@ def status(conn, cfg: Dict[str, Any], date: str) -> Dict[str, Any]:
 def send_daily(conn, payload: Dict[str, Any], cfg: Dict[str, Any], force: bool = False,
                manual: bool = False) -> Dict[str, Any]:
     from . import report as report_mod
+    from .. import monitor
+
+    mon = monitor.run("wechat_push", trigger="manual" if manual else "schedule",
+                      stats={"channel": str((cfg.get("push") or {}).get("channel")
+                                            or "radar-wechat"),
+                             "date": str(payload.get("date") or ""),
+                             "title": str(payload.get("title") or "")[:200]})
+    mon.start()
+    try:
+        result = _send_daily_inner(conn, payload, cfg, force, manual, mon)
+        mon.finish(status=("ok" if result.get("ok") and not result.get("skipped")
+                           else "skipped" if result.get("skipped") else "failed"),
+                   error=None if result.get("ok") else
+                   str(result.get("reason") or result.get("detail") or "推送失败"),
+                   stats={"channel": mon.stats.get("channel"), "attempts": result.get("attempts"),
+                          "detail": result.get("detail"), "reason": result.get("reason")})
+        return result
+    except Exception as exc:  # noqa: BLE001 - 监控不能改变原来的异常行为
+        mon.add_error("%s: %s" % (type(exc).__name__, exc), stage="push")
+        mon.finish(status="failed", error="%s: %s" % (type(exc).__name__, exc))
+        raise
+    finally:
+        mon.finish(status=mon.status if mon.status != "running" else "interrupted")
+
+
+def _send_daily_inner(conn, payload: Dict[str, Any], cfg: Dict[str, Any], force: bool,
+                      manual: bool, mon) -> Dict[str, Any]:
+    from . import report as report_mod
 
     push_cfg = cfg.get("push") or {}
     if not push_cfg.get("enabled") and not manual:
+        mon.stage("push", "skipped", {"reason": "雷达推送未启用（social_radar.json → push.enabled）"})
         return {"ok": False, "skipped": True,
                 "reason": "雷达推送未启用（social_radar.json → push.enabled）"}
     channel = push_cfg.get("channel") or "radar-wechat"
     date = str(payload.get("date") or "")
     key, key_source = resolve_sendkey(cfg)
     if not key:
+        mon.stage("push", "skipped", {"reason": "未配置推送密钥（只显示环境变量名，不显示值）"})
         return {"ok": False, "skipped": True,
                 "reason": "未配置 RADAR_SERVERCHAN_SENDKEY（也可回退使用 SERVERCHAN_SENDKEY）"}
     if key.lower().startswith("sctp"):
+        mon.stage("push", "skipped", {"reason": "SendKey 类型不匹配：需要 SCT 开头的 Turbo SendKey"})
         return {"ok": False, "skipped": True,
                 "reason": "这是 Server酱³ 的 key，微信通道请使用 SCT 开头的 Turbo SendKey"}
 
@@ -86,6 +118,8 @@ def send_daily(conn, payload: Dict[str, Any], cfg: Dict[str, Any], force: bool =
     rendered = report_mod.render_push(payload, limit=int(push_cfg.get("items") or 5))
     content_hash = hashlib.sha1(rendered["body"].encode("utf-8")).hexdigest()
     if existing and existing["status"] == "sent" and not force:
+        mon.stage("push", "skipped", {"reason": "今天已经推送过", "date": date,
+                                      "note": "幂等保护：同一天同一通道只发一次"})
         return {"ok": True, "skipped": True, "reason": "今天已经推送过",
                 "date": date, "hash": existing["content_hash"]}
 
@@ -100,9 +134,16 @@ def send_daily(conn, payload: Dict[str, Any], cfg: Dict[str, Any], force: bool =
                           rendered["title"], content_hash, detail, attempts, now, store.db.now_iso())
         conn.commit()
         if ok:
+            mon.stage("push", "ok", {"channel": channel, "attempts": attempts,
+                                     "title": rendered["title"],
+                                     "detail": detail, "key_source": key_source})
             return {"ok": True, "skipped": False, "date": date, "attempts": attempts,
                     "title": rendered["title"], "detail": detail, "key_source": key_source}
         time.sleep(min(5.0, 1.5 * attempts))
+    mon.stage("push", "failed",
+              {"channel": channel, "attempts": attempts,
+               "detail": detail, "note": "已达重试上限"},
+              error=detail or "推送失败，已达到重试上限")
     return {"ok": False, "skipped": False, "date": date, "attempts": attempts,
             "reason": "推送失败，已达到重试上限", "detail": detail}
 

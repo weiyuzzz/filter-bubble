@@ -90,14 +90,15 @@ def _cfg_block(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
 # ---------------- 采集 ----------------
 
-def _run_source(name: str, cfg: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]], str, int]:
+def _run_source(name: str, cfg: Dict[str, Any]
+                ) -> Tuple[str, List[Dict[str, Any]], str, int, Dict[str, Any]]:
     block = _cfg_block(cfg)
     rows = int(block.get("fetch_per_source") or 30)
     days = int(block.get("lookback_days") or 3)
     adapter = sources.ADAPTERS.get(name)
     started = time.time()
     if not adapter:
-        return name, [], "未知来源", 0
+        return name, [], "未知来源", 0, {}
     try:
         if name == "crossref":
             per_topic = max(4, rows // max(1, len(sources.CROSSREF_TOPICS)))
@@ -114,12 +115,23 @@ def _run_source(name: str, cfg: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any
             items = adapter(rows, days, "", key)
         else:
             items = adapter(rows, days)
-        return name, items or [], "", int((time.time() - started) * 1000)
+        return (name, items or [], "", int((time.time() - started) * 1000),
+                _fetch_meta())
     except Exception as exc:  # noqa: BLE001 - 单个来源失败不影响其他来源
-        return name, [], "%s: %s" % (type(exc).__name__, exc), int((time.time() - started) * 1000)
+        return (name, [], "%s: %s" % (type(exc).__name__, exc),
+                int((time.time() - started) * 1000), _fetch_meta())
 
 
-def collect(cfg: Dict[str, Any]) -> Dict[str, Any]:
+def _fetch_meta() -> Dict[str, Any]:
+    """论文模块复用雷达的 HTTP 层，顺便拿真实 HTTP 状态给监控用。"""
+    try:
+        from ..radar import fetch as _fetch
+        return _fetch.last_call() or {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def collect(cfg: Dict[str, Any], trigger: str = "manual") -> Dict[str, Any]:
     """抓取所有启用的论文来源，分类、去重、入库。"""
     block = _cfg_block(cfg)
     enabled = [name for name, on in (block.get("sources") or {}).items() if on]
@@ -128,16 +140,21 @@ def collect(cfg: Dict[str, Any]) -> Dict[str, Any]:
     started = time.time()
     summary: Dict[str, Any] = {"sources": {}, "fetched": 0, "inserted": 0, "merged": 0,
                                "failed": [], "skipped_sources": []}
+    from .. import monitor
+
+    mon = monitor.run("papers_collect", trigger=trigger)
+    mon.start()
     try:
         _set("collecting papers", running=True, started_at=_now(), last_error=None)
         run_ids = {name: store.start_run(conn, name) for name in enabled}
+        mon.set_counts(sources_attempted=len(enabled))
 
-        results: List[Tuple[str, List[Dict[str, Any]], str, int]] = []
+        results: List[Tuple[str, List[Dict[str, Any]], str, int, Dict[str, Any]]] = []
         with cf.ThreadPoolExecutor(max_workers=3) as pool:
             for result in pool.map(lambda n: _run_source(n, cfg), enabled):
                 results.append(result)
 
-        for name, items, error, duration in results:
+        for name, items, error, duration, meta in results:
             with_abstract = sum(1 for i in items if (i.get("abstract") or "").strip())
             if error:
                 store.finish_run(conn, run_ids[name], "failed", 0, 0, duration, error)
@@ -145,6 +162,14 @@ def collect(cfg: Dict[str, Any]) -> Dict[str, Any]:
                 summary["sources"][name] = {"status": "failed", "fetched": 0,
                                             "with_abstract": 0, "error": error,
                                             "duration_ms": duration}
+                mon.source_result(name, "failed", name=name, kind="paper",
+                                  latency_ms=duration, http_status=meta.get("status") or None,
+                                  fetched=0, parsed=0, error=error)
+                mon.add_error("论文来源 %s 失败：%s" % (name, error), source_id=name,
+                              stage="fetch",
+                              details={"latency_ms": duration,
+                                       "http_status": meta.get("status") or None,
+                                       "url": meta.get("url") or ""})
                 continue
 
             prepared = []
@@ -155,7 +180,8 @@ def collect(cfg: Dict[str, Any]) -> Dict[str, Any]:
                 item["disciplines"] = disciplines
                 prepared.append(item)
 
-            counts = store.upsert_papers(conn, prepared)
+            trace: List[Dict[str, Any]] = []
+            counts = store.upsert_papers(conn, prepared, trace=trace)
             store.finish_run(conn, run_ids[name], "ok", len(items), with_abstract, duration)
             summary["fetched"] += len(items)
             summary["inserted"] += counts["inserted"]
@@ -165,22 +191,58 @@ def collect(cfg: Dict[str, Any]) -> Dict[str, Any]:
                                         "inserted": counts["inserted"],
                                         "merged": counts["merged"],
                                         "duration_ms": duration, "error": ""}
+            mon.source_result(name, "ok" if items else "empty", name=name, kind="paper",
+                              latency_ms=duration, http_status=meta.get("status") or None,
+                              fetched=len(items), parsed=len(items),
+                              items_new=counts["inserted"],
+                              items_duplicate=counts["merged"],
+                              items_filtered=counts["skipped"],
+                              reason=None if items else "本次返回 0 篇（不等于失败）",
+                              detail={"with_abstract": with_abstract,
+                                      "url": meta.get("url") or ""})
+            mon.items([{
+                "source_id": name, "kind": "paper", "title": entry.get("title"),
+                "url": entry.get("url"), "published_at": entry.get("published_at"),
+                "collected_at": _now(), "item_id": entry.get("id"),
+                "action": {"new": "new", "merged": "duplicate", "skipped": "filtered"}[
+                    entry.get("action") or "new"],
+                "reason": entry.get("reason"), "detail": {"paper_action": entry.get("action"),
+                                                          "dedupe_key": entry.get("id")},
+            } for entry in trace])
 
         summary["duration_ms"] = int((time.time() - started) * 1000)
         summary["stats"] = store.stats(conn)
+        failed = summary["failed"]
+        mon.stage("fetch", "ok" if not failed else ("partial" if summary["fetched"] else "failed"),
+                  {"sources": len(enabled), "sources_failed": len(failed),
+                   "items_fetched": summary["fetched"],
+                   "note": "每个来源的真实耗时与 HTTP 状态见来源结果"})
+        mon.stage("normalize", "ok" if summary["fetched"] else "not_applicable",
+                  {"note": "学科分类（classify）在抓取后立即执行，与解析同一阶段"})
+        mon.stage("persist", "ok" if summary["fetched"] else "not_applicable",
+                  {"items_new": summary["inserted"], "items_duplicate": summary["merged"],
+                   "note": "去重键：DOI → PMID → arXiv ID → 规范化标题"})
+        mon.set_counts(items_fetched=summary["fetched"], items_new=summary["inserted"],
+                       items_duplicate=summary["merged"])
+        mon.finish(status="ok" if not failed else ("partial" if summary["fetched"] else "failed"),
+                   stats={"trigger_detail": summary.get("sources"),
+                          "duration_ms": summary["duration_ms"]})
         _set("idle", running=False, finished_at=_now(), last_result=summary)
     except Exception as exc:  # noqa: BLE001
         summary["error"] = "%s: %s" % (type(exc).__name__, exc)
+        mon.add_error(summary["error"], stage="persist")
+        mon.finish(status="failed", error=summary["error"])
         _set("idle", running=False, finished_at=_now(), last_error=summary["error"])
     finally:
         conn.close()
     return summary
 
 
-def collect_async(cfg: Dict[str, Any]) -> bool:
+def collect_async(cfg: Dict[str, Any], trigger: str = "api") -> bool:
     if get_state().get("running"):
         return False
-    threading.Thread(target=collect, args=(cfg,), name="papers-collect", daemon=True).start()
+    threading.Thread(target=collect, args=(cfg, trigger), name="papers-collect",
+                     daemon=True).start()
     return True
 
 
@@ -206,23 +268,41 @@ def _worker(stop: threading.Event) -> None:
 def _analyze_one(paper_id: str) -> None:
     settings = ai_settings.load()
     conn = db.connect()
+    from .. import monitor
+
+    mon = monitor.run("summary", trigger="queue", run_id=None,
+                      stats={"paper_id": paper_id,
+                             "note": "论文 AI 概况：一次真实模型调用记一条运行"})
+    mon.start()
     try:
         paper = store.get_paper(conn, paper_id)
         if not paper:
+            mon.log("WARNING", "论文已不存在，跳过概况生成：%s" % paper_id, stage="summary")
+            mon.finish(status="skipped", stats={"reason": "paper not found"})
             return
+        mon.stats["title"] = paper.get("title")
+        mon.stats["source"] = paper.get("source")
+        mon.set_counts(items_fetched=1)
         try:
             store.save_overview(conn, paper_id, "pending", None, "", paper_ai.PROMPT_VERSION,
                                 content_hash_value=store.content_hash(paper))
-            overview, error, model = paper_ai.analyze(paper, settings)
+            with mon.phase("summary") as phase:
+                overview, error, model = paper_ai.analyze(paper, settings)
+                phase.result = {"model": model, "has_overview": bool(overview),
+                                "paper_id": paper_id}
             if overview:
                 store.save_overview(conn, paper_id, "done", overview, model,
                                     paper_ai.PROMPT_VERSION,
                                     content_hash_value=store.content_hash(paper))
+                mon.finish(status="ok", stats={"model": model})
             else:
                 store.save_overview(conn, paper_id, "failed", None, model,
                                     paper_ai.PROMPT_VERSION, error=error or "未知错误",
                                     content_hash_value=store.content_hash(paper))
                 log("分析失败 %s: %s" % (paper_id[:40], error or "未知错误"))
+                mon.add_error(error or "未知错误", stage="summary", details={"paper_id": paper_id,
+                                                                             "model": model})
+                mon.finish(status="failed", error=error or "未知错误")
         except Exception as exc:  # noqa: BLE001 - 单篇失败不能拖死队列
             detail = "%s: %s" % (type(exc).__name__, exc)
             log("分析异常 %s: %s" % (paper_id[:40], detail))
@@ -231,8 +311,11 @@ def _analyze_one(paper_id: str) -> None:
                                     error=detail, content_hash_value=store.content_hash(paper))
             except Exception:  # noqa: BLE001 - 连失败也写不进去就只记日志
                 pass
+            mon.add_error(detail, stage="summary", details={"paper_id": paper_id})
+            mon.finish(status="failed", error=detail)
     finally:
         conn.close()
+        mon.finish(status=mon.status if mon.status != "running" else "interrupted")
 
 
 def start_worker(stop: threading.Event, concurrency: int = 2) -> None:
@@ -484,7 +567,7 @@ def scheduler_loop(stop: threading.Event) -> None:
             if get_state().get("running"):
                 continue
             log("daily collect at %s" % now.isoformat(timespec="seconds"))
-            summary = collect(cfg)
+            summary = collect(cfg, trigger="schedule")
             _set("idle", last_result=summary)
             queued = analyze_pending(cfg)
             if queued:

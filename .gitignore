@@ -5,6 +5,7 @@ data/*.db
 data/*.db-shm
 data/*.db-wal
 data/*.log
+data/*.pid
 data/radar_secrets.json
 data/ai_secrets.json
 # 运行时状态（token 用量、主备切换）
@@ -23,3 +24,12 @@ runtime/
 
 # local git credentials — NEVER commit these
 .ssh/
+
+# 本地运行产物（测试脚本留下的临时库、前台日志）
+.serve.log
+fb-lock*/
+fb-mon-run*/
+fb-monitor*/
+
+# 本地工具状态（编辑器/智能体的工作区记忆）
+.workbuddy-ai/

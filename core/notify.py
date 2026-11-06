@@ -18,7 +18,7 @@ import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
-from . import config, db, follows
+from . import config, db, follows, net
 
 CHANNEL = "serverchan"
 
@@ -164,7 +164,7 @@ def _post(title: str, body: str) -> Tuple[bool, str]:
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=config.PUSH_TIMEOUT) as response:
+        with net.urlopen(req, timeout=config.PUSH_TIMEOUT) as response:
             payload = json.loads(response.read().decode("utf-8", "replace"))
     except Exception as exc:  # noqa: BLE001
         return False, "network: %s" % exc
@@ -247,10 +247,36 @@ def status(conn: sqlite3.Connection, date: Optional[str] = None) -> Dict[str, An
 
 
 def send_daily(payload: Dict[str, Any], conn: Optional[sqlite3.Connection] = None,
-               force: bool = False) -> Dict[str, Any]:
+               force: bool = False, trigger: str = "manual") -> Dict[str, Any]:
+    from . import monitor
+
+    mon = monitor.run("wechat_push", trigger=trigger,
+                      stats={"channel": CHANNEL, "provider": "Server酱 Turbo",
+                             "date": str(payload.get("date") or ""),
+                             "title": str(payload.get("title") or "")[:200]})
+    mon.start()
+    try:
+        result = _send_daily_inner(payload, conn, force, mon)
+        mon.finish(status=("ok" if result.get("ok") and not result.get("skipped")
+                           else "skipped" if result.get("skipped") else "failed"),
+                   error=None if result.get("ok") else
+                   str(result.get("reason") or result.get("detail") or "推送失败"))
+        return result
+    except Exception as exc:  # noqa: BLE001 - 监控不能改变原来的异常行为
+        mon.add_error("%s: %s" % (type(exc).__name__, exc), stage="push")
+        mon.finish(status="failed", error="%s: %s" % (type(exc).__name__, exc))
+        raise
+    finally:
+        mon.finish(status=mon.status if mon.status != "running" else "interrupted")
+
+
+def _send_daily_inner(payload: Dict[str, Any], conn: Optional[sqlite3.Connection],
+                      force: bool, mon) -> Dict[str, Any]:
     push = state()
     # 开关是权威的：关掉了就连手动「立即推送」也不发，免得用户以为还在推
     if not push["ready"]:
+        mon.stage("push", "skipped", {"reason": push["reason"],
+                                      "note": "推送未就绪：开关或密钥的问题，本轮没有发送"})
         return {"ok": False, "skipped": True, "reason": push["reason"], "state": push}
 
     own_conn = conn is None
@@ -262,6 +288,8 @@ def send_daily(payload: Dict[str, Any], conn: Optional[sqlite3.Connection] = Non
             "SELECT * FROM push_log WHERE date=? AND channel=?", (date, CHANNEL)
         ).fetchone()
         if existing and existing["status"] == "sent" and not force:
+            mon.stage("push", "skipped", {"reason": "今天已经发送过", "date": date,
+                                          "note": "幂等保护：同一天只发一次"})
             return {"ok": True, "skipped": True, "reason": "今天已经发送过",
                     "date": date, "status": "sent"}
 
@@ -269,6 +297,10 @@ def send_daily(payload: Dict[str, Any], conn: Optional[sqlite3.Connection] = Non
         content_hash = hashlib.sha1(rendered["body"].encode("utf-8")).hexdigest()
         ok, detail = _post(rendered["title"], rendered["body"])
         _log(conn, date, "sent" if ok else "failed", rendered["title"], content_hash, detail)
+        mon.stage("push", "ok" if ok else "failed",
+                  {"channel": CHANNEL, "title": rendered["title"], "detail": detail,
+                   "content_hash": content_hash},
+                  error=None if ok else detail)
         return {
             "ok": ok, "skipped": False, "date": date,
             "status": "sent" if ok else "failed",

@@ -151,19 +151,31 @@ def _final_items(ranked: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def generate(progress: Optional[Callable[[str], None]] = None,
-             push: bool = True) -> Dict[str, Any]:
+             push: bool = True, trigger: str = "manual") -> Dict[str, Any]:
     said = progress or (lambda _m: None)
     conn = db.connect()
     github.RATE_REMAINING = None
+    from . import monitor
+
+    mon = monitor.run("github_daily", trigger=trigger)
+    mon.start()
     try:
         said("拉取 GitHub Trending 日榜与周榜")
-        daily = github.fetch_trending("daily")
-        weekly = github.fetch_trending("weekly")
-        fallback = not daily and not weekly
+        with mon.phase("fetch") as phase:
+            daily = github.fetch_trending("daily")
+            weekly = github.fetch_trending("weekly")
+            fallback = not daily and not weekly
 
-        said("搜索最近 7 天与 30 天的新项目")
-        fresh7 = github.search_recent(7, 25)
-        fresh30 = github.search_recent(30, 30)
+            said("搜索最近 7 天与 30 天的新项目")
+            fresh7 = github.search_recent(7, 25)
+            fresh30 = github.search_recent(30, 30)
+            phase.result = {"daily": len(daily), "weekly": len(weekly),
+                            "fresh": len({c["full_name"] for c in fresh7 + fresh30}),
+                            "note": "GitHub Trending 日榜/周榜 + Search（近 7/30 天）"}
+            if fallback and not (fresh7 or fresh30):
+                phase.mark("failed")
+            elif fallback:
+                phase.mark("partial")
         if fallback and not (fresh7 or fresh30):
             raise RuntimeError("GitHub Trending 与 Search 均暂不可达，已保留上一份日报")
 
@@ -173,23 +185,29 @@ def generate(progress: Optional[Callable[[str], None]] = None,
             item["sources"] = item.get("sources") or []
 
         said("读取项目详情")
-        trending = [c for c in candidates if any(s in ("daily", "weekly") for s in c["sources"])]
-        trending.sort(key=lambda x: (x.get("daily_rank") or 99, -(x.get("stars_week") or 0)))
-        deadline = time.time() + 100
-        for item in trending[:26]:
-            if time.time() > deadline or github.RATE_REMAINING == 0:
-                break
-            enriched = github.enrich(item, conn)
-            item.update({k: v for k, v in enriched.items() if v not in (None, "", [], 0)})
-            if "daily" in item["sources"]:
-                item["daily_rank"] = next(
-                    (d["daily_rank"] for d in daily if d["full_name"] == item["full_name"]), None
-                )
-            if "weekly" in item["sources"]:
-                item["weekly_rank"] = next(
-                    (d["weekly_rank"] for d in weekly if d["full_name"] == item["full_name"]), None
-                )
-            item["age_days"] = rank.age_days(item.get("created_at"))
+        with mon.phase("parse") as phase:
+            trending = [c for c in candidates if any(s in ("daily", "weekly") for s in c["sources"])]
+            trending.sort(key=lambda x: (x.get("daily_rank") or 99, -(x.get("stars_week") or 0)))
+            deadline = time.time() + 100
+            enriched_count = 0
+            for item in trending[:26]:
+                if time.time() > deadline or github.RATE_REMAINING == 0:
+                    phase.mark("partial")
+                    break
+                enriched = github.enrich(item, conn)
+                item.update({k: v for k, v in enriched.items() if v not in (None, "", [], 0)})
+                if "daily" in item["sources"]:
+                    item["daily_rank"] = next(
+                        (d["daily_rank"] for d in daily if d["full_name"] == item["full_name"]), None
+                    )
+                if "weekly" in item["sources"]:
+                    item["weekly_rank"] = next(
+                        (d["weekly_rank"] for d in weekly if d["full_name"] == item["full_name"]), None
+                    )
+                item["age_days"] = rank.age_days(item.get("created_at"))
+                enriched_count += 1
+            phase.result = {"candidates": len(candidates), "enriched": enriched_count,
+                            "note": "读取仓库详情（stars/language/README 等）"}
 
         # Ensure all daily trending repos are in the running, then add fresh blood.
         daily_names = {d["full_name"] for d in daily}
@@ -215,43 +233,61 @@ def generate(progress: Optional[Callable[[str], None]] = None,
             selected.extend(rest[: 24 - len(selected)])
 
         said("翻译项目简介")
-        translator = Translator(conn)
-        by_heat = sorted(selected, key=_pre_score, reverse=True)
-        for item in by_heat[:30]:
-            if translator.remaining < 40:
-                break
-            if item.get("description"):
-                zh = translator.translate(item["description"])
-                if zh:
-                    item["summary_zh"] = zh
+        with mon.phase("normalize") as phase:
+            translator = Translator(conn)
+            by_heat = sorted(selected, key=_pre_score, reverse=True)
+            translated = 0
+            for item in by_heat[:30]:
+                if translator.remaining < 40:
+                    phase.mark("partial")
+                    break
+                if item.get("description"):
+                    zh = translator.translate(item["description"])
+                    if zh:
+                        item["summary_zh"] = zh
+                        translated += 1
+            phase.result = {"translated": translated,
+                            "note": "中文简介翻译（缓存命中不重复调用）"}
 
-        said("读取 README 摘要")
-        _readme_block(conn, by_heat[:4], translator)
+            said("读取 README 摘要")
+            _readme_block(conn, by_heat[:4], translator)
 
         today = local_today().isoformat()
-        for item in candidates:
-            db.save_snapshot(conn, item, today)
+        with mon.phase("deduplicate") as phase:
+            for item in candidates:
+                db.save_snapshot(conn, item, today)
+            phase.result = {"candidates": len(candidates), "selected": len(selected),
+                            "note": "同一仓库在多份榜单里出现时合并为一条；已入库快照按（仓库, 日期）覆盖"}
 
-        weights, bias = prefs.load_model(conn)
-        profile = prefs.profile(conn)
-        names = [c["full_name"] for c in selected]
-        following = {o.lower() for o in follows.owners(conn)}
-        ranked = rank.build(
-            selected, weights, bias, profile["ready"], db.feedback_map(conn),
-            db.bookmarks(conn), _histories(conn, names), following=following
-        )
-        items = _final_items(ranked)
+        with mon.phase("score") as phase:
+            weights, bias = prefs.load_model(conn)
+            profile = prefs.profile(conn)
+            names = [c["full_name"] for c in selected]
+            following = {o.lower() for o in follows.owners(conn)}
+            ranked = rank.build(
+                selected, weights, bias, profile["ready"], db.feedback_map(conn),
+                db.bookmarks(conn), _histories(conn, names), following=following
+            )
+            items = _final_items(ranked)
+            phase.result = {"ranked": len(ranked), "kept": len(items),
+                            "note": "热度 = 增速 55% + 体量 25% + 新鲜度 20%（未生效反馈时按默认权重）"}
 
         # AI 解读：全局模型可用时为前 N 个项目生成「适合谁 / 怎么用 / 场景 / 流程」
         try:
             from . import ai_brief, ai_settings
             settings = ai_settings.load()
-            ai_stats = ai_brief.enrich(items, settings, progress=said)
+            with mon.phase("summary") as phase:
+                ai_stats = ai_brief.enrich(items, settings, progress=said)
+                phase.result = {"generated": ai_stats.get("generated", 0),
+                                "cached": ai_stats.get("cached", 0),
+                                "note": "项目速读（AI 解读），失败不影响日报"}
             if ai_stats.get("generated") or ai_stats.get("cached"):
                 said("AI 解读：新生成 %d 个，命中缓存 %d 个"
                      % (ai_stats.get("generated", 0), ai_stats.get("cached", 0)))
         except Exception as exc:  # noqa: BLE001 - AI 失败不能影响日报
             print("[ai] brief enrichment skipped:", exc)
+            mon.stage("summary", "failed", {"note": "AI 解读失败，日报仍然生成"},
+                      error="%s: %s" % (type(exc).__name__, exc))
 
         for idx, item in enumerate(items, 1):
             item["rank"] = idx
@@ -283,14 +319,30 @@ def generate(progress: Optional[Callable[[str], None]] = None,
                 "热度 = 增速 55% + 项目体量 25% + 新鲜度 20%，每日快照会让「猛增」判断越来越准",
             ],
         }
-        conn.execute(
-            "INSERT OR REPLACE INTO digests(date, payload, generated_at) VALUES(?,?,?)",
-            (today, json.dumps(payload, ensure_ascii=False), payload["generated_at"]),
-        )
-        db.set_meta(conn, "last_generated_date", today)
-        db.set_meta(conn, "last_refresh_failed_at", "")
-        db.set_meta(conn, "profile_updated", db.now_iso())
-        conn.commit()
+        with mon.phase("persist") as phase:
+            conn.execute(
+                "INSERT OR REPLACE INTO digests(date, payload, generated_at) VALUES(?,?,?)",
+                (today, json.dumps(payload, ensure_ascii=False), payload["generated_at"]),
+            )
+            db.set_meta(conn, "last_generated_date", today)
+            db.set_meta(conn, "last_refresh_failed_at", "")
+            db.set_meta(conn, "profile_updated", db.now_iso())
+            conn.commit()
+            phase.result = {"items": len(items), "new_count": new_count,
+                            "note": "写入 digests 表（按日期覆盖）"}
+        mon.items([{
+            "source_id": "github", "kind": "github", "title": item.get("full_name"),
+            "url": item.get("url"), "collected_at": payload["generated_at"],
+            "published_at": item.get("created_at"),
+            "item_id": item.get("full_name"),
+            "action": "new" if idx <= int(new_count or 0) else "persisted",
+            "reason": ("本次日报的新项目（NEW 标记）" if idx <= int(new_count or 0)
+                       else "进入今日榜单"),
+            "detail": {"rank": item.get("rank"), "stars": item.get("stars"),
+                       "language": item.get("language"), "score": item.get("score"),
+                       "sources": item.get("sources")},
+        } for idx, item in enumerate(items, 1)])
+        mon.set_counts(items_fetched=len(candidates), items_new=new_count)
         said("更新关注发布者的动态")
         try:
             follows.refresh(conn, max_seconds=15)
@@ -299,37 +351,56 @@ def generate(progress: Optional[Callable[[str], None]] = None,
         push_state = notify.state()
         if push and push_state["ready"]:
             said("推送微信简报")
-            try:
-                result = notify.send_daily(payload, conn=conn)
-                # 不论成功失败都记一次「今天试过了」：否则推送失败时调度器会每 25 秒
-                # 重新生成一次日报再试，白白烧 GitHub 额度
-                db.set_meta(conn, "last_push_attempt_date", today)
-                if result.get("ok"):
-                    db.set_meta(conn, "last_pushed_date", today)
-                    db.set_meta(conn, "last_push_error", "")
-                else:
-                    db.set_meta(conn, "last_push_error",
-                                str(result.get("reason") or result.get("detail") or "")[:300])
-                    print("[push] failed:", result.get("reason") or result.get("detail"))
-                conn.commit()
-            except Exception as exc:  # noqa: BLE001
-                print("[push] error:", exc)
+            with mon.phase("push") as phase:
+                try:
+                    result = notify.send_daily(payload, conn=conn)
+                    phase.result = {"ok": bool(result.get("ok")),
+                                    "skipped": bool(result.get("skipped")),
+                                    "reason": result.get("reason") or "",
+                                    "detail": result.get("detail") or ""}
+                    phase.mark("ok" if result.get("ok") else
+                               ("skipped" if result.get("skipped") else "failed"))
+                    # 不论成功失败都记一次「今天试过了」：否则推送失败时调度器会每 25 秒
+                    # 重新生成一次日报再试，白白烧 GitHub 额度
+                    db.set_meta(conn, "last_push_attempt_date", today)
+                    if result.get("ok"):
+                        db.set_meta(conn, "last_pushed_date", today)
+                        db.set_meta(conn, "last_push_error", "")
+                    else:
+                        db.set_meta(conn, "last_push_error",
+                                    str(result.get("reason") or result.get("detail") or "")[:300])
+                        print("[push] failed:", result.get("reason") or result.get("detail"))
+                    conn.commit()
+                except Exception as exc:  # noqa: BLE001
+                    print("[push] error:", exc)
+                    phase.mark("failed")
+                    mon.add_error("微信推送异常：%s: %s" % (type(exc).__name__, exc), stage="push")
         elif push_state["reason"]:
             db.set_meta(conn, "last_push_error", push_state["reason"])
             conn.commit()
             print("[push] skipped:", push_state["reason"])
+            mon.stage("push", "skipped", {"reason": push_state["reason"],
+                                          "note": "推送未就绪，本轮没有发送"})
+        mon.finish(status="partial" if fallback else "ok",
+                   stats={"source_counts": source_counts, "new_count": new_count,
+                          "profile_ready": profile.get("ready")})
         return payload
+    except Exception as exc:  # noqa: BLE001 - 监控必须知道失败，但不能改变原有异常行为
+        mon.add_error("%s: %s" % (type(exc).__name__, exc), stage="persist")
+        mon.finish(status="failed", error="%s: %s" % (type(exc).__name__, exc))
+        raise
     finally:
+        mon.finish(status=mon.status if mon.status != "running" else "interrupted")
         conn.close()
 
 
-def _run(progress=None, push: bool = True) -> None:
+def _run(progress=None, push: bool = True, trigger: str = "manual") -> None:
     with _STATE_LOCK:
         if STATE["running"]:
             return
         STATE.update({"running": True, "stage": "开始", "started_at": db.now_iso(), "last_error": None})
     try:
-        generate(progress=_set_stage, push=push)
+        generate(progress=_set_stage, push=push, trigger=trigger)
         with _STATE_LOCK:
             STATE["finished_at"] = db.now_iso()
             STATE["stage"] = "完成"
@@ -352,14 +423,14 @@ def _run(progress=None, push: bool = True) -> None:
             STATE["running"] = False
 
 
-def refresh_async(push: bool = True) -> bool:
+def refresh_async(push: bool = True, trigger: str = "manual") -> bool:
     global _thread
     with _STATE_LOCK:
         if STATE["running"]:
             return False
         if _thread and _thread.is_alive():
             return False
-    _thread = threading.Thread(target=_run, args=(None, push),
+    _thread = threading.Thread(target=_run, args=(None, push, trigger),
                                name="filter-bubble-refresh", daemon=True)
     _thread.start()
     return True

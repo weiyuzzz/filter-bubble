@@ -14,7 +14,7 @@ import urllib.request
 from datetime import date
 from typing import Iterable, List, Optional
 
-from . import config, db
+from . import config, db, net
 
 
 class Translator:
@@ -69,7 +69,7 @@ class Translator:
         )
         try:
             req = urllib.request.Request(url, headers={"User-Agent": config.USER_AGENT})
-            with urllib.request.urlopen(req, timeout=12) as resp:
+            with net.urlopen(req, timeout=12) as resp:
                 payload = json.loads(resp.read().decode("utf-8", "replace"))
         except Exception as exc:  # noqa: BLE001
             print("[translate] failed:", exc)
